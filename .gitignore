@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-server/
+.framescript/
+test-results/
+playwright-report/
+.env
+.env.*
+*.log
+.desktop-backup/

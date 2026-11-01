@@ -1,0 +1,60 @@
+{
+  "name": "framescript-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local React and Node.js animation studio",
+  "author": "FrameScript Studio",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc --noEmit && vite build && node scripts/build.mjs",
+    "start": "node scripts/start.mjs",
+    "test": "vitest run",
+    "test:integration": "tsx tests/integration.ts",
+    "test:workflow": "tsx tests/workflow-export.ts",
+    "test:e2e": "playwright test",
+    "test:server": "tsx tests/server.ts"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "@radix-ui/react-dialog": "^1.1.6",
+    "archiver": "^8.0.0",
+    "clsx": "^2.1.1",
+    "ffmpeg-static": "^5.2.0",
+    "jose": "^6.2.14",
+    "lucide-react": "^0.468.0",
+    "monaco-editor": "^0.52.2",
+    "playwright": "^1.64.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^4.6.7",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@testing-library/react": "^16.1.0",
+    "@types/archiver": "^8.0.0",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.3",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "esbuild": "^0.25.0",
+    "jsdom": "^26.0.0",
+    "postcss": "^8.5.3",
+    "prettier": "^3.9.10",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vitest": "^4.1.12"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "overrides": {
+    "readdir-glob": {
+      "minimatch": "^11.0.1"
+    }
+  }
+}
