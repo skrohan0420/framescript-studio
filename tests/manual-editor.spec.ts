@@ -63,7 +63,10 @@ test("visual splitting preserves animation time, and end trimming supports Undo"
   await page.goto("/#editor");
   await page.getByRole("slider", { name: "Timeline position" }).fill("3");
   await page.getByRole("button", { name: "Split at playhead" }).click();
-  const timelines = page.getByRole("tablist", { name: "Timelines", exact: true });
+  const timelines = page.getByRole("tablist", {
+    name: "Timelines",
+    exact: true,
+  });
   await expect(timelines.getByRole("tab")).toHaveCount(2);
   await timelines.getByRole("tab").nth(1).click();
   await expect(
@@ -241,7 +244,8 @@ test("full document paste splits code, rejects unsupported imports, and runtime 
     .first()
     .click();
   await page.getByRole("button", { name: "Jump to error" }).click();
-  await expect(page.locator(".editor-tabs button.active")).toContainText(
+  await expect(page.locator(".editor-tabs button.active")).toHaveAttribute(
+    "aria-label",
     "JavaScript",
   );
   await code.focus();
@@ -320,7 +324,10 @@ test("manual workspace restores old projects, edits pasted code, and imports aud
   await expect.poll(() => saved?.html).toContain('id="manual"');
   expect(saved.workflow.scenes[1].html).toContain('id="kept"');
   await expect(page.locator(".scene-rail")).toHaveCount(0);
-  const timelines = page.getByRole("tablist", { name: "Timelines", exact: true });
+  const timelines = page.getByRole("tablist", {
+    name: "Timelines",
+    exact: true,
+  });
   await expect(timelines.getByRole("tab")).toHaveCount(2);
   await page.getByRole("button", { name: "Add timeline", exact: true }).click();
   await expect(timelines.getByRole("tab")).toHaveCount(3);
@@ -336,7 +343,9 @@ test("manual workspace restores old projects, edits pasted code, and imports aud
   await expect(
     page.frameLocator('iframe[title="Animation preview"]').locator("#manual"),
   ).toBeVisible();
-  await timelines.getByRole("tab", { name: "3 · Timeline 3", exact: true }).click();
+  await timelines
+    .getByRole("tab", { name: "3 · Timeline 3", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Remove timeline", exact: true })
     .click();

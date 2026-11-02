@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Clipboard,
   ClipboardPaste,
@@ -12,12 +12,21 @@ import {
   Orbit,
   Wrench,
   Check,
+  X,
+  Palette,
+  Fingerprint,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useProjectState } from "./store";
 import { sceneOffset } from "../shared/workflow";
 import { transcriptSrt, voiceoverWordsForScene } from "../shared/transcript";
+import { parseNarrationInput } from "../shared/narration-input";
+import { PromptTypography } from "./PromptTypography";
 import {
   buildCodePrompt,
+  artStyles,
+  referenceStyles,
+  editingStyles,
   promptTemplates,
   type PromptDraft,
 } from "../shared/prompt-templates";
@@ -121,9 +130,11 @@ const fieldSuggestions = {
 export function PromptTemplates({
   onPaste,
   master = false,
+  onClose,
 }: {
   onPaste: () => void;
   master?: boolean;
+  onClose?: () => void;
 }) {
   const { project } = useProjectState();
   const defaults: PromptDraft = {
@@ -139,26 +150,67 @@ export function PromptTemplates({
     screenText: "",
     notes: "",
     format: "document",
+    consistency: true,
   };
   const [draft, setDraft] = useState<PromptDraft>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null");
       if (!saved || typeof saved !== "object") return defaults;
       const restored = { ...defaults };
-      for (const key of ["bgm", "sfx"] as const)
+      for (const key of ["bgm", "sfx", "consistency"] as const)
         if (typeof saved[key] === "boolean") restored[key] = saved[key];
       for (const key of [
         "script",
         "timedNarration",
         "style",
+        "referenceStyle",
+        "editingStyle",
+        "subtitles",
+        "textFont",
+        "textScale",
+        "textPlacement",
+        "textAnimation",
+        "textTreatment",
+        "textColor",
+        "titlePlacement",
+        "captionPlacement",
+        "textAlign",
+        "textFill",
+        "textAccent",
+        "textBacking",
         "visuals",
         "camera",
         "screenText",
         "notes",
+        "audience",
+        "storyStructure",
+        "mood",
+        "palette",
+        "lighting",
+        "characters",
+        "environment",
+        "motion",
+        "avoid",
       ] as const)
         if (typeof saved[key] === "string") restored[key] = saved[key];
       if (promptTemplates.some((item) => item.id === saved.template))
         restored.template = saved.template;
+      for (const [key, min, max] of [
+        ["titleSize", 8, 600],
+        ["captionSize", 8, 300],
+        ["textWeight", 100, 900],
+        ["textLineHeight", 0.8, 2.5],
+        ["textTracking", -5, 20],
+        ["textAnimationDuration", 0.1, 3],
+        ["captionLines", 1, 3],
+      ] as const) {
+        if (
+          typeof saved[key] === "number" &&
+          saved[key] >= min &&
+          saved[key] <= max
+        )
+          restored[key] = saved[key];
+      }
       if (
         typeof saved.duration === "number" &&
         saved.duration >= 0.1 &&
@@ -176,6 +228,39 @@ export function PromptTemplates({
   const [durationInput, setDurationInput] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [timedVoiceId, setTimedVoiceId] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [activeSection, setActiveSection] = useState(() => {
+    try {
+      const saved = localStorage.getItem("framescript.prompt-tab");
+      return [
+        "brief",
+        "look",
+        "identity",
+        "typography",
+        "details",
+        "output",
+      ].includes(saved ?? "")
+        ? saved!
+        : "brief";
+    } catch {
+      return "brief";
+    }
+  });
+  const selectSection = (section: string) => {
+    setActiveSection(section);
+    try {
+      localStorage.setItem("framescript.prompt-tab", section);
+    } catch {}
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  };
+  useEffect(() => {
+    if (!onClose) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(draft));
@@ -185,7 +270,11 @@ export function PromptTemplates({
     key: K,
     value: PromptDraft[K],
   ) => {
-    setDraft((previous) => ({ ...previous, [key]: value }));
+    setDraft((previous) => ({
+      ...previous,
+      [key]: value,
+      ...(key === "script" ? { timedNarration: "" } : {}),
+    }));
     setStatus("");
   };
   const suggestions = (key: keyof typeof fieldSuggestions) => (
@@ -198,8 +287,18 @@ export function PromptTemplates({
         <button
           key={label}
           type="button"
+          aria-pressed={
+            key === "script" ? draft.storyStructure === value : undefined
+          }
           title={value || "Keep the animation free of on-screen text"}
           onClick={() => {
+            if (key === "script") {
+              update(
+                "storyStructure",
+                draft.storyStructure === value ? "" : value,
+              );
+              return;
+            }
             const current = draft[key];
             update(
               key,
@@ -288,6 +387,7 @@ export function PromptTemplates({
           <h3 title="Describe your animation, copy the prompt to GPT, then paste the generated code.">
             <Sparkles size={17} /> Prompt builder
           </h3>
+          <p>Brief → style → copy → create.</p>
         </div>
         <button
           title="Reset prompt fields"
@@ -301,188 +401,292 @@ export function PromptTemplates({
         >
           <RotateCcw size={16} />
         </button>
-      </div>
-      <div className="prompt-form-scroll">
-        <div
-          className="prompt-template-grid"
-          role="group"
-          aria-label="Animation templates"
-        >
-          {promptTemplates.map((item) => {
-            const Icon = icons[item.id];
-            return (
-              <button
-                key={item.id}
-                title={item.name}
-                aria-label={`Use ${item.name} template`}
-                aria-pressed={draft.template === item.id}
-                onClick={() => {
-                  update("template", item.id);
-                  if (item.id === "repair") setIncludeCode(true);
-                }}
-              >
-                <Icon size={17} />
-                <span>
-                  <strong>{item.name}</strong>
-                  <small>{descriptions[item.id]}</small>
-                </span>
-                {draft.template === item.id && (
-                  <Check size={13} className="template-selected-check" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-        <div className="prompt-form-card">
-          <div className="prompt-card-heading">
-            <strong>The brief</strong>
-            <span>
-              {project.settings.width} × {project.settings.height}
-            </span>
-          </div>
-          <label className="field">
-            <span>Script / narration</span>
-            <textarea
-              aria-label="Prompt script"
-              rows={3}
-              placeholder="Paste the narration or describe what happens…"
-              value={draft.script}
-              onChange={(event) => update("script", event.target.value)}
-            />
-            {suggestions("script")}
-          </label>
-          <div className="prompt-timed-toolbar">
-            {timedVoices.length > 1 && (
-              <select
-                aria-label="Timed voiceover source"
-                value={timedVoice?.id ?? ""}
-                onChange={(event) => setTimedVoiceId(event.target.value)}
-              >
-                <option value="">All voiceover clips in this scene</option>
-                {timedVoices.map((clip) => (
-                  <option key={clip.id} value={clip.id}>
-                    {clip.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <button
-              disabled={!timedVoices.length}
-              title={
-                timedVoices.length
-                  ? "Use word timestamps from the voiceover, aligned to its scene position and trim"
-                  : "Extract the voiceover text first to get word timestamps"
-              }
-              onClick={useTimedVoice}
-            >
-              <Timer size={14} /> Use timed voiceover
-            </button>
-          </div>
-          <details
-            className="prompt-timed-narration"
-            open={!!draft.timedNarration || undefined}
+        {onClose && (
+          <button
+            aria-label="Close prompt builder"
+            title="Close prompt builder"
+            onClick={onClose}
           >
-            <summary>
-              Timed narration <small>Optional · SRT or timestamped text</small>
-            </summary>
-            <textarea
-              aria-label="Timed narration"
-              rows={5}
-              placeholder={
-                "Paste timed text here, or use the voiceover above.\n00:00:01,000 --> 00:00:03,500\nThe matching spoken phrase"
-              }
-              value={draft.timedNarration ?? ""}
-              maxLength={100000}
-              onChange={(event) => update("timedNarration", event.target.value)}
-            />
-            {draft.timedNarration && (
-              <button onClick={() => update("timedNarration", "")}>
-                Clear timing
-              </button>
+            <X size={18} />
+          </button>
+        )}
+      </div>
+      <div
+        className="prompt-section-nav"
+        role="tablist"
+        aria-label="Prompt sections"
+      >
+        {[
+          ["brief", "Brief"],
+          ["look", "Look & edit"],
+          ["identity", "Identity"],
+          ["typography", "Typography"],
+          ["details", "Details"],
+          ["output", "Output"],
+        ].map(([id, label]) => (
+          <button
+            type="button"
+            key={id}
+            role="tab"
+            aria-label={label}
+            title={label}
+            id={`prompt-tab-${id}`}
+            aria-controls={`prompt-panel-${id}`}
+            aria-selected={activeSection === id}
+            tabIndex={activeSection === id ? 0 : -1}
+            onKeyDown={(event) => {
+              const ids = [
+                "brief",
+                "look",
+                "identity",
+                "typography",
+                "details",
+                "output",
+              ];
+              const index = ids.indexOf(id);
+              const next =
+                event.key === "ArrowRight"
+                  ? ids[(index + 1) % ids.length]
+                  : event.key === "ArrowLeft"
+                    ? ids[(index + ids.length - 1) % ids.length]
+                    : event.key === "Home"
+                      ? ids[0]
+                      : event.key === "End"
+                        ? ids.at(-1)
+                        : undefined;
+              if (!next) return;
+              event.preventDefault();
+              selectSection(next);
+              document.getElementById(`prompt-tab-${next}`)?.focus();
+            }}
+            onClick={() => selectSection(id)}
+          >
+            {id === "brief" ? (
+              <Clipboard size={17} />
+            ) : id === "look" ? (
+              <Palette size={17} />
+            ) : id === "identity" ? (
+              <Fingerprint size={17} />
+            ) : id === "typography" ? (
+              <Type size={17} />
+            ) : id === "details" ? (
+              <SlidersHorizontal size={17} />
+            ) : (
+              <Code2 size={17} />
             )}
-          </details>
-          <div className="prompt-timing">
-            <label className="field">
-              <span>Duration (seconds)</span>
-              <input
-                aria-label="Prompt duration (seconds)"
-                type="number"
-                min="0.1"
-                max="600"
-                step="0.1"
-                value={durationInput ?? Number(draft.duration.toFixed(2))}
-                onFocus={(event) => setDurationInput(event.currentTarget.value)}
-                onChange={(event) => {
-                  setDurationInput(event.target.value);
-                  const value = Number(event.target.value);
-                  if (value >= 0.1 && value <= 600) update("duration", value);
-                }}
-                onBlur={() => setDurationInput(null)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") event.currentTarget.blur();
-                }}
-              />
-            </label>
-            <button
-              title="Use active timeline duration"
-              aria-label="Use active timeline duration"
-              onClick={() => update("duration", project.settings.duration)}
-            >
-              <Timer size={16} />
-            </button>
-            <button
-              disabled={!voice}
-              title="Use the active narration clip length"
-              aria-label="Use narration duration"
-              onClick={() => voice && update("duration", voice.length)}
-            >
-              <Music size={16} />
-            </button>
+          </button>
+        ))}
+      </div>
+      <div className="prompt-form-scroll" ref={scrollRef}>
+        <div
+          className="prompt-tab-panel"
+          role="tabpanel"
+          id="prompt-panel-brief"
+          aria-labelledby="prompt-tab-brief"
+          hidden={activeSection !== "brief"}
+        >
+          <div
+            className="prompt-section-caption"
+            data-prompt-section="brief"
+            tabIndex={-1}
+          >
+            <strong>What are you making?</strong>
+            <span>Choose a format, then add your story.</span>
           </div>
           <div
-            className="prompt-field-suggestions"
+            className="prompt-template-grid"
             role="group"
-            aria-label="Duration suggestions"
+            aria-label="Animation templates"
           >
-            {[5, 10, 15, 30, 60].map((duration) => (
-              <button
-                key={duration}
-                type="button"
-                onClick={() => {
-                  update("duration", duration);
-                  setDurationInput(null);
+            {promptTemplates.map((item) => {
+              const Icon = icons[item.id];
+              return (
+                <button
+                  key={item.id}
+                  title={item.name}
+                  aria-label={`Use ${item.name} template`}
+                  aria-pressed={draft.template === item.id}
+                  onClick={() => {
+                    update("template", item.id);
+                    if (item.id === "repair") setIncludeCode(true);
+                  }}
+                >
+                  <Icon size={17} />
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>{descriptions[item.id]}</small>
+                  </span>
+                  {draft.template === item.id && (
+                    <Check size={13} className="template-selected-check" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <div className="prompt-form-card">
+            <div className="prompt-card-heading">
+              <strong>The brief</strong>
+              <span>
+                {project.settings.width} × {project.settings.height}
+              </span>
+            </div>
+            <label className="field">
+              <span>Audience & goal</span>
+              <input
+                aria-label="Audience & goal"
+                placeholder="Who is this for, and what should they understand?"
+                value={draft.audience ?? ""}
+                onChange={(e) => update("audience", e.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>Script / narration</span>
+              <textarea
+                aria-label="Prompt script"
+                rows={3}
+                placeholder="Paste your script, SRT, VTT or timestamped narration…"
+                maxLength={100000}
+                value={draft.timedNarration || draft.script}
+                onChange={(event) => {
+                  const parsed = parseNarrationInput(event.target.value);
+                  setDraft((previous) => ({
+                    ...previous,
+                    script: parsed.script,
+                    timedNarration: parsed.timedNarration,
+                  }));
+                  setStatus("");
                 }}
+              />
+              <small className="prompt-input-format">
+                {draft.timedNarration
+                  ? `${parseNarrationInput(draft.timedNarration).format} · timing detected`
+                  : "Plain text · timing inferred"}
+              </small>
+            </label>
+            <div className="prompt-story-direction">
+              <small>Story direction · optional</small>
+              {suggestions("script")}
+            </div>
+            <div className="prompt-timed-toolbar">
+              {timedVoices.length > 1 && (
+                <select
+                  aria-label="Timed voiceover source"
+                  value={timedVoice?.id ?? ""}
+                  onChange={(event) => setTimedVoiceId(event.target.value)}
+                >
+                  <option value="">All voiceover clips in this scene</option>
+                  {timedVoices.map((clip) => (
+                    <option key={clip.id} value={clip.id}>
+                      {clip.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                disabled={!timedVoices.length}
+                title={
+                  timedVoices.length
+                    ? "Use word timestamps from the voiceover, aligned to its scene position and trim"
+                    : "Extract the voiceover text first to get word timestamps"
+                }
+                onClick={useTimedVoice}
               >
-                {duration}s
+                <Timer size={14} /> Use timed voiceover
               </button>
-            ))}
+            </div>
+            <div className="prompt-timing">
+              <label className="field">
+                <span>Duration (seconds)</span>
+                <input
+                  aria-label="Prompt duration (seconds)"
+                  type="number"
+                  min="0.1"
+                  max="600"
+                  step="0.1"
+                  value={durationInput ?? Number(draft.duration.toFixed(2))}
+                  onFocus={(event) =>
+                    setDurationInput(event.currentTarget.value)
+                  }
+                  onChange={(event) => {
+                    setDurationInput(event.target.value);
+                    const value = Number(event.target.value);
+                    if (value >= 0.1 && value <= 600) update("duration", value);
+                  }}
+                  onBlur={() => setDurationInput(null)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                  }}
+                />
+              </label>
+              <button
+                title="Use active timeline duration"
+                aria-label="Use active timeline duration"
+                onClick={() => update("duration", project.settings.duration)}
+              >
+                <Timer size={16} />
+              </button>
+              <button
+                disabled={!voice}
+                title="Use the active narration clip length"
+                aria-label="Use narration duration"
+                onClick={() => voice && update("duration", voice.length)}
+              >
+                <Music size={16} />
+              </button>
+            </div>
+            <div
+              className="prompt-field-suggestions"
+              role="group"
+              aria-label="Duration suggestions"
+            >
+              {[5, 10, 15, 30, 60].map((duration) => (
+                <button
+                  key={duration}
+                  type="button"
+                  onClick={() => {
+                    update("duration", duration);
+                    setDurationInput(null);
+                  }}
+                >
+                  {duration}s
+                </button>
+              ))}
+            </div>
+            <div className="prompt-audio-options">
+              <label className="prompt-check">
+                <input
+                  type="checkbox"
+                  checked={draft.bgm ?? false}
+                  onChange={(event) => update("bgm", event.target.checked)}
+                />
+                BGM
+              </label>
+              <label className="prompt-check">
+                <input
+                  type="checkbox"
+                  checked={draft.sfx ?? false}
+                  onChange={(event) => update("sfx", event.target.checked)}
+                />
+                SFX
+              </label>
+            </div>
+            {(draft.bgm || draft.sfx) && (
+              <p className="type-hint">
+                The generated code will include a soundtrack. Paste the full
+                response to create real BGM/SFX tracks automatically.
+              </p>
+            )}
           </div>
-          <div className="prompt-audio-options">
-            <label className="prompt-check">
-              <input
-                type="checkbox"
-                checked={draft.bgm ?? false}
-                onChange={(event) => update("bgm", event.target.checked)}
-              />
-              BGM
-            </label>
-            <label className="prompt-check">
-              <input
-                type="checkbox"
-                checked={draft.sfx ?? false}
-                onChange={(event) => update("sfx", event.target.checked)}
-              />
-              SFX
-            </label>
-          </div>
-          {(draft.bgm || draft.sfx) && (
-            <p className="type-hint">
-              The generated code will include a soundtrack. Paste the full
-              response to create real BGM/SFX tracks automatically.
-            </p>
-          )}
         </div>
-        <div className="prompt-form-card">
+        <div
+          className="prompt-form-card prompt-tab-panel"
+          role="tabpanel"
+          id="prompt-panel-look"
+          aria-labelledby="prompt-tab-look"
+          hidden={activeSection !== "look"}
+          data-prompt-section="look"
+          tabIndex={-1}
+        >
           <div className="prompt-card-heading">
             <strong>Look & motion</strong>
             <span>Optional</span>
@@ -510,102 +714,253 @@ export function PromptTemplates({
             </label>
           ))}
           <div className="prompt-style-chips" aria-label="Style suggestions">
-            {["Cinematic", "Minimal", "Hand drawn", "Scientific"].map(
-              (style) => (
-                <button
-                  key={style}
-                  aria-label={`Use ${style.toLowerCase()} style`}
-                  onClick={() => update("style", style)}
-                >
-                  {style}
-                </button>
-              ),
-            )}
-          </div>
-        </div>
-        <details className="prompt-options">
-          <summary>
-            Fine-tune the animation{" "}
-            <small>Camera, text & extra direction</small>
-          </summary>
-          <div className="prompt-options-content">
-            {(
-              [
-                ["camera", "Camera / framing"],
-                ["screenText", "Exact on-screen text (optional)"],
-                ["notes", "Additional requirements"],
-              ] as const
-            ).map(([key, label]) => (
-              <label className="field" key={key}>
-                <span>{label}</span>
-                <textarea
-                  aria-label={label}
-                  rows={2}
-                  value={draft[key]}
-                  onChange={(event) => update(key, event.target.value)}
-                />
-                {suggestions(key)}
-              </label>
+            {artStyles.map(([style, description]) => (
+              <button
+                key={style}
+                aria-label={`Use ${style.toLowerCase()} style`}
+                title={description}
+                aria-pressed={draft.style === `${style}: ${description}`}
+                onClick={() => update("style", `${style}: ${description}`)}
+              >
+                {style}
+              </button>
             ))}
           </div>
-        </details>
-        <details
-          className="prompt-options"
-          open={draft.template === "repair" ? true : undefined}
-        >
-          <summary>
-            Output settings{" "}
-            <small>
-              {draft.format === "document"
-                ? "Single HTML document"
-                : "Three code blocks"}
-            </small>
-          </summary>
-          <div className="prompt-options-content">
-            <label className="field">
-              <span>GPT output format</span>
-              <select
-                aria-label="Prompt output format"
-                value={draft.format}
-                onChange={(event) =>
-                  update("format", event.target.value as PromptDraft["format"])
-                }
-              >
-                <option value="document">One complete HTML document</option>
-                <option value="separate">
-                  Separate HTML / CSS / JavaScript blocks
+          <label className="field">
+            <span>Reference-inspired look</span>
+            <select
+              aria-label="Reference-inspired look"
+              value={draft.referenceStyle ?? ""}
+              onChange={(e) => update("referenceStyle", e.target.value)}
+            >
+              <option value="">Original / no reference</option>
+              {referenceStyles.map(([name, direction]) => (
+                <option key={name} value={`${name}: ${direction}`}>
+                  {name}
                 </option>
-              </select>
-            </label>
-            <label className="prompt-check">
-              <input
-                type="checkbox"
-                checked={includeCode}
-                onChange={(event) => setIncludeCode(event.target.checked)}
-              />{" "}
-              Include active timeline code for repair or adaptation
-            </label>
+              ))}
+            </select>
+          </label>
+          {draft.referenceStyle && (
+            <p className="prompt-preset-description">{draft.referenceStyle}</p>
+          )}
+          <label className="field">
+            <span>Editing & pacing style</span>
+            <select
+              aria-label="Editing & pacing style"
+              value={draft.editingStyle ?? ""}
+              onChange={(e) => update("editingStyle", e.target.value)}
+            >
+              <option value="">Automatic / measured explainer</option>
+              {editingStyles.map(([name, direction]) => (
+                <option key={name} value={`${name}: ${direction}`}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {draft.editingStyle && (
+            <p className="prompt-preset-description">{draft.editingStyle}</p>
+          )}
+        </div>
+        <div
+          className="prompt-form-card prompt-design-guide prompt-tab-panel"
+          role="tabpanel"
+          id="prompt-panel-identity"
+          aria-labelledby="prompt-tab-identity"
+          hidden={activeSection !== "identity"}
+          data-prompt-section="identity"
+          tabIndex={-1}
+        >
+          <div className="prompt-card-heading">
+            <strong>Visual consistency guide</strong>
+            <span>Reused across every beat</span>
           </div>
-        </details>
-        <p className="muted">
-          Draft saved on this device. No AI connection required. Text stays
-          off-screen unless you specify it.
-        </p>
-        <details>
-          <summary>Preview generated prompt</summary>
-          <textarea
-            aria-label="Generated prompt"
-            rows={14}
-            value={prompt}
-            readOnly
+          <label className="prompt-check">
+            <input
+              type="checkbox"
+              checked={draft.consistency !== false}
+              onChange={(e) => update("consistency", e.target.checked)}
+            />
+            Lock visual identity across shots
+          </label>
+          <p className="type-hint">
+            Define recurring details once. Copy this guide with every scene to
+            keep the same visual language.
+          </p>
+          {(
+            [
+              [
+                "palette",
+                "Color palette",
+                "e.g. Midnight #101827, ivory #F5F0E8, coral #FF7861",
+              ],
+              [
+                "characters",
+                "Character / subject identity",
+                "Silhouette, proportions, clothing, materials and signature details…",
+              ],
+              [
+                "environment",
+                "World & environment",
+                "Location, recurring props, scale and background treatment…",
+              ],
+              [
+                "lighting",
+                "Lighting",
+                "e.g. Soft key light from upper left, warm highlights, gentle shadows",
+              ],
+              [
+                "mood",
+                "Mood & atmosphere",
+                "e.g. Curious, optimistic, calm and spacious",
+              ],
+              [
+                "motion",
+                "Motion & transitions",
+                "e.g. Slow anticipation, spring-free easing, match-cut transitions",
+              ],
+              [
+                "avoid",
+                "Avoid / negative direction",
+                "Unwanted colors, effects, objects or style changes…",
+              ],
+            ] as const
+          ).map(([key, label, placeholder]) => (
+            <label className="field" key={key}>
+              <span>{label}</span>
+              <textarea
+                aria-label={label}
+                rows={2}
+                placeholder={placeholder}
+                value={draft[key] ?? ""}
+                onChange={(e) => update(key, e.target.value)}
+              />
+            </label>
+          ))}
+        </div>
+        <div
+          className="prompt-form-card prompt-tab-panel"
+          role="tabpanel"
+          id="prompt-panel-typography"
+          aria-labelledby="prompt-tab-typography"
+          hidden={activeSection !== "typography"}
+        >
+          <PromptTypography
+            draft={draft}
+            update={update}
+            width={project.settings.width}
+            height={project.settings.height}
           />
-        </details>
+        </div>
+        <div
+          className="prompt-tab-panel"
+          role="tabpanel"
+          id="prompt-panel-details"
+          aria-labelledby="prompt-tab-details"
+          hidden={activeSection !== "details"}
+        >
+          <details
+            open
+            className="prompt-options"
+            data-prompt-section="details"
+            tabIndex={-1}
+          >
+            <summary>
+              Fine-tune the animation{" "}
+              <small>Camera, text & extra direction</small>
+            </summary>
+            <div className="prompt-options-content">
+              {(
+                [
+                  ["camera", "Camera / framing"],
+                  ["notes", "Additional requirements"],
+                ] as const
+              ).map(([key, label]) => (
+                <label className="field" key={key}>
+                  <span>{label}</span>
+                  <textarea
+                    aria-label={label}
+                    rows={2}
+                    value={draft[key]}
+                    onChange={(event) => update(key, event.target.value)}
+                  />
+                  {suggestions(key)}
+                </label>
+              ))}
+            </div>
+          </details>
+        </div>
+        <div
+          className="prompt-tab-panel"
+          role="tabpanel"
+          id="prompt-panel-output"
+          aria-labelledby="prompt-tab-output"
+          hidden={activeSection !== "output"}
+        >
+          <details
+            className="prompt-options"
+            data-prompt-section="output"
+            tabIndex={-1}
+            open
+          >
+            <summary>
+              Output settings{" "}
+              <small>
+                {draft.format === "document"
+                  ? "Single HTML document"
+                  : "Three code blocks"}
+              </small>
+            </summary>
+            <div className="prompt-options-content">
+              <label className="field">
+                <span>GPT output format</span>
+                <select
+                  aria-label="Prompt output format"
+                  value={draft.format}
+                  onChange={(event) =>
+                    update(
+                      "format",
+                      event.target.value as PromptDraft["format"],
+                    )
+                  }
+                >
+                  <option value="document">One complete HTML document</option>
+                  <option value="separate">
+                    Separate HTML / CSS / JavaScript blocks
+                  </option>
+                </select>
+              </label>
+              <label className="prompt-check">
+                <input
+                  type="checkbox"
+                  checked={includeCode}
+                  onChange={(event) => setIncludeCode(event.target.checked)}
+                />{" "}
+                Include active timeline code for repair or adaptation
+              </label>
+            </div>
+          </details>
+          <p className="muted">
+            Draft saved on this device. No AI connection required. Text stays
+            off-screen unless you specify it.
+          </p>
+          <details>
+            <summary>Preview generated prompt</summary>
+            <textarea
+              aria-label="Generated prompt"
+              rows={14}
+              value={prompt}
+              readOnly
+            />
+          </details>
+        </div>
       </div>
       <div className="prompt-actions">
         <div className="prompt-ready">
           <span className="live-dot" />
           <span>
-            {draft.duration}s ·{" "}
+            {Number(draft.duration.toFixed(2))}s ·{" "}
             {draft.format === "document" ? "HTML document" : "3 code blocks"}
           </span>
         </div>
@@ -626,6 +981,7 @@ export function PromptTemplates({
             }}
           >
             <Clipboard size={17} />
+            Copy
           </button>
           <button
             title="Paste GPT response"
@@ -633,6 +989,7 @@ export function PromptTemplates({
             onClick={onPaste}
           >
             <ClipboardPaste size={17} />
+            Paste
           </button>
         </div>
         <span role="status">{status}</span>

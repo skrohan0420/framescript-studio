@@ -68,6 +68,12 @@ test("minimizing keeps export running, preserves its settings and leaves editing
   await expect(dock).toContainText("Background film.mp4");
   await expect(dock.getByRole("progressbar")).toBeVisible();
   await expect(dock).toContainText("24%");
+  await dock.getByRole("button", { name: "Dismiss exports panel", exact: true }).click();
+  await expect(dock.getByRole("progressbar")).toBeHidden();
+  expect(cancelled).toBe(0);
+  await dock.getByRole("button", { name: "Expand exports panel", exact: true }).click();
+  await expect(dock.getByRole("progressbar")).toBeVisible();
+  await expect(dock.getByRole("button", { name: "Cancel all exports", exact: true })).toBeVisible();
   await expect(dock.getByRole("progressbar")).toHaveAttribute(
     "title",
     "167/684 frames",
@@ -98,7 +104,7 @@ test("minimizing keeps export running, preserves its settings and leaves editing
   await expect(settings).toBeVisible();
   await settings.getByRole("button", { name: "Close", exact: true }).click();
   await expect(dock).toContainText("Complete");
-  await dock.getByRole("button", { name: /^Dismiss export / }).click();
+  await dock.getByRole("button", { name: "Dismiss exports panel", exact: true }).click();
   await expect(dock).toHaveCount(0);
 });
 

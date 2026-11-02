@@ -69,8 +69,16 @@ export const AudioWaveform = memo(function AudioWaveform({
     };
     const observer = new ResizeObserver(draw);
     observer.observe(element);
+    const themeObserver = new MutationObserver(draw);
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
     draw();
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      themeObserver.disconnect();
+    };
   }, [
     clip.trimIn,
     clip.length,

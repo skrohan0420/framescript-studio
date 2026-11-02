@@ -155,7 +155,7 @@ test("timed voiceover fills the prompt with scene-aligned cues", async ({
     .getByRole("button", { name: "Use timed voiceover", exact: true })
     .click();
   await expect(page.getByLabel("Prompt script", { exact: true })).toHaveValue(
-    "Explosion. Again.",
+    /Explosion\.[\s\S]*Again\./,
   );
   await page
     .getByLabel("Timed voiceover source")
@@ -164,15 +164,41 @@ test("timed voiceover fills the prompt with scene-aligned cues", async ({
     .getByRole("button", { name: "Use timed voiceover", exact: true })
     .click();
   await expect(page.getByLabel("Prompt script", { exact: true })).toHaveValue(
-    "Explosion.",
-  );
-  await expect(page.getByLabel("Timed narration", { exact: true })).toHaveValue(
     "1\n00:00:02,200 --> 00:00:02,800\nExplosion.\n",
   );
   await page.getByRole("button", { name: "Copy prompt", exact: true }).click();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toContain("00:00:02,200 --> 00:00:02,800");
   expect(copied).toContain("timing authority");
+  const input = page.getByLabel("Prompt script", { exact: true });
+  await input.fill("WEBVTT\n\n00:01.000 --> 00:03.000\nA timed idea.");
+  await expect(page.locator(".prompt-input-format")).toContainText(
+    "VTT · timing detected",
+  );
+  await page.getByRole("button", { name: "Copy prompt", exact: true }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
+    "00:01.000 --> 00:03.000",
+  );
+  await input.fill("A replacement plain script.");
+  await page
+    .getByRole("button", { name: "Hook & reveal", exact: true })
+    .click();
+  await expect(input).toHaveValue("A replacement plain script.");
+  await expect(
+    page.getByRole("button", { name: "Hook & reveal", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".prompt-input-format")).toContainText(
+    "Plain text",
+  );
+  await page.getByRole("button", { name: "Copy prompt", exact: true }).click();
+  expect(
+    await page.evaluate(() => navigator.clipboard.readText()),
+  ).not.toContain("TIMED NARRATION — SCENE-LOCAL SECONDS");
+  const timedInput =
+    "1\n00:00:01,000 --> 00:00:02,000\nKeep these exact words.";
+  await input.fill(timedInput);
+  await page.getByRole("button", { name: "Product demo", exact: true }).click();
+  await expect(input).toHaveValue(timedInput);
 });
 
 test("prompt templates build, copy and preserve a brief without an AI connection", async ({
@@ -199,22 +225,74 @@ test("prompt templates build, copy and preserve a brief without an AI connection
     .getByRole("button", { name: "Prompts panel", exact: true })
     .click();
   const panel = page.getByRole("region", { name: "Prompt templates" });
+  const tabs = panel.getByRole("tablist", { name: "Prompt sections" });
+  const select = async (name: string) =>
+    tabs.getByRole("tab", { name, exact: true }).click();
+  await select("Look & edit");
+  await expect(panel.getByLabel("Prompt script", { exact: true })).toBeHidden();
+  await expect(panel.getByRole("tabpanel")).toHaveCount(1);
+  await panel
+    .getByLabel("Reference-inspired look", { exact: true })
+    .selectOption({ label: "Kurzgesagt-inspired" });
+  await panel
+    .getByLabel("Editing & pacing style", { exact: true })
+    .selectOption({ label: "Match-cut montage" });
+  await panel
+    .getByLabel("Visual style", { exact: true })
+    .fill("Ink blue and warm gold");
+  await select("Identity");
+  await panel
+    .getByLabel("Character / subject identity", { exact: true })
+    .fill("A small robot with one blue eye");
+  await select("Typography");
+  await panel
+    .getByLabel("Exact on-screen text (optional)", { exact: true })
+    .fill("THE MILKY WAY");
+  await panel
+    .getByLabel("Subtitles", { exact: true })
+    .selectOption("Phrase subtitles");
+  await panel
+    .getByLabel("Text animation", { exact: true })
+    .selectOption("Word reveal");
+  await panel.getByLabel("Title size (px)", { exact: true }).fill("");
+  await panel
+    .getByLabel("Title size (px)", { exact: true })
+    .pressSequentially("96");
+  await panel.getByLabel("Subtitle size (px)", { exact: true }).fill("44");
+  await panel
+    .getByLabel("Title placement", { exact: true })
+    .selectOption("Top left");
+  await panel.getByLabel("Text color", { exact: true }).fill("#ffeedd");
+  await panel
+    .getByLabel("Entrance time (seconds)", { exact: true })
+    .fill("0.6");
+  await expect(panel.getByTestId("typography-title-preview")).toHaveCSS(
+    "font-size",
+    "96px",
+  );
+  await expect(panel.getByTestId("typography-title-preview")).toHaveCSS(
+    "color",
+    "rgb(255, 238, 221)",
+  );
+  await panel
+    .getByRole("button", { name: "Replay typography preview", exact: true })
+    .click();
+  await expect(panel.locator(".type-preview-word").last()).toHaveCSS(
+    "opacity",
+    "1",
+  );
+  await page.screenshot({ path: "test-results/typography-studio.png" });
+  await select("Brief");
   const duration = panel.getByLabel("Prompt duration (seconds)");
   await duration.fill("");
   await expect(duration).toHaveValue("");
   await duration.pressSequentially("9.5");
   await duration.press("Enter");
-  await expect(duration).toHaveValue("9.5");
   await panel
     .getByLabel("Prompt script", { exact: true })
     .fill("Zoom into the Milky Way.");
-  await panel
-    .getByLabel("Visual style", { exact: true })
-    .fill("Ink blue and warm gold");
   await panel.getByRole("button", { name: "Use narration duration" }).click();
-  await expect(panel.getByLabel("Prompt duration (seconds)")).toHaveValue(
-    "1.2",
-  );
+  await expect(duration).toHaveValue("1.2");
   await panel
     .getByRole("button", {
       name: "Use Perspective / parallax template",
@@ -222,36 +300,59 @@ test("prompt templates build, copy and preserve a brief without an AI connection
     })
     .click();
   await panel.getByRole("button", { name: "Copy prompt", exact: true }).click();
-  await expect(panel.getByRole("status")).toContainText("Prompt copied");
   const copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toContain("Zoom into the Milky Way.");
-  expect(copied).toContain("Ink blue and warm gold");
-  expect(copied).toContain("Duration: 1.2 seconds");
-  expect(copied).toContain("window.renderFrame");
-  expect(copied).toContain("preserve-3d");
-  await panel.locator("summary").filter({ hasText: "Output settings" }).click();
+  for (const value of [
+    "Zoom into the Milky Way.",
+    "Ink blue and warm gold",
+    "Duration: 1.2 seconds",
+    "window.renderFrame",
+    "preserve-3d",
+    "A small robot with one blue eye",
+    "CONTINUITY LOCK",
+    "Kurzgesagt-inspired",
+    "Match-cut montage",
+    "THE MILKY WAY",
+    "Phrase subtitles",
+    "Word reveal",
+    "Title / label font size: 96px; subtitle font size: 44px",
+    "Title placement: Top left",
+    "Text entrance duration: 0.6 seconds",
+  ])
+    expect(copied).toContain(value);
+  await select("Output");
   await panel.getByLabel("Prompt output format").selectOption("separate");
   await page.getByRole("button", { name: "Code panel", exact: true }).click();
   await page
     .getByRole("button", { name: "Prompts panel", exact: true })
     .click();
-  await expect(panel.getByLabel("Prompt script", { exact: true })).toHaveValue(
-    "Zoom into the Milky Way.",
-  );
+  await expect(
+    tabs.getByRole("tab", { name: "Output", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
   await page.reload();
   await page
     .getByRole("button", { name: "Prompts panel", exact: true })
     .click();
-  await panel.locator("summary").filter({ hasText: "Output settings" }).click();
+  await expect(
+    tabs.getByRole("tab", { name: "Output", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
   await expect(panel.getByLabel("Prompt output format")).toHaveValue(
     "separate",
   );
+  await select("Typography");
+  await expect(panel.getByLabel("Subtitles", { exact: true })).toHaveValue(
+    "Phrase subtitles",
+  );
+  await expect(
+    panel.getByLabel("Title size (px)", { exact: true }),
+  ).toHaveValue("96");
+  await select("Brief");
   await panel
     .getByRole("button", {
       name: "Use Repair existing code template",
       exact: true,
     })
     .click();
+  await select("Output");
   await expect(
     panel.getByRole("checkbox", {
       name: "Include active timeline code for repair or adaptation",
@@ -261,9 +362,13 @@ test("prompt templates build, copy and preserve a brief without an AI connection
   await expect(panel.getByLabel("Generated prompt")).toContainText(
     "EXISTING CODE TO REPAIR",
   );
-  await panel.locator(".prompt-form-scroll").evaluate((element) => {
-    element.scrollTop = 0;
-  });
+  await select("Look & edit");
+  await tabs
+    .getByRole("tab", { name: "Look & edit", exact: true })
+    .press("ArrowRight");
+  await expect(
+    tabs.getByRole("tab", { name: "Identity", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
   const footer = (await panel.locator(".prompt-actions").boundingBox())!;
   const body = (await panel.locator(".prompt-form-scroll").boundingBox())!;
   expect(footer.y).toBeGreaterThanOrEqual(body.y + body.height - 1);

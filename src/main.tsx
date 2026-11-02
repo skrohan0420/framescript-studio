@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./style.css";
+import "./studio-theme.css";
 class Boundary extends React.Component<
   { children: React.ReactNode },
   { error: string }

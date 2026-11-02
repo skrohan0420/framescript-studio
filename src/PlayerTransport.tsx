@@ -6,6 +6,7 @@ import {
   RotateCcw,
   Square,
   Minimize2,
+  Gauge,
 } from "lucide-react";
 import { useStudio } from "./store";
 import { totalDuration } from "../shared/workflow";
@@ -81,7 +82,7 @@ export function PlayerTransport({
         </code>
         <span className="toolbar-spacer" />
         <label className="player-speed">
-          Speed
+          <Gauge size={15} aria-hidden="true" />
           <select
             aria-label="Film speed"
             title="Film speed · also used for export"

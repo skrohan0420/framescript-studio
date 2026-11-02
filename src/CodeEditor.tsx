@@ -33,14 +33,14 @@ monaco.editor.defineTheme("framescript-dark", {
     { token: "keyword", foreground: "80BFFF" },
   ],
   colors: {
-    "editor.background": "#151B23",
-    "editor.foreground": "#DCE5EF",
-    "editorLineNumber.foreground": "#738397",
-    "editorLineNumber.activeForeground": "#DCE5EF",
-    "editor.lineHighlightBackground": "#202A36",
-    "editor.selectionBackground": "#294D76",
-    "editorCursor.foreground": "#80BFFF",
-    "editorIndentGuide.background1": "#2B3644",
+    "editor.background": "#141417",
+    "editor.foreground": "#F4F4F5",
+    "editorLineNumber.foreground": "#A5A5AF",
+    "editorLineNumber.activeForeground": "#F4F4F5",
+    "editor.lineHighlightBackground": "#242428",
+    "editor.selectionBackground": "#26413D",
+    "editorCursor.foreground": "#39D8C7",
+    "editorIndentGuide.background1": "#343439",
   },
 });
 monaco.editor.defineTheme("framescript-light", {
@@ -48,12 +48,12 @@ monaco.editor.defineTheme("framescript-light", {
   inherit: true,
   rules: [],
   colors: {
-    "editor.background": "#FFFFFF",
-    "editor.foreground": "#243246",
-    "editorLineNumber.foreground": "#77869A",
-    "editor.lineHighlightBackground": "#F1F5F9",
-    "editor.selectionBackground": "#D7E9FF",
-    "editorCursor.foreground": "#1769CC",
+    "editor.background": "#FBFBFC",
+    "editor.foreground": "#19191D",
+    "editorLineNumber.foreground": "#62626C",
+    "editor.lineHighlightBackground": "#EFEFF2",
+    "editor.selectionBackground": "#D6EBE5",
+    "editorCursor.foreground": "#06766B",
   },
 });
 

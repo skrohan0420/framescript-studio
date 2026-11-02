@@ -136,7 +136,6 @@ export function ProjectInspector({
             <Film size={17} />
             <div>
               <h3>Project details</h3>
-              <p>Your composition at a glance</p>
             </div>
           </div>
           <dl className="project-detail-list">

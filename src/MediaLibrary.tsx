@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FileAudio,
   ImagePlus,
@@ -13,6 +13,8 @@ import {
   ChevronUp,
   LoaderCircle,
   RotateCcw,
+  Play,
+  Pause,
 } from "lucide-react";
 import { useProjectState, useStudio } from "./store";
 import { audioDetails, clipFromAudio, readData } from "./audio";
@@ -24,6 +26,7 @@ import {
 import { withAudioClip } from "../shared/narration";
 import type { AudioClip } from "../shared/project";
 import { AudioWaveform } from "./AudioWaveform";
+import { SilenceEditor } from "./SilenceEditor";
 import { DimensionsControl } from "./DimensionsControl";
 import { bridge } from "./bridge";
 import { transcriptSrt } from "../shared/transcript";
@@ -74,6 +77,35 @@ export function MediaLibrary({
   const [importing, setImporting] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const previewPlayer = useRef<HTMLAudioElement | null>(null);
+  const timelinePlaying = useStudio((state) => state.playing);
+  const stopPreview = () => {
+    if (previewPlayer.current) {
+      previewPlayer.current.pause();
+      previewPlayer.current.removeAttribute("src");
+      previewPlayer.current.load();
+      previewPlayer.current = null;
+    }
+    setPreviewId(null);
+  };
+  useEffect(
+    () => () => {
+      previewPlayer.current?.pause();
+      previewPlayer.current?.removeAttribute("src");
+      previewPlayer.current = null;
+    },
+    [],
+  );
+  useEffect(() => {
+    if (
+      mode !== "audio" ||
+      timelinePlaying ||
+      (previewId &&
+        !project.audioLibrary?.some((source) => source.id === previewId))
+    )
+      stopPreview();
+  }, [mode, timelinePlaying, project.audioLibrary, previewId]);
   const inspectAudio = (source: AudioClip) => {
     setSelectedSource(source.id);
     const instance = project.audio?.find(
@@ -82,6 +114,24 @@ export function MediaLibrary({
         (!clip.sceneId || clip.sceneId === project.workflow?.selectedId),
     );
     if (instance) onSelectAudio(instance.id);
+    if (previewId === source.id) {
+      stopPreview();
+      return;
+    }
+    stopPreview();
+    useStudio.getState().setPlaying(false);
+    const player = new Audio(source.data);
+    previewPlayer.current = player;
+    player.volume = 0.7;
+    player.onended = () => {
+      if (previewPlayer.current === player) stopPreview();
+    };
+    setPreviewId(source.id);
+    void player.play().catch((error) => {
+      if (previewPlayer.current !== player) return;
+      stopPreview();
+      onError("Could not preview this audio: " + error.message);
+    });
   };
   const addAudioSource = (source: AudioClip) => {
     try {
@@ -516,17 +566,39 @@ export function MediaLibrary({
               <article
                 className={`media-tile audio-library-tile ${selectedSource === clip.id || project.audio?.some((item) => item.id === selectedAudio && item.data === clip.data) ? "selected" : ""}`}
                 key={clip.id}
+                onClickCapture={(event) => {
+                  if (
+                    !(event.target as Element).closest(
+                      ".media-thumbnail, .media-caption",
+                    )
+                  )
+                    stopPreview();
+                }}
               >
                 <button
                   className="media-thumbnail audio-thumbnail"
                   draggable
-                  title="Drag this recording onto the timeline"
-                  onDragStart={(event) => { event.dataTransfer.setData(audioDragType, clip.id); event.dataTransfer.effectAllowed = "copy"; }}
+                  title={
+                    previewId === clip.id
+                      ? "Stop preview"
+                      : "Click to preview · drag onto the timeline"
+                  }
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData(audioDragType, clip.id);
+                    event.dataTransfer.effectAllowed = "copy";
+                  }}
                   onClick={() => inspectAudio(clip)}
                   aria-label={`Inspect ${clip.name}`}
+                  aria-pressed={previewId === clip.id}
                 >
                   <AudioWaveform clip={clip} thumbnail />
-                  <FileAudio size={18} />
+                  <span className="audio-preview-control">
+                    {previewId === clip.id ? (
+                      <Pause size={16} />
+                    ) : (
+                      <Play size={16} />
+                    )}
+                  </span>
                   <span className="media-type-badge">{clip.lane}</span>
                   <span className="media-duration">
                     {clip.duration.toFixed(1)}s
@@ -539,11 +611,14 @@ export function MediaLibrary({
                 >
                   {clip.name}
                 </button>
-                <small>
-                  Source recording ·{" "}
+                <small
+                  className="audio-source-meta"
+                  title="Copies used in timelines"
+                >
+                  <FileAudio size={12} aria-hidden="true" />{" "}
                   {project.audio?.filter((item) => item.data === clip.data)
                     .length ?? 0}{" "}
-                  timeline clips
+                  clips
                 </small>
                 <button
                   className="audio-library-add"
@@ -551,9 +626,33 @@ export function MediaLibrary({
                   title="Add a fresh copy to the timeline"
                   onClick={() => addAudioSource(clip)}
                 >
-                  <Plus size={13} /> Add to timeline
+                  <Plus size={15} />
                 </button>
-                <button className="audio-library-remove" aria-label={`Remove ${clip.name} from library`} title="Remove this recording from the library; timeline copies are kept" onClick={() => { change({ audioLibrary: project.audioLibrary?.filter((source) => source.id !== clip.id) }, "Remove library recording"); if (selectedSource === clip.id) setSelectedSource(null); }}><X size={12} /> Remove</button>
+                <button
+                  className="audio-library-remove"
+                  aria-label={`Remove ${clip.name} from library`}
+                  title="Remove this recording from the library; timeline copies are kept"
+                  onClick={() => {
+                    change(
+                      {
+                        audioLibrary: project.audioLibrary?.filter(
+                          (source) => source.id !== clip.id,
+                        ),
+                      },
+                      "Remove library recording",
+                    );
+                    if (selectedSource === clip.id) setSelectedSource(null);
+                  }}
+                >
+                  <X size={15} />
+                </button>
+                {clip.lane === "voice" && (
+                  <SilenceEditor
+                    key={clip.data.slice(-64) + clip.id}
+                    clip={clip}
+                    onError={onError}
+                  />
+                )}
                 {clip.lane === "voice" && (
                   <div className="audio-text-actions">
                     <div

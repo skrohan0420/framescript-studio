@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Plus, ArrowDownToLine, Square } from "lucide-react";
+import { X, Plus, ArrowDownToLine, Square, Minus } from "lucide-react";
 import { download } from "./bridge";
 import type { ExportJob } from "./useExports";
 
@@ -17,6 +17,7 @@ export function ExportDock({
   onNew: () => void;
 }) {
   const dock = useRef<HTMLElement>(null);
+  const [minimized, setMinimized] = useState(false);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(
     () => {
       try {
@@ -82,6 +83,7 @@ export function ExportDock({
     handle.addEventListener("lostpointercapture", end);
   };
   const running = jobs.filter((job) => job.status === "running").length;
+  const finished = jobs.filter((job) => job.status !== "running");
   return (
     <section
       ref={dock}
@@ -135,15 +137,40 @@ export function ExportDock({
             {running > 0 ? `${running} in progress` : `${jobs.length} finished`}
           </span>
         </strong>
-        <button
-          aria-label="Export another timeline"
-          title="Export current timeline"
-          onClick={onNew}
-        >
-          <Plus size={16} />
-        </button>
+        <div className="export-panel-controls">
+          <button
+            aria-label="Export another timeline"
+            title="Export current timeline"
+            onClick={onNew}
+          >
+            <Plus size={16} />
+          </button>
+          <button
+            aria-label={
+              minimized ? "Expand exports panel" : "Minimize exports panel"
+            }
+            title={minimized ? "Expand exports" : "Minimize exports"}
+            onClick={() => setMinimized((value) => !value)}
+          >
+            {minimized ? <span>Show</span> : <Minus size={16} />}
+          </button>
+          <button
+            aria-label="Dismiss exports panel"
+            title={
+              running
+                ? "Hide panel; active exports continue"
+                : "Dismiss all finished exports"
+            }
+            onClick={() => {
+              if (running) setMinimized(true);
+              else finished.forEach((job) => onDismiss(job.id));
+            }}
+          >
+            <X size={16} />
+          </button>
+        </div>
       </div>
-      <div className="export-job-list">
+      <div className="export-job-list" hidden={minimized}>
         {jobs.map((job) => {
           const done = job.progress?.done ?? 0,
             total = job.progress?.total ?? 0;
@@ -190,7 +217,7 @@ export function ExportDock({
                     title="Cancel export"
                     onClick={() => onCancel(job.id)}
                   >
-                    <Square size={11} />
+                    <Square size={11} /> <span>Cancel</span>
                   </button>
                 ) : (
                   <button
@@ -232,6 +259,32 @@ export function ExportDock({
           );
         })}
       </div>
+      {!minimized && (running > 0 || finished.length > 0) && (
+        <div className="export-panel-actions">
+          {running > 0 && (
+            <button
+              aria-label="Cancel all exports"
+              title="Cancel all exports"
+              onClick={() =>
+                jobs
+                  .filter((job) => job.status === "running")
+                  .forEach((job) => onCancel(job.id))
+              }
+            >
+              <Square size={12} /> Cancel all
+            </button>
+          )}
+          {finished.length > 0 && (
+            <button
+              aria-label="Dismiss finished"
+              title="Dismiss finished exports"
+              onClick={() => finished.forEach((job) => onDismiss(job.id))}
+            >
+              <X size={13} /> Clear finished
+            </button>
+          )}
+        </div>
+      )}
     </section>
   );
 }

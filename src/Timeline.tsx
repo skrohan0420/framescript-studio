@@ -18,6 +18,7 @@ import {
   Square,
   Magnet,
   Scissors,
+  Search,
 } from "lucide-react";
 import { useStudio, useProjectState } from "./store";
 import {
@@ -238,7 +239,15 @@ export const Timeline = memo(function Timeline({
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollViewportWidth, setScrollViewportWidth] = useState(0);
-  useLayoutEffect(() => { const element = scrollRef.current; if (!element) return; const update = () => setScrollViewportWidth(element.clientWidth); update(); const observer = new ResizeObserver(update); observer.observe(element); return () => observer.disconnect(); }, []);
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const update = () => setScrollViewportWidth(element.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const [boxSelection, setBoxSelection] = useState<
     { kind: string; id: string; sceneId: string }[]
   >([]);
@@ -954,7 +963,7 @@ export const Timeline = memo(function Timeline({
           <Magnet size={16} />
         </button>
         <label className="timeline-zoom">
-          Zoom
+          <Search size={14} aria-hidden="true" />
           <input
             aria-label="Timeline zoom"
             type="range"
@@ -1049,7 +1058,14 @@ export const Timeline = memo(function Timeline({
         </select>
       </div>
       {navigation}
-      <div className="timeline-track-scroll" ref={scrollRef} style={{ paddingRight: Math.max(0, scrollViewportWidth - 128) }} onPointerDown={(event) => { if (event.target === event.currentTarget) beginBox(event); }}>
+      <div
+        className="timeline-track-scroll"
+        ref={scrollRef}
+        style={{ paddingRight: Math.max(0, scrollViewportWidth - 128) }}
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) beginBox(event);
+        }}
+      >
         <div
           className="timeline-track-canvas"
           ref={canvasRef}

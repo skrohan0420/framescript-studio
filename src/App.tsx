@@ -9,6 +9,7 @@ import {
 } from "react";
 import Editor from "./LazyEditor";
 import { PromptTemplates } from "./PromptTemplates";
+import { readEditorTabs, saveEditorTabs } from "./editor-tabs";
 import { ClipsPanel } from "./ClipsPanel";
 import { TypographyPanel } from "./TypographyPanel";
 import { ProjectHome } from "./ProjectHome";
@@ -26,6 +27,8 @@ import {
   FileText,
   Home,
   CaseSensitive,
+  Palette,
+  Braces,
   Music,
   Film,
   Library,
@@ -123,6 +126,7 @@ export function App() {
   const [masterMode, setMasterMode] = useState(false);
   const [productionMode, setProductionMode] = useState(true);
   const [leftView, setLeftView] = useState("code");
+  const [promptsOpen, setPromptsOpen] = useState(false);
   const [libraryTool, setLibraryTool] = useState("script");
   const [libraryToolLoaded, setLibraryToolLoaded] = useState(false);
   const [selectedAudio, setSelectedAudio] = useState<string>();
@@ -136,7 +140,7 @@ export function App() {
   const placement = followFrame
     ? { ...imagePlacement, width: p.settings.width, height: p.settings.height }
     : imagePlacement;
-  const [assetsCollapsed, setAssetsCollapsed] = useState(false);
+  const [assetsCollapsed, setAssetsCollapsed] = useState(true);
   const [pasteDocument, setPasteDocument] = useState("");
   const [pasteError, setPasteError] = useState("");
   const jumpLine = useRef<{ line: number; column: number } | null>(null);
@@ -159,7 +163,12 @@ export function App() {
     s.setPlaying(false);
     setSelect(false);
   };
-  const [tab, setTab] = useState<Tab>("html"),
+  const [tab, setTab] = useState<Tab>(() => {
+      const saved = readEditorTabs().codeTab;
+      return ["all", "html", "css", "js", "split"].includes(saved ?? "")
+        ? (saved as Tab)
+        : "html";
+    }),
     [combinedDraft, setCombinedDraft] = useState(""),
     [parseError, setParseError] = useState("");
   const [run, setRun] = useState(0),
@@ -302,6 +311,9 @@ export function App() {
   useEffect(() => {
     void act(async () => {
       const layout = await bridge.call("settingsGet");
+      const rememberedTabs = readEditorTabs();
+      const savedLeftView = rememberedTabs.leftView ?? layout.leftView;
+      const savedRightTab = rememberedTabs.rightTab ?? layout.rightTab;
       if (layout.leftWidth) setLeftWidth(layout.leftWidth);
       if (layout.rightWidth) setRightWidth(layout.rightWidth);
       if (layout.fontSize) setFontSize(layout.fontSize);
@@ -316,7 +328,7 @@ export function App() {
       if (layout.provider) setProvider(layout.provider);
       if (layout.model) setModel(layout.model);
       if (
-        layout.leftView &&
+        savedLeftView &&
         [
           "media",
           "clips",
@@ -330,12 +342,16 @@ export function App() {
           "voice",
           "sound",
           "mascot",
-        ].includes(layout.leftView)
+        ].includes(savedLeftView) &&
+        (!manualMode ||
+          ["media", "audio", "code", "clips", "typography"].includes(
+            savedLeftView,
+          ))
       ) {
-        setLeftView(layout.leftView);
-        setProductionMode(layout.leftView !== "code");
-        if (!["media", "audio", "code"].includes(layout.leftView)) {
-          setLibraryTool(layout.leftView);
+        setLeftView(savedLeftView);
+        setProductionMode(savedLeftView !== "code");
+        if (!["media", "audio", "code"].includes(savedLeftView)) {
+          setLibraryTool(savedLeftView);
           setLibraryToolLoaded(true);
         }
       }
@@ -345,10 +361,10 @@ export function App() {
       }
       if (
         ["project", "assistant", "properties", "history"].includes(
-          layout.rightTab,
+          savedRightTab,
         )
       )
-        setRightTab(layout.rightTab);
+        setRightTab(savedRightTab);
       if (typeof layout.reviewAI === "boolean") setReviewAI(layout.reviewAI);
       const workspace = await bridge.call("workspaceGet");
       if (workspace) {
@@ -369,10 +385,8 @@ export function App() {
         setChat(editor.sceneChats[chatScene.current] ?? []);
       }
       if (manualMode) {
-        setLeftView("code");
         setProductionMode(false);
         setLeftHidden(false);
-        setRightTab("project");
       }
       setStorageReady(true);
       const keyConfigured = await bridge.call("hasKey");
@@ -385,6 +399,10 @@ export function App() {
       else exports.onProgress(data);
     });
   }, []);
+  useEffect(() => {
+    if (!storageReady) return;
+    saveEditorTabs(leftView, rightTab, tab);
+  }, [storageReady, leftView, rightTab, tab]);
   useEffect(() => {
     if (!storageReady) return;
     const id = setTimeout(
@@ -1006,6 +1024,11 @@ export function App() {
     }
   }, [queuedSceneGeneration, p.workflow?.selectedId, busy]);
   const selectLeftView = (view: string) => {
+    if (view === "prompts") {
+      setPromptsOpen((value) => !value);
+      return;
+    }
+    setPromptsOpen(false);
     setLeftView(view);
     setProductionMode(view !== "code");
     setLeftHidden(false);
@@ -1333,6 +1356,20 @@ export function App() {
           </>
         )}
         <button
+          className={
+            promptsOpen
+              ? "prompt-toolbar-toggle active"
+              : "prompt-toolbar-toggle"
+          }
+          aria-label="Prompts panel"
+          aria-expanded={promptsOpen}
+          aria-controls="prompt-builder-panel"
+          title="Prompt builder"
+          onClick={() => setPromptsOpen((value) => !value)}
+        >
+          <Sparkles size={17} />
+        </button>
+        <button
           aria-label={light ? "Switch to dark theme" : "Switch to light theme"}
           title={light ? "Switch to dark theme" : "Switch to light theme"}
           onClick={() => setLight(!light)}
@@ -1418,6 +1455,23 @@ export function App() {
           gridTemplateColumns: `${visibleLeftWidth}px ${leftHidden ? "0" : "5"}px minmax(250px,1fr) ${rightHidden ? "0" : "5"}px ${visibleRightWidth}px`,
         }}
       >
+        {promptsOpen && (
+          <aside
+            id="prompt-builder-panel"
+            className="prompt-drawer"
+            aria-label="Prompt builder panel"
+          >
+            <PromptTemplates
+              master={masterMode}
+              onClose={() => setPromptsOpen(false)}
+              onPaste={() => {
+                selectLeftView("code");
+                setPasteError("");
+                setModal("paste-code");
+              }}
+            />
+          </aside>
+        )}
         <aside
           className="code-panel"
           style={{ visibility: leftHidden ? "hidden" : "visible" }}
@@ -1432,7 +1486,6 @@ export function App() {
               { id: "scenes", label: "Scenes", icon: Film },
               { id: "components", label: "Layouts", icon: Layers },
               { id: "code", label: "Code", icon: Code2 },
-              { id: "prompts", label: "Prompts", icon: FileText },
             ]
               .filter(
                 ({ id }) =>
@@ -1450,7 +1503,7 @@ export function App() {
                 <button
                   key={id}
                   className={
-                    id === leftView ||
+                    (id === "prompts" ? promptsOpen : id === leftView) ||
                     (id === "audio" && ["voice", "sound"].includes(leftView))
                       ? "active"
                       : ""
@@ -1479,16 +1532,6 @@ export function App() {
             <ClipsPanel
               onSelect={() => setMasterMode(false)}
               onEdit={() => selectLeftView("code")}
-            />
-          )}
-          {leftView === "prompts" && (
-            <PromptTemplates
-              master={masterMode}
-              onPaste={() => {
-                selectLeftView("code");
-                setPasteError("");
-                setModal("paste-code");
-              }}
             />
           )}
           {(leftView === "media" || leftView === "audio") && (
@@ -1665,22 +1708,34 @@ export function App() {
                   </div>
                 )}
                 <div className="editor-tabs">
-                  {(["html", "css", "js", "all", "split"] as Tab[]).map((t) => (
+                  {(["all", "html", "css", "js", "split"] as Tab[]).map((t) => (
                     <button
                       key={t}
+                      aria-label={t === "js" ? "JavaScript" : t.toUpperCase()}
+                      title={
+                        t === "js"
+                          ? "JavaScript"
+                          : t === "all"
+                            ? "Complete document"
+                            : t === "split"
+                              ? "Split editors"
+                              : t.toUpperCase()
+                      }
                       className={tab === t ? "active" : ""}
                       onClick={() => changeTab(t)}
                     >
-                      {t === "html"
-                        ? "< >"
-                        : t === "css"
-                          ? "#"
-                          : t === "js"
-                            ? "JS"
-                            : t === "all"
-                              ? "◈"
-                              : "▥"}{" "}
-                      <span>{t === "js" ? "JavaScript" : t.toUpperCase()}</span>
+                      {t === "html" ? (
+                        <Code2 size={13} />
+                      ) : t === "css" ? (
+                        <Palette size={13} />
+                      ) : t === "js" ? (
+                        <Braces size={13} />
+                      ) : t === "all" ? (
+                        <Layers size={13} />
+                      ) : (
+                        <Columns2 size={13} />
+                      )}
+                      <span>{t === "js" ? "JS" : t.toUpperCase()}</span>
                     </button>
                   ))}
                 </div>
