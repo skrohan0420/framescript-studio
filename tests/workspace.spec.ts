@@ -98,10 +98,12 @@ test("local Node backend saves, reopens, imports assets and downloads an MP4", a
   expect(video.suggestedFilename()).toMatch(/\.mp4$/);
   expect(await video.failure()).toBeNull();
   await video.saveAs("test-results/web-workflow.mp4");
-  await expect(page.getByRole("status")).toContainText("Export verified");
+  await expect(
+    page.getByRole("status").filter({ hasText: "Export verified" }),
+  ).toBeVisible();
   await page.screenshot({ path: "test-results/web-workspace.png" });
 });
-test("workspace executes preview, timeline, combined source, gallery and inspector", async ({
+test("workspace executes preview, timeline, combined source and inspector", async ({
   page,
 }) => {
   await page.goto("/#editor");
@@ -125,12 +127,9 @@ test("workspace executes preview, timeline, combined source, gallery and inspect
     .click();
   await preview.locator("#ball").click();
   await expect(page.getByText("div #ball", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Examples", exact: true }).click();
-  await page.getByRole("button", { name: "Glowing star Editable" }).click();
-  await expect(page.getByRole("textbox", { name: "Project name" })).toHaveValue(
-    "Glowing star",
-  );
-  await expect(preview.locator(".star")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Examples", exact: true }),
+  ).toHaveCount(0);
   await page.screenshot({ path: "test-results/workspace.png", fullPage: true });
 });
 test("failed preview preserves last valid frame and visual edits update source", async ({

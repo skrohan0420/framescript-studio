@@ -1,3 +1,31 @@
+## Compact draggable export panel — November 2, 2026
+
+Reduced the floating panel to 320px with compact filename/action rows, a single timeline/status line and 3px progress bars. Filenames restore details; icon controls retain accessible labels/tooltips, and frame counts move to progress-bar tooltips. The header supports pointer dragging and arrow-key movement (Shift for larger steps), remembers position within the browser tab, and clamps against viewport/panel resizing. Build/TypeScript and three focused production browser checks passed, including concurrent progress, download/cancel/restore, compact dimensions, dragging and window-size bounds. Screenshot: test-results/multiple-exports.png.
+
+## Concurrent timeline exports — November 2, 2026
+
+Replaced the single-export browser lock with individually identified export jobs. Select a timeline, render it, minimize, then select another timeline and start another export. The floating box lists all submitted clips with their timeline label, filename, resolution/frame rate, individual progress, queued/rendering/completed/cancelled/failed state and separate restore/cancel controls. Completed rows retain a manual Download action and can be dismissed. Opening Export from the toolbar or the floating plus button starts a new form for the current timeline; restoring a job shows its original settings. Each request retains its own submitted project snapshot and save-file handle.
+
+The local server schedules at most two exports concurrently across sessions. Further jobs wait FIFO, with up to ten active/queued jobs per browser. Progress events carry job IDs, reconnecting streams replay every pending job, and cancellation is scoped to the caller's job map. Queued and early-upload cancellation are handled without cancelling unrelated clips. Old calls without IDs remain supported. Queue/history state is in memory, so reload/restart recovery remains outside this change.
+
+Validation: build/TypeScript, 104 unit tests and all 52 production browser checks passed. Real HTTP tests launch two concurrent exports and a third queued export, cancel one running and one queued job independently, verify a second browser cannot cancel the remaining clip, verify its separate MP4 download, reject duplicate active IDs, check early cancellation, and confirm partial-file cleanup. The browser test submits three independent timeline sources and verifies separate progress, queued status, cancellation, retained snapshots and two separate downloads. Screenshot: test-results/multiple-exports.png. The local saved database was backed up before restarting the backend; refresh the app to load the new workflow.
+
+## Background export and startup recovery — November 2, 2026
+
+Export can now be minimized with the minus icon beside Close. Rendering continues with a bottom-right floating card showing filename, stage, percentage/frame counts, restore and cancel actions. The card remains available on Project home. Reopening Export retains the active job/options; editing does not change the submitted render. Successful completion still downloads the file and leaves other editing dialogs open. Background errors remain visible until dismissed.
+
+Investigated the reported 0% stall through the live backend: a short export failed at browser launch with a missing-executable report even though a fresh Chromium process launched successfully. Backed up the saved database, restarted the stale backend, and successfully exported a short 4K/60 sample of the saved project with audio. Browser startup now has its own progress stage; missing-browser errors include repair instructions, appear inside the export dialog, and clear stale progress. Completed/failed server jobs no longer retain old progress for reconnecting event streams.
+
+Validation: production build/TypeScript and all 102 unit tests passed. Nine distinct focused browser checks passed, including minimize/live progress, settings preservation, continued editing, download completion, home restore/cancel, inline errors/retry and existing MP4 export workflows. Evidence: test-results/background-export.png and export-header-controls.png. Background progress survives minimizing and app navigation; closing or reloading the browser tab is not a resumable export workflow.
+
+## Faster 4K video export — November 2, 2026
+
+Opaque MP4/MKV/WebM exports now default to maximum-quality (100) JPEG frame capture. Export → Rendering offers Lossless frame capture to retain PNG intermediates. Transparent video, quality-zero output, GIF, PNG and PNG sequence exports stay on PNG. Output dimensions, frame timestamps, frame count, hardware encoder selection, audio mixing and verification are preserved. JPEG adds a lossy intermediate; this is disclosed beside the setting.
+
+Same-machine one-second 3840×2160/60 fps synthetic canvas benchmark: lossless capture 14.54 seconds, faster default 8.16 seconds (43.9% less wall time, 1.78× throughput). Both outputs decode to 60 frames at 4K/60; FFmpeg SSIM comparison scored 0.998858. This is a synthetic-scene result, not a guarantee for every project. Four workers measured 14.84 seconds with PNG and 8.13 seconds with JPEG, so the default remains two at 4K. Evidence: test-results/export-benchmark/lossless-workers2.json, faster-default.json and capture-quality.txt.
+
+Validation: build/TypeScript, all 101 unit tests, six focused production browser checks, all-format rendering integration and audio/video workflow integration passed. New checks cover capture-mode safeguards, per-frame pixel-error bounds and frame order, transparent pixels even when JPEG is requested, cancellation cleanup, UI selection and transparency override. Restart the local backend and refresh the browser to load the new export option.
+
 # Current verification — November 2, 2026
 
 Production build and TypeScript passed. All 99 unit tests in 24 files and all 48 active production browser tests passed. Server HTTP/security/storage checks, credential restart/forgetting checks, all six rendering formats, cancellation/cleanup and audible audio/video workflow exports passed locally. The browser suite includes a real MP4 download and manual code/name persistence with preservation of imported narration.

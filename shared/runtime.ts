@@ -180,6 +180,7 @@ export function documentFor(
   p: Project,
   options?: {
     export?: boolean;
+    exportTransportOrigin?: string;
     transparent?: boolean;
     standalone?: boolean;
     sourceOffset?: number;
@@ -202,7 +203,12 @@ export function documentFor(
     js = js.split(key).join(data);
   }
   const remote = p.settings.network ? " https: http:" : "";
-  const csp = `default-src 'none'; frame-src about:; script-src 'unsafe-inline'${remote}; style-src 'unsafe-inline'${remote}; img-src data: blob:${remote}; font-src data:${remote}; media-src data:; connect-src${remote || " 'none'"}; base-uri 'none'; form-action 'none';`;
+  const transport =
+    options?.export &&
+    /^http:\/\/127\.0\.0\.1:\d+$/.test(options.exportTransportOrigin ?? "")
+      ? ` ${options.exportTransportOrigin}`
+      : "";
+  const csp = `default-src 'none'; frame-src about:; script-src 'unsafe-inline'${remote}; style-src 'unsafe-inline'${remote}; img-src data: blob:${remote}; font-src data:${remote}; media-src data:; connect-src${remote + transport || " 'none'"}; base-uri 'none'; form-action 'none';`;
   const safe = (s: string, tag: string) =>
     s.replace(new RegExp(`</${tag}`, "gi"), `<\\/${tag}`);
   const sourceOffset =

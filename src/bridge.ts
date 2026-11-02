@@ -40,10 +40,18 @@ export async function exportToFile(
   project: Project,
   options: ExportOptions,
   handle?: ExportFileHandle,
+  jobId?: string,
+  onReady?: (item: { url: string; name: string }) => void,
 ) {
   await ready();
-  const result = await rpc("export", project, options);
+  const result = await rpc(
+    "export",
+    project,
+    options,
+    ...(jobId ? [jobId] : []),
+  );
   if (!result?.url) return result;
+  onReady?.(result);
   if (!handle) return download(result);
   const response = await fetch(result.url, { credentials: "same-origin" });
   if (!response.ok) throw Error("Could not retrieve the rendered video.");
@@ -76,7 +84,7 @@ export interface Bridge {
   ) => Promise<RpcResults[K]>;
   onProgress: (fn: (p: any) => void) => () => void;
 }
-function download(item: { url: string; name: string }) {
+export function download(item: { url: string; name: string }) {
   const a = document.createElement("a");
   a.href = item.url;
   a.download = item.name;

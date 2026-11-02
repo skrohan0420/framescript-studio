@@ -12,8 +12,11 @@ import { PromptTemplates } from "./PromptTemplates";
 import { ClipsPanel } from "./ClipsPanel";
 import { TypographyPanel } from "./TypographyPanel";
 import { ProjectHome } from "./ProjectHome";
-import { chooseExportFile, exportToFile, supportsExportPicker } from "./bridge";
+import { chooseExportFile, supportsExportPicker } from "./bridge";
 import { ExportSettings } from "./ExportSettings";
+import { ExportDock } from "./ExportDock";
+import { TabIdentity } from "./TabIdentity";
+import { useExports } from "./useExports";
 import {
   imageMarkup,
   sizeError,
@@ -41,6 +44,7 @@ import {
   History,
   ImagePlus,
   Maximize2,
+  Minus,
   MousePointer2,
   Moon,
   Pause,
@@ -70,7 +74,6 @@ import {
   type Project,
   type ExportOptions,
 } from "../shared/project";
-import { examples } from "../shared/examples";
 import { useStudio, useProjectState } from "./store";
 import { Timeline } from "./Timeline";
 import { PlayerTransport } from "./PlayerTransport";
@@ -196,12 +199,21 @@ export function App() {
     >([]),
     [attached, setAttached] = useState<string[]>([]);
   const [notice, setNotice] = useState("Ready"),
-    [progress, setProgress] = useState<any>(null),
-    [exporting, setExporting] = useState(false),
+    [selectingExportFile, setSelectingExportFile] = useState(false),
+    [exportFormError, setExportError] = useState(""),
     [exportOptions, setExportOptions] = useState<ExportOptions | null>(null),
-    [recent, setRecent] = useState<string[]>([]),
     [recovery, setRecovery] = useState<Project | null>(null),
     [hasKey, setHasKey] = useState(false);
+  const exports = useExports();
+  const [selectedExportId, setSelectedExportId] = useState<string | null>(null);
+  const selectedExportRef = useRef<string | null>(null);
+  selectedExportRef.current = selectedExportId;
+  const selectedExport = exports.jobs.find(
+    (job) => job.id === selectedExportId,
+  );
+  const exporting = selectingExportFile || selectedExport?.status === "running";
+  const exportError = exportFormError || selectedExport?.error || "";
+  const progress = selectedExport?.progress;
   const [chooseExportLocation, setChooseExportLocation] = useState(false);
   const [leftWidth, setLeftWidth] = useState(340),
     [rightWidth, setRightWidth] = useState(340),
@@ -338,7 +350,6 @@ export function App() {
       )
         setRightTab(layout.rightTab);
       if (typeof layout.reviewAI === "boolean") setReviewAI(layout.reviewAI);
-      setRecent(await bridge.call("recents"));
       const workspace = await bridge.call("workspaceGet");
       if (workspace) {
         useStudio.getState().load(workspace);
@@ -371,7 +382,7 @@ export function App() {
     });
     return bridge.onProgress((data) => {
       if (data.kind === "ai") setAIProgress(data);
-      else setProgress(data);
+      else exports.onProgress(data);
     });
   }, []);
   useEffect(() => {
@@ -532,7 +543,6 @@ export function App() {
         );
         if (file) {
           useStudio.getState().saved(submitted.revision);
-          setRecent(await bridge.call("recents"));
           setNotice("Saved · " + file);
         }
       }),
@@ -866,7 +876,12 @@ export function App() {
     target.addEventListener("pointerup", end);
   };
   const openExport = () => {
+    setSelectedExportId(null);
+    setExportError("");
     setExportOptions({
+      fileName: masterMode
+        ? p.name
+        : `${p.name} - ${selectedScene(p)?.title || "Timeline"}`,
       format: "mp4",
       width: p.settings.width,
       height: p.settings.height,
@@ -882,34 +897,36 @@ export function App() {
   };
   const startExport = async () => {
     if (!exportOptions) return;
+    setExportError("");
+    let jobId: string | undefined;
+    const options = { ...exportOptions };
+    const snapshot = viewProject;
+    const timeline = masterMode
+      ? "Combined timelines"
+      : selectedScene(p)?.title || "Active timeline";
     try {
-      exportSchema.parse(exportOptions);
-    } catch (e) {
-      notify(e);
-      return;
-    }
-    setExporting(true);
-    setProgress(null);
-    try {
+      exportSchema.parse(options);
+      setSelectingExportFile(true);
       const handle = chooseExportLocation
-        ? await chooseExportFile(
-            exportOptions.fileName || p.name,
-            exportOptions.format,
-          )
+        ? await chooseExportFile(options.fileName || p.name, options.format)
         : undefined;
-      const destination = await exportToFile(
-        viewProject,
-        exportOptions,
-        handle,
-      );
+      const job = exports.start(snapshot, options, timeline, handle);
+      jobId = job.id;
+      setSelectedExportId(job.id);
+      setSelectingExportFile(false);
+      const destination = await job.finished;
       if (destination) {
         setNotice("Export verified · " + destination);
-        setModal("");
+        if (selectedExportRef.current === job.id)
+          setModal((current) => (current === "export" ? "" : current));
       }
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") notify(e);
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") {
+        if (!jobId) setExportError((error as Error).message);
+        notify(error);
+      }
     } finally {
-      setExporting(false);
+      setSelectingExportFile(false);
     }
   };
   const settings = (patch: Partial<Project["settings"]>) => {
@@ -1072,6 +1089,27 @@ export function App() {
       `Editing scene: ${selectedScene(useStudio.getState().project)?.title ?? "Selected scene"}`,
     );
   };
+  const exportDock =
+    exports.jobs.length > 0 && (showHome || modal !== "export") ? (
+      <ExportDock
+        jobs={exports.jobs}
+        onRestore={(id) => {
+          const job = exports.jobs.find((item) => item.id === id);
+          if (!job) return;
+          setSelectedExportId(id);
+          setExportOptions(job.options);
+          setExportError("");
+          enterEditor();
+          setModal("export");
+        }}
+        onCancel={exports.cancel}
+        onDismiss={exports.dismiss}
+        onNew={() => {
+          enterEditor();
+          openExport();
+        }}
+      />
+    ) : null;
   if (!storageReady)
     return (
       <main className="modal" role="status">
@@ -1084,59 +1122,63 @@ export function App() {
     );
   if (showHome)
     return (
-      <ProjectHome
-        onRenameCurrent={(name) => s.change({ name }, "Rename project")}
-        workspace={p}
-        onContinue={enterEditor}
-        onCreate={async (options) => {
-          await checkpointCurrent("Before creating project");
-          const current = useStudio.getState().project,
-            blank = newProject();
-          if (
-            current.name !== blank.name ||
-            current.html !== blank.html ||
-            current.css !== blank.css ||
-            current.js !== blank.js ||
-            current.audio?.length ||
-            current.assets.length
-          )
-            await bridge.call("projectSave", current, {
-              thumbnail: runtime?.thumbnail,
-            });
-          const project = {
-            ...newProject(),
-            name: options.name,
-            html: "",
-            css: "",
-            js: "window.renderFrame = (timeInSeconds) => {};",
-            settings: {
-              ...newProject().settings,
-              width: options.width,
-              height: options.height,
-              fps: options.fps,
-              duration: options.duration,
-            },
-          };
-          await bridge.call("projectSave", project, { create: true });
-          load(project);
-          selectLeftView(options.tool);
-          enterEditor();
-        }}
-        onOpen={async (id) => {
-          await checkpointCurrent("Before opening project");
-          load(await bridge.call("openRecent", id));
-          enterEditor();
-        }}
-        onImport={async () => {
-          await checkpointCurrent("Before importing project");
-          const project = await bridge.call("open");
-          if (project) {
+      <>
+        <TabIdentity name={p.name} home />
+        <ProjectHome
+          onRenameCurrent={(name) => s.change({ name }, "Rename project")}
+          workspace={p}
+          onContinue={enterEditor}
+          onCreate={async (options) => {
+            await checkpointCurrent("Before creating project");
+            const current = useStudio.getState().project,
+              blank = newProject();
+            if (
+              current.name !== blank.name ||
+              current.html !== blank.html ||
+              current.css !== blank.css ||
+              current.js !== blank.js ||
+              current.audio?.length ||
+              current.assets.length
+            )
+              await bridge.call("projectSave", current, {
+                thumbnail: runtime?.thumbnail,
+              });
+            const project = {
+              ...newProject(),
+              name: options.name,
+              html: "",
+              css: "",
+              js: "window.renderFrame = (timeInSeconds) => {};",
+              settings: {
+                ...newProject().settings,
+                width: options.width,
+                height: options.height,
+                fps: options.fps,
+                duration: options.duration,
+              },
+            };
             await bridge.call("projectSave", project, { create: true });
             load(project);
+            selectLeftView(options.tool);
             enterEditor();
-          }
-        }}
-      />
+          }}
+          onOpen={async (id) => {
+            await checkpointCurrent("Before opening project");
+            load(await bridge.call("openRecent", id));
+            enterEditor();
+          }}
+          onImport={async () => {
+            await checkpointCurrent("Before importing project");
+            const project = await bridge.call("open");
+            if (project) {
+              await bridge.call("projectSave", project, { create: true });
+              load(project);
+              enterEditor();
+            }
+          }}
+        />
+        {exportDock}
+      </>
     );
   return (
     <div
@@ -1147,6 +1189,7 @@ export function App() {
         void act(() => importFiles(e.dataTransfer.files));
       }}
     >
+      <TabIdentity name={p.name} />
       <input
         ref={fileRef}
         type="file"
@@ -1289,14 +1332,6 @@ export function App() {
             </button>
           </>
         )}
-        <button
-          className="text-button"
-          title="Examples"
-          aria-label="Examples"
-          onClick={() => setModal("examples")}
-        >
-          <Library size={17} />
-        </button>
         <button
           aria-label={light ? "Switch to dark theme" : "Switch to light theme"}
           title={light ? "Switch to dark theme" : "Switch to light theme"}
@@ -2769,48 +2804,21 @@ export function App() {
         </div>
       </Modal>
       <Modal
-        title="Example gallery & recent projects"
-        open={modal === "examples"}
-        onClose={() => setModal("")}
-      >
-        <div className="example-grid">
-          {examples.map((example, i) => (
-            <button key={example.name} onClick={() => requestLoad(example)}>
-              <span className={"example-art art-" + i}>
-                {["●", "Aa", "◌", "✧", "☀", "✦", "▥", "F", "◎", "▣"][i]}
-              </span>
-              <strong>{example.name}</strong>
-              <small>Editable · export ready</small>
-            </button>
-          ))}
-        </div>
-        {recent.length > 0 && (
-          <div className="recent-list">
-            <h3>Recent projects</h3>
-            {recent.map((file) => (
-              <button
-                key={file}
-                onClick={() =>
-                  void act(async () => {
-                    if (s.dirty && !confirm("Replace unsaved changes?")) return;
-                    await checkpointCurrent("Before opening recent project");
-                    const project = await bridge.call("openRecent", file);
-                    load(project);
-                  })
-                }
-              >
-                {file}
-              </button>
-            ))}
-          </div>
-        )}
-      </Modal>
-      <Modal
         title="Export animation"
         open={modal === "export"}
-        onClose={() => {
-          if (!exporting) setModal("");
-        }}
+        headerAction={
+          exporting ? (
+            <button
+              className="modal-window-action"
+              aria-label="Minimize export"
+              title="Minimize export"
+              onClick={() => setModal("")}
+            >
+              <Minus size={18} />
+            </button>
+          ) : undefined
+        }
+        onClose={() => setModal("")}
       >
         {exportOptions && (
           <>
@@ -2820,7 +2828,7 @@ export function App() {
                 <input
                   aria-label="Export file name"
                   maxLength={150}
-                  disabled={exporting}
+                  disabled={exporting || !!selectedExport}
                   value={exportOptions.fileName ?? p.name}
                   onChange={(event) =>
                     setExportOptions({
@@ -2834,7 +2842,9 @@ export function App() {
                 <input
                   type="checkbox"
                   aria-label="Choose where to save export"
-                  disabled={exporting || !supportsExportPicker()}
+                  disabled={
+                    exporting || !!selectedExport || !supportsExportPicker()
+                  }
                   checked={chooseExportLocation}
                   onChange={(event) =>
                     setChooseExportLocation(event.target.checked)
@@ -2851,7 +2861,7 @@ export function App() {
             <ExportSettings
               options={exportOptions}
               frame={p.settings}
-              disabled={exporting}
+              disabled={exporting || !!selectedExport}
               onChange={setExportOptions}
             />
             <p className="muted">
@@ -2866,7 +2876,16 @@ export function App() {
               MP4/MKV cannot preserve transparency. Audio is mixed into MP4, MKV
               and WebM; GIF and PNG outputs are silent.
             </p>
-            {progress && (
+            {exportError && (
+              <p
+                role="alert"
+                className="export-error"
+                style={{ overflowWrap: "anywhere" }}
+              >
+                Export failed: {exportError}
+              </p>
+            )}
+            {progress && !exportError && (
               <div className="export-progress">
                 <progress max={progress.total} value={progress.done} />
                 <p>
@@ -2883,18 +2902,35 @@ export function App() {
             )}
             <div className="modal-actions">
               {exporting ? (
-                <button onClick={() => void bridge.call("cancelExport")}>
-                  Cancel export
-                </button>
+                <>
+                  <button
+                    onClick={() =>
+                      selectedExportId && exports.cancel(selectedExportId)
+                    }
+                  >
+                    Cancel export
+                  </button>
+                </>
               ) : (
-                <button className="primary" onClick={() => void startExport()}>
-                  <ArrowDownToLine size={15} /> {chooseExportLocation ? "Render & save" : "Render & download"}
+                <button
+                  className="primary"
+                  onClick={() =>
+                    selectedExport ? openExport() : void startExport()
+                  }
+                >
+                  <ArrowDownToLine size={15} />{" "}
+                  {selectedExport
+                    ? "Export current timeline"
+                    : chooseExportLocation
+                      ? "Render & save"
+                      : "Render & download"}
                 </button>
               )}
             </div>
           </>
         )}
       </Modal>
+      {exportDock}
     </div>
   );
 }

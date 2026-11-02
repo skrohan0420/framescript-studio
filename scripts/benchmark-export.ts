@@ -51,17 +51,30 @@ await renderExport(
     }
   },
   undefined,
-  label.includes("jpeg")
-    ? { capture: "jpeg", workers: Number(label.match(/workers(\d)/)?.[1] ?? 2) }
-    : label.includes("workers")
-    ? { workers: Number(label.match(/workers(\d)/)?.[1] ?? 2) }
-    : label === "baseline"
-    ? { workers: 1, capture: "standard", encoder: "software", softwarePreset: "medium" }
-    : label.includes("software")
-    ? { encoder: "software" }
-    : label.includes("serial")
-      ? { workers: 1 }
-      : {},
+  label.includes("lossless")
+    ? { capture: "fast", workers: Number(label.match(/workers(\d)/)?.[1] ?? 2) }
+    : label.includes("jpeg")
+      ? {
+          capture: "jpeg",
+          workers: Number(label.match(/workers(\d)/)?.[1] ?? 2),
+        }
+      : label.includes("workers")
+        ? {
+            capture: "fast",
+            workers: Number(label.match(/workers(\d)/)?.[1] ?? 2),
+          }
+        : label === "baseline"
+          ? {
+              workers: 1,
+              capture: "standard",
+              encoder: "software",
+              softwarePreset: "medium",
+            }
+          : label.includes("software")
+            ? { encoder: "software" }
+            : label.includes("serial")
+              ? { workers: 1 }
+              : {},
 );
 const result = {
   label,

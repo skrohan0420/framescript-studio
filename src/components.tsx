@@ -6,12 +6,14 @@ export function Modal({
   open,
   onClose,
   children,
+  headerAction,
   wide = false,
 }: {
   title: string;
   open: boolean;
   onClose: () => void;
   children: ReactNode;
+  headerAction?: ReactNode;
   wide?: boolean;
 }) {
   return (
@@ -21,9 +23,12 @@ export function Modal({
         <Dialog.Content className={"modal" + (wide ? " modal-wide" : "")}>
           <div className="modal-head">
             <Dialog.Title>{title}</Dialog.Title>
-            <Dialog.Close aria-label="Close">
-              <X size={18} />
-            </Dialog.Close>
+            <div className="modal-head-actions">
+              {headerAction}
+              <Dialog.Close aria-label="Close">
+                <X size={18} />
+              </Dialog.Close>
+            </div>
           </div>
           <Dialog.Description className="sr-only">
             {title} controls

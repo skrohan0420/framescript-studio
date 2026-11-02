@@ -198,6 +198,7 @@ export function applyAI(p: Project, value: unknown): Project {
 export const exportSchema = z
   .object({
     acceleration: z.enum(["auto", "software"]).optional(),
+    captureMode: z.enum(["fast", "lossless"]).optional(),
     fileName: z.string().trim().min(1).max(150).optional(),
     format: z.enum(["mp4", "mkv", "webm", "gif", "sequence", "png"]),
     width: z.number().int().min(64).max(7680),

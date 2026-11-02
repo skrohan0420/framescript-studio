@@ -7,12 +7,19 @@ import { documentFor } from "../shared/runtime";
 import { mixAudio } from "./audio-export";
 import { runProcess } from "./process";
 import {
+  rawCanvasTransport,
+  RawCanvasUnsupported,
+  isolateRawCanvas,
+} from "./raw-canvas";
+import {
   renderWorkerCount,
+  captureFormat,
   selectVideoEncoder,
   disableHardwareEncoder,
   videoEncoderArgs,
   type VideoEncoder,
   type RenderTuning,
+  type RenderMetrics,
 } from "./export-plan";
 import {
   exportSchema,
@@ -38,50 +45,75 @@ export async function renderExport(
   tuning: RenderTuning = {},
 ) {
   const optionsParsed = exportSchema.parse(options);
-  if (["mp4", "mkv"].includes(optionsParsed.format) && optionsParsed.width * optionsParsed.height >= 1920 * 1080 && optionsParsed.acceleration !== "software" && tuning.encoder !== "software") progress({ stage: "Checking hardware acceleration", done: 0, total: frameTimes(optionsParsed).length, destination });
-  const selectedEncoder = await selectVideoEncoder(
+  if (
+    ["mp4", "mkv"].includes(optionsParsed.format) &&
+    optionsParsed.width * optionsParsed.height >= 1920 * 1080 &&
+    optionsParsed.acceleration !== "software" &&
+    tuning.encoder !== "software"
+  )
+    progress({
+      stage: "Checking hardware acceleration",
+      done: 0,
+      total: frameTimes(optionsParsed).length,
+      destination,
+    });
+  let selectedEncoder = await selectVideoEncoder(
     ffmpeg,
     optionsParsed,
     signal,
     tuning,
   );
-  try {
-    return await renderExportAttempt(
-      project,
-      optionsParsed,
-      destination,
-      ffmpeg,
-      signal,
-      progress,
-      executablePath,
-      tuning,
-      selectedEncoder,
-    );
-  } catch (error) {
-    if (
-      !(error instanceof EncoderFailure) ||
-      selectedEncoder === "libx264" ||
-      signal.aborted
-    )
-      throw error;
-    disableHardwareEncoder(ffmpeg, optionsParsed);
-    progress({
-      stage: "Retrying with software encoding",
-      done: 0,
-      total: frameTimes(optionsParsed).length,
-      destination,
-    });
-    return renderExportAttempt(
-      project,
-      optionsParsed,
-      destination,
-      ffmpeg,
-      signal,
-      progress,
-      executablePath,
-      tuning,
-      "libx264",
-    );
+  const directAllowed =
+    !project.settings.network &&
+    project.settings.timing === "seek" &&
+    !optionsParsed.transparent &&
+    ["mp4", "mkv", "webm"].includes(optionsParsed.format) &&
+    optionsParsed.width === project.settings.width &&
+    optionsParsed.height === project.settings.height;
+  let attemptTuning = {
+    ...tuning,
+    rawCanvas:
+      directAllowed &&
+      (tuning.rawCanvas ??
+        (!tuning.capture &&
+          optionsParsed.width * optionsParsed.height >= 1920 * 1080 &&
+          /<canvas\b/i.test(project.html))),
+  };
+  // Each fallback disables one path, so this loop can make at most three attempts.
+  for (;;) {
+    try {
+      return await renderExportAttempt(
+        project,
+        optionsParsed,
+        destination,
+        ffmpeg,
+        signal,
+        progress,
+        executablePath,
+        attemptTuning,
+        selectedEncoder,
+      );
+    } catch (error) {
+      if (signal.aborted) throw error;
+      let stage: string;
+      if (error instanceof RawCanvasUnsupported && attemptTuning.rawCanvas) {
+        attemptTuning = { ...attemptTuning, rawCanvas: false };
+        stage = "Using browser compositing";
+      } else if (
+        error instanceof EncoderFailure &&
+        selectedEncoder !== "libx264"
+      ) {
+        disableHardwareEncoder(ffmpeg, optionsParsed);
+        selectedEncoder = "libx264";
+        stage = "Retrying with software encoding";
+      } else throw error;
+      progress({
+        stage,
+        done: 0,
+        total: frameTimes(optionsParsed).length,
+        destination,
+      });
+    }
   }
 }
 class EncoderFailure extends Error {}
@@ -102,13 +134,28 @@ async function renderExportAttempt(
     o = exportSchema.parse(options);
   const times = o.format === "png" ? [o.time] : frameTimes(o);
   const sequence = o.format === "sequence";
-  const jpeg = tuning.capture === "jpeg" && !o.transparent && ["mp4", "mkv", "webm"].includes(o.format);
+  const jpeg = captureFormat(o, tuning) === "jpeg";
+  const metrics: RenderMetrics = {
+    encoder: videoEncoder,
+    workers: 0,
+    capture: jpeg ? "jpeg" : "png",
+    frames: 0,
+    bytes: 0,
+    seekMs: 0,
+    captureMs: 0,
+    decodeMs: 0,
+    backpressureMs: 0,
+    pipelineMs: 0,
+    encoderDrainMs: 0,
+    verificationMs: 0,
+  };
   const temp =
     destination +
     ".partial-" +
     crypto.randomUUID() +
     (sequence ? "" : "." + o.format);
   let browser: Browser | undefined;
+  let raw: Awaited<ReturnType<typeof rawCanvasTransport>> | undefined;
   let encoder: ReturnType<typeof spawn> | undefined;
   let logs = "";
   let closed: Promise<number | null> | undefined;
@@ -122,28 +169,58 @@ async function renderExportAttempt(
   signal.addEventListener("abort", abort, { once: true });
   try {
     check();
+    if (tuning.rawCanvas) {
+      if (!["mp4", "mkv", "webm"].includes(o.format))
+        throw Error("Direct capture requires a video output");
+      try {
+        raw = await rawCanvasTransport(o.width, o.height);
+      } catch {
+        throw new RawCanvasUnsupported("Direct transport is unavailable");
+      }
+      metrics.capture = "rgba";
+    }
     if (sequence) await fs.mkdir(temp);
     await fs.mkdir(path.dirname(destination), { recursive: true });
-    browser = await chromium.launch({
-      headless: true,
-      ...(executablePath ? { executablePath } : {}),
-      args: executablePath ? ["--headless"] : [],
+    progress({
+      stage: "Starting render browser",
+      done: 0,
+      total: times.length,
+      destination,
     });
+    try {
+      browser = await chromium.launch({
+        headless: true,
+        ...(executablePath ? { executablePath } : {}),
+        args: executablePath ? ["--headless"] : [],
+      });
+    } catch (error) {
+      if (
+        /executable.*(doesn't exist|does not exist)/i.test(
+          (error as Error).message,
+        )
+      )
+        throw Error(
+          "Rendering browser is unavailable. Run npx playwright install chromium, then restart FrameScript Studio and retry the export.",
+        );
+      throw error;
+    }
     const context = await browser.newContext({
       viewport: { width: o.width, height: o.height },
       deviceScaleFactor: 1,
       acceptDownloads: false,
       serviceWorkers: "block",
     });
-    await context.route("**/*", (route) => {
-      const u = route.request().url();
-      return u.startsWith("data:") ||
-        u.startsWith("about:") ||
-        (p.settings.network && /^https?:/.test(u))
-        ? route.continue()
-        : route.abort();
-    });
+    if (!raw)
+      await context.route("**/*", (route) => {
+        const u = route.request().url();
+        return u.startsWith("data:") ||
+          u.startsWith("about:") ||
+          (p.settings.network && /^https?:/.test(u))
+          ? route.continue()
+          : route.abort();
+      });
     const workers = Math.min(times.length, renderWorkerCount(p, o, tuning));
+    metrics.workers = workers;
     progress({
       stage:
         videoEncoder === "libx264"
@@ -155,13 +232,27 @@ async function renderExportAttempt(
     });
     const preparePage = async () => {
       const page = await context.newPage();
+      const session = await context.newCDPSession(page);
+      if (raw) {
+        try {
+          await isolateRawCanvas(session, raw.urlPrefix);
+        } catch {
+          throw new RawCanvasUnsupported(
+            "Browser lacks direct transport isolation",
+          );
+        }
+      }
       let renderError = "";
       page.on("pageerror", (e) => {
         renderError = e.message;
       });
       if (p.settings.timing === "replay") await page.clock.install({ time: 0 });
       await page.setContent(
-        documentFor(p, { export: true, transparent: o.transparent }),
+        documentFor(p, {
+          export: true,
+          transparent: o.transparent,
+          exportTransportOrigin: raw?.origin,
+        }),
         { waitUntil: "load" },
       );
       await page.evaluate(async () => {
@@ -198,7 +289,6 @@ async function renderExportAttempt(
           oh: o.height,
         },
       );
-      const session = await context.newCDPSession(page);
       if (o.transparent)
         await session.send("Emulation.setDefaultBackgroundColorOverride", {
           color: { r: 0, g: 0, b: 0, a: 0 },
@@ -211,10 +301,16 @@ async function renderExportAttempt(
     if (!["png", "sequence"].includes(o.format)) {
       const args = [
         "-y",
-        "-f",
-        "image2pipe",
-        "-vcodec",
-        jpeg ? "mjpeg" : "png",
+        ...(raw
+          ? [
+              "-f",
+              "rawvideo",
+              "-pixel_format",
+              "rgba",
+              "-video_size",
+              `${o.width}x${o.height}`,
+            ]
+          : ["-f", "image2pipe", "-vcodec", jpeg ? "mjpeg" : "png"]),
         "-framerate",
         String(o.fps),
         "-i",
@@ -268,6 +364,7 @@ async function renderExportAttempt(
       index: number,
     ) => {
       check();
+      const seekStart = performance.now();
       const { page, session } = renderer;
       const t = times[index];
       if (p.settings.timing === "replay") {
@@ -288,13 +385,30 @@ async function renderExportAttempt(
             Math.max(0, t - Number(info.start)),
           );
       }
-      if (tuning.capture === "standard")
-        return page.screenshot({
+      metrics.seekMs += performance.now() - seekStart;
+      const captureStart = performance.now();
+      if (raw) {
+        try {
+          const buffer = await raw.capture(page);
+          metrics.captureMs += performance.now() - captureStart;
+          return buffer;
+        } catch (error) {
+          check();
+          if (renderer.error())
+            throw Error("Animation failed: " + renderer.error());
+          throw new RawCanvasUnsupported(String(error));
+        }
+      }
+      if (tuning.capture === "standard") {
+        const buffer = await page.screenshot({
           type: "png",
           omitBackground: o.transparent,
           animations: "allow",
           timeout: 30000,
         });
+        metrics.captureMs += performance.now() - captureStart;
+        return buffer;
+      }
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         const result = await Promise.race([
@@ -314,7 +428,11 @@ async function renderExportAttempt(
         ]);
         if (renderer.error())
           throw Error("Animation failed: " + renderer.error());
-        return Buffer.from(result.data, "base64");
+        metrics.captureMs += performance.now() - captureStart;
+        const decodeStart = performance.now();
+        const buffer = Buffer.from(result.data, "base64");
+        metrics.decodeMs += performance.now() - decodeStart;
+        return buffer;
       } finally {
         clearTimeout(timer);
       }
@@ -326,6 +444,7 @@ async function renderExportAttempt(
         (data) => ({ data, error: undefined }),
         (error: unknown) => ({ data: undefined, error }),
       );
+    const pipelineStart = performance.now();
     const pending = Array.from({ length: workers }, (_, index) =>
       schedule(index),
     );
@@ -333,6 +452,8 @@ async function renderExportAttempt(
       const result = await pending[i % workers];
       if (result.error !== undefined) throw result.error;
       const png = result.data!;
+      metrics.frames++;
+      metrics.bytes += png.length;
       check();
       if (i + workers < times.length)
         pending[i % workers] = schedule(i + workers);
@@ -352,6 +473,7 @@ async function renderExportAttempt(
           throw new EncoderFailure("FFmpeg input failed: " + logs);
         }
         if (!accepted) {
+          const drainStart = performance.now();
           const drain = new AbortController();
           try {
             await Promise.race([
@@ -366,8 +488,11 @@ async function renderExportAttempt(
             ]);
           } catch (error) {
             if (signal.aborted) throw error;
-            throw new EncoderFailure("Encoder stopped while writing a frame: " + logs);
+            throw new EncoderFailure(
+              "Encoder stopped while writing a frame: " + logs,
+            );
           } finally {
+            metrics.backpressureMs += performance.now() - drainStart;
             drain.abort();
           }
         }
@@ -379,7 +504,9 @@ async function renderExportAttempt(
         destination,
       });
     }
+    metrics.pipelineMs = performance.now() - pipelineStart;
     if (encoder) {
+      const drainStart = performance.now();
       progress({
         stage: "Encoding",
         done: times.length,
@@ -388,6 +515,7 @@ async function renderExportAttempt(
       });
       encoder.stdin!.end();
       const code = await closed;
+      metrics.encoderDrainMs = performance.now() - drainStart;
       if (code !== 0) throw new EncoderFailure("FFmpeg failed: " + logs);
     }
     check();
@@ -407,6 +535,7 @@ async function renderExportAttempt(
     if (!sequence && (await fs.stat(temp)).size < 32)
       throw Error("Encoder produced an empty file");
     if (!sequence && !["png", "gif"].includes(o.format)) {
+      const verifyStart = performance.now();
       progress({
         stage: "Verifying video",
         done: times.length,
@@ -420,9 +549,11 @@ async function renderExportAttempt(
         "Video verification",
         600_000,
       );
+      metrics.verificationMs = performance.now() - verifyStart;
     }
     check();
     await fs.rename(temp, destination);
+    tuning.onMetrics?.(metrics);
     progress({
       stage: "Complete",
       done: times.length,
@@ -444,6 +575,7 @@ async function renderExportAttempt(
     // Wait for the pipe/encoder to release the partial output on Windows.
     await closed?.catch(() => {});
     await browser?.close();
+    await raw?.close();
     await fs.rm(temp, { recursive: true, force: true }).catch(() => {});
   }
 }

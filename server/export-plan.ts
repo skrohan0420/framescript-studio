@@ -7,10 +7,45 @@ export type RenderTuning = {
   capture?: "standard" | "fast" | "jpeg";
   encoder?: "software";
   softwarePreset?: "medium" | "fast";
+  rawCanvas?: boolean;
+  onMetrics?: (metrics: RenderMetrics) => void;
+};
+export type RenderMetrics = {
+  encoder: VideoEncoder;
+  workers: number;
+  capture: "png" | "jpeg" | "rgba";
+  frames: number;
+  bytes: number;
+  seekMs: number;
+  captureMs: number;
+  decodeMs: number;
+  backpressureMs: number;
+  pipelineMs: number;
+  encoderDrainMs: number;
+  verificationMs: number;
 };
 const encoders = new Map<string, VideoEncoder>();
-const encoderKey = (ffmpeg: string, options: ExportOptions) => [ffmpeg, options.width, options.height, options.fps, options.quality].join(":");
-export function disableHardwareEncoder(ffmpeg: string, options: ExportOptions) { encoders.set(encoderKey(ffmpeg, options), "libx264"); }
+export function captureFormat(
+  options: ExportOptions,
+  tuning: RenderTuning = {},
+): "jpeg" | "png" {
+  const requested =
+    tuning.capture === "jpeg" ||
+    (!tuning.capture && options.captureMode !== "lossless");
+  return requested &&
+    !options.transparent &&
+    options.quality !== 0 &&
+    ["mp4", "mkv", "webm"].includes(options.format)
+    ? "jpeg"
+    : "png";
+}
+const encoderKey = (ffmpeg: string, options: ExportOptions) =>
+  [ffmpeg, options.width, options.height, options.fps, options.quality].join(
+    ":",
+  );
+export function disableHardwareEncoder(ffmpeg: string, options: ExportOptions) {
+  encoders.set(encoderKey(ffmpeg, options), "libx264");
+}
 export function renderWorkerCount(
   project: Project,
   options: ExportOptions,
@@ -28,7 +63,12 @@ export function renderWorkerCount(
   const cap = options.width * options.height >= 3840 * 2160 ? 2 : 3;
   return Math.max(
     1,
-    Math.min(tuning.workers ?? cap, tuning.workers ? 4 : cap, cpuLimit, memoryLimit),
+    Math.min(
+      tuning.workers ?? cap,
+      tuning.workers ? 4 : cap,
+      cpuLimit,
+      memoryLimit,
+    ),
   );
 }
 export function videoEncoderArgs(

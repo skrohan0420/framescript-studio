@@ -22,6 +22,10 @@ export function ExportSettings({
   const [advanced, setAdvanced] = useState(false);
   const [customResolution, setCustomResolution] = useState(false);
   const [customQuality, setCustomQuality] = useState(false);
+  const supportsFastCapture =
+    !options.transparent &&
+    options.quality !== 0 &&
+    ["mp4", "mkv", "webm"].includes(options.format);
   const selected = exportResolutions.find((item) => {
     const size = exportPresetSize(item.height, frame);
     return size.width === options.width && size.height === options.height;
@@ -48,6 +52,26 @@ export function ExportSettings({
         </span>
       </div>
       <div className="settings-grid">
+        <Field label="Rendering">
+          <select
+            aria-label="Export capture mode"
+            value={
+              supportsFastCapture ? (options.captureMode ?? "fast") : "lossless"
+            }
+            disabled={!supportsFastCapture}
+            onChange={(event) =>
+              update({ captureMode: event.target.value as "fast" | "lossless" })
+            }
+          >
+            <option value="fast">Faster video export</option>
+            <option value="lossless">Lossless frame capture</option>
+          </select>
+          <small>
+            {supportsFastCapture
+                ? "Compatible full-frame canvases use direct lossless capture automatically. Other scenes use JPEG in Faster mode, or PNG in Lossless mode. Resolution and frame rate stay unchanged."
+              : "This export uses lossless frame capture to preserve image quality and transparency."}
+          </small>
+        </Field>
         <Field label="Resolution">
           <select
             aria-label="Export resolution"

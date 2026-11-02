@@ -4,6 +4,10 @@ test("home creates, saves, renames, duplicates, trashes and restores projects", 
 }) => {
   const name = "Orbit " + Date.now();
   await page.goto("/");
+  await expect(page).toHaveTitle("Projects · FrameScript Studio");
+  const favicon = await page.request.get("/favicon.svg");
+  expect(favicon.ok()).toBe(true);
+  expect(favicon.headers()["content-type"]).toContain("image/svg+xml");
   await expect(
     page.getByRole("heading", { name: "Let’s make something move." }),
   ).toBeVisible();
@@ -23,7 +27,9 @@ test("home creates, saves, renames, duplicates, trashes and restores projects", 
   await expect(
     page.getByRole("textbox", { name: "Project name", exact: true }),
   ).toHaveValue(name);
+  await expect(page).toHaveTitle(`${name} · FrameScript Studio`);
   await page.getByRole("button", { name: "Project home", exact: true }).click();
+  await expect(page).toHaveTitle("Projects · FrameScript Studio");
   await expect(
     page.getByRole("button", { name: `Open ${name}`, exact: true }),
   ).toBeVisible();

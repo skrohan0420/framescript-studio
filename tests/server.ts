@@ -231,6 +231,118 @@ try {
   console.log(
     "PASS SSE progress and HTTP cancellation with partial-output cleanup",
   );
+
+  // Three distinct jobs: two run, one waits; targeted cancellation must be isolated.
+  const ids = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+  const progress = new Map<string, any[]>();
+  const multiEventsAbort = new AbortController();
+  const multiEvents = await fetch(base + "/api/events", {
+    headers: { Cookie: cookie },
+    signal: multiEventsAbort.signal,
+  });
+  const multiReader = multiEvents.body!.getReader();
+  const consumeMulti = (async () => {
+    let buffer = "";
+    const decoder = new TextDecoder();
+    try {
+      while (true) {
+        const part = await multiReader.read();
+        if (part.done) break;
+        buffer += decoder.decode(part.value, { stream: true });
+        let split: number;
+        while ((split = buffer.indexOf("\n\n")) >= 0) {
+          const event = buffer.slice(0, split);
+          buffer = buffer.slice(split + 2);
+          if (!event.startsWith("data: ")) continue;
+          const item = JSON.parse(event.slice(6));
+          if (item.jobId)
+            progress.set(item.jobId, [
+              ...(progress.get(item.jobId) ?? []),
+              item,
+            ]);
+        }
+      }
+    } catch (error) {
+      if (!multiEventsAbort.signal.aborted) throw error;
+    }
+  })();
+  const waitStage = async (id: string, stage: string) => {
+    const until = Date.now() + 10000;
+    while (!progress.get(id)?.some((p) => p.stage === stage)) {
+      if (Date.now() > until)
+        throw Error("Missing job stage " + stage + " for " + id);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  };
+  const settle = (promise: Promise<any>) =>
+    promise.then(
+      (result) => ({ result, error: "" }),
+      (error) => ({ result: null, error: error.message as string }),
+    );
+  const first = settle(
+    rpc(
+      "export",
+      { ...project, html: "<h1>First clip</h1>" },
+      { ...options, duration: 30, fileName: "First clip" },
+      ids[0],
+    ),
+  );
+  await waitStage(ids[0], "Starting render browser");
+  const second = settle(
+    rpc(
+      "export",
+      { ...project, html: "<h1>Second clip</h1>" },
+      { ...options, duration: 5, fileName: "Second clip" },
+      ids[1],
+    ),
+  );
+  await waitStage(ids[1], "Starting render browser");
+  const third = settle(
+    rpc("export", project, { ...options, fileName: "Queued clip" }, ids[2]),
+  );
+  await waitStage(ids[2], "Queued");
+  assert(
+    !progress.get(ids[2])?.some((p) => p.stage === "Starting render browser"),
+  );
+  await assert.rejects(
+    () => rpc("export", project, options, ids[0]),
+    /already running/i,
+  );
+  // Another browser's cancellation cannot affect this client's second clip.
+  await fetch(base + "/api/cancelExport", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-FrameScript": "1" },
+    body: JSON.stringify({ args: [ids[1]] }),
+  });
+  await rpc("cancelExport", ids[2]);
+  await rpc("cancelExport", ids[0]);
+  const results = await Promise.all([first, second, third]);
+  assert.match(results[0].error, /cancel/i);
+  assert.match(results[2].error, /cancel/i);
+  assert.equal(results[1].error, "");
+  assert.equal(results[1].result.name, "Second clip.mp4");
+  const secondFile = await fetch(base + results[1].result.url, {
+    headers: { Cookie: cookie },
+  });
+  assert((await secondFile.arrayBuffer()).byteLength > 100);
+  assert(progress.get(ids[1])?.some((p) => p.stage === "Complete"));
+  const earlyId = crypto.randomUUID();
+  await rpc("cancelExport", earlyId);
+  await assert.rejects(
+    () => rpc("export", project, options, earlyId),
+    /cancel/i,
+  );
+  multiEventsAbort.abort();
+  await consumeMulti;
+  assert(
+    !(await fs.readdir(path.join(dataDir, "exports"))).some((f) =>
+      f.includes(".partial-"),
+    ),
+  );
+  console.log(
+    "PASS two concurrent exports, queued third, job-tagged SSE, isolated active/queued cancellation, early cancellation and separate download",
+  );
+
   await rpc("credentials", "test-key");
   assert.equal(await rpc("hasKey"), true);
   assert(!(await fs.readdir(dataDir)).some((f) => /credential|key/.test(f)));

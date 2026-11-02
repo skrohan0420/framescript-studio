@@ -1,3 +1,11 @@
+# Concurrent timeline exports — November 2, 2026
+
+Multiple timeline exports now run as separate jobs, with two render slots and a FIFO queue. The minimized floating box lists per-clip progress, timeline, status, cancellation and completed downloads. Each export keeps its submitted snapshot and settings. Build/TypeScript, 104 unit tests, all 52 production browser checks and real concurrent HTTP export/cancellation checks passed. See VERIFICATION.md and README.md. Backend restarted after a saved-database backup; refresh the app to load the new flow.
+
+# Faster video export — November 2, 2026
+
+Added default maximum-quality JPEG capture for opaque video, with an explicit lossless capture option and PNG safeguards for transparency, images/sequences, GIF and quality-zero exports. The 4K/60 synthetic benchmark improved from 14.54s to 8.16s (43.9% less time). Build, 101 unit tests, six focused browser checks and rendering/audio integration passed. See VERIFICATION.md for quality measurements and limitations. Restart the backend and refresh the browser to load the option.
+
 # Browser test maintenance — November 2, 2026
 
 The active manual-editor browser suite now passes all 48 checks. Former AI/Services/storyboard UI scenarios are retained as .legacy.ts reference files outside discovery. Build/TypeScript, 99 unit tests, server checks, credential restart, all-format rendering and audio/video export integration passed. See VERIFICATION.md and tests/README.md for the current coverage and historical limitations.

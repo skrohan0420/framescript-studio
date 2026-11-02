@@ -2825,3 +2825,37 @@ select {
 .timeline-cursor:before { border: 0; width: 8px; height: 9px; left: 2px; top: -7px; background: #edf6fb; clip-path: polygon(0 0,100% 0,100% 55%,50% 100%,0 55%); }
 .timeline-cursor:after { background: #edf6fbc9; }
 :root[data-theme="light"] .timeline .audio-clip-name { color: #12304b; background: #badbf1; }
+.export-dock { position: fixed; bottom: 18px; right: 18px; z-index: 19; width: min(340px, calc(100vw - 36px)); padding: 14px; background: var(--surface, #252525); color: var(--text, #efefef); border: 1px solid var(--border, #404040); border-radius: 10px; box-shadow: 0 8px 32px #0006; font-size: 12px; }
+.export-dock-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.export-dock-heading button { display: flex; padding: 5px; }
+.export-dock-name { display: block; margin: 6px 0 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--secondary, #b9bfc4); }
+.export-dock progress { display: block; width: 100%; height: 7px; accent-color: var(--accent, #02d3e8); }
+.export-dock p { margin: 8px 0; overflow-wrap: anywhere; }
+.export-dock-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.export-dock-actions button { display: flex; align-items: center; gap: 4px; padding: 5px 8px; }
+.modal-head-actions { display: flex; align-items: center; gap: 4px; }
+.modal-head-actions > button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 1px solid transparent; background: transparent; color: var(--secondary); border-radius: 6px; }
+.modal-head-actions > button:hover { background: var(--raised); color: var(--text); border-color: var(--border); }
+.modal-head-actions > button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.export-dock { width: min(380px, calc(100vw - 36px)); }
+.export-job-list { max-height: min(55vh, 460px); overflow-y: auto; margin-top: 8px; }
+.export-job { padding: 10px 0; border-top: 1px solid var(--border, #404040); }
+.export-job .export-dock-name { margin: 0; flex: 1; min-width: 0; font-size: 12px; }
+.export-job-timeline { display: block; margin: 3px 0 10px; color: var(--muted, #92999f); font-size: 10px; }
+.export-job-count { color: var(--muted, #92999f); margin-left: 8px; font-weight: normal; font-size: 11px; }
+.export-dock { width: min(320px, calc(100vw - 16px)); padding: 9px 11px; border-radius: 8px; }
+.export-dock > .export-dock-heading { min-height: 24px; gap: 6px; }
+.export-dock-heading button { min-width: 24px; height: 24px; padding: 4px; border: 0; background: transparent; align-items: center; justify-content: center; }
+.export-dock-heading button:hover { background: var(--raised, #303030); }
+.export-dock-drag { cursor: grab; touch-action: none; user-select: none; }
+.export-dock-drag:active { cursor: grabbing; }
+.export-dock-drag:focus-visible { outline: 1px solid var(--accent, #02d3e8); outline-offset: 2px; }
+.export-job-list { max-height: min(50vh, 340px); margin-top: 5px; }
+.export-job { padding: 7px 0 8px; }
+.export-job .export-dock-heading { gap: 3px; }
+.export-dock-heading .export-job-title { display: block; flex: 1; min-width: 0; height: 23px; padding: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; font-size: 11px; color: var(--text, #efefef); }
+.export-job-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 1px 0 6px; }
+.export-job-meta .export-job-timeline { display: block; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 10px; }
+.export-job-meta p { margin: 0; flex-shrink: 0; font-size: 10px; color: var(--secondary, #b9bfc4); }
+.export-dock progress { height: 3px; border: 0; border-radius: 2px; overflow: hidden; }
+.export-job > p[role="alert"] { font-size: 10px; margin: 5px 0 0; }

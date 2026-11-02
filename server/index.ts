@@ -6,6 +6,7 @@ import { promises as fs, createReadStream } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Worker } from "node:worker_threads";
+import { ExportQueue } from "./export-queue";
 import { archiveSequence } from "./archive";
 import { projectSchema, exportSchema } from "../shared/project";
 import { documentFor } from "../shared/runtime";
@@ -44,9 +45,11 @@ type Client = {
   credentialError?: string;
   remembered?: Record<string, boolean>;
   ai?: AbortController;
-  worker?: Worker;
-  exportAbort?: AbortController;
-  progress?: unknown;
+  exports?: Map<
+    string,
+    { controller: AbortController; worker?: Worker; progress?: unknown }
+  >;
+  cancelledExports?: Map<string, number>;
   listeners: Set<ServerResponse>;
   key?: string;
   geminiKey?: string;
@@ -56,6 +59,7 @@ type Client = {
   serviceChecks?: Partial<Record<ServiceId, ServiceCheck>>;
 };
 let database: StudioDatabase;
+const exportQueue = new ExportQueue(2);
 let workspaceVersion = randomUUID();
 let workspaceQueue: Promise<unknown> = Promise.resolve();
 const workspaceWrites = new Set([
@@ -384,7 +388,13 @@ async function invoke(
     case "workspaceEditorGet":
       return database.get("workspaceEditor") ?? {};
     case "autosave":
-      database.saveWorkspace(args[0], args[1], client.current === database.get("currentProject") ? client.current : undefined);
+      database.saveWorkspace(
+        args[0],
+        args[1],
+        client.current === database.get("currentProject")
+          ? client.current
+          : undefined,
+      );
       return true;
     case "checkpoint":
       return database.checkpoint(
@@ -547,32 +557,66 @@ async function invoke(
       }
     }
     case "cancelExport":
-      client.worker?.postMessage("cancel");
-      client.exportAbort?.abort();
+      if (args[0] && !client.exports?.has(args[0])) {
+        const cancelled = (client.cancelledExports ??= new Map());
+        cancelled.set(args[0], Date.now());
+        if (cancelled.size > 64)
+          cancelled.delete(cancelled.keys().next().value!);
+      }
+      for (const [id, job] of client.exports ?? []) {
+        if (args[0] && id !== args[0]) continue;
+        job.controller.abort();
+        job.worker?.postMessage("cancel");
+      }
       return true;
     case "export": {
-      if (client.exportAbort) throw Error("Export already running");
       const project = projectSchema.parse(args[0]),
         options = exportSchema.parse(args[1]);
-      const id = randomUUID(),
-        destination = path.join(exportsDir, id + "." + options.format);
+      const id = args[2] ?? randomUUID();
+      const cancelledAt = client.cancelledExports?.get(id);
+      client.cancelledExports?.delete(id);
+      if (cancelledAt && Date.now() - cancelledAt < 300_000)
+        throw Error("Export cancelled");
+      const jobs = (client.exports ??= new Map());
+      if (jobs.has(id)) throw Error("Export ID is already running");
+      if (jobs.size >= 10)
+        throw Error("At most 10 exports can be queued per browser.");
+      const destination = path.join(
+        exportsDir,
+        randomUUID() + "." + options.format,
+      );
       const ffmpeg = require("ffmpeg-static");
       const exportAbort = new AbortController();
-      client.exportAbort = exportAbort;
+      const job: {
+        controller: AbortController;
+        worker?: Worker;
+        progress?: unknown;
+      } = { controller: exportAbort };
+      jobs.set(id, job);
+      const publish = (progress: any) => {
+        job.progress = { ...progress, jobId: id };
+        for (const listener of client.listeners)
+          listener.write("data: " + JSON.stringify(job.progress) + "\n\n");
+      };
+      publish({
+        stage: "Queued",
+        done: 0,
+        total: Math.ceil((options.duration / options.speed) * options.fps),
+        destination,
+      });
+      let release: (() => void) | undefined;
       try {
+        release = await exportQueue.acquire(exportAbort.signal);
         await new Promise<void>((resolve, reject) => {
           const worker = new Worker(path.join(__dirname, "export-worker.cjs"), {
             workerData: { project, options, destination, ffmpeg },
           });
-          client.worker = worker;
+          job.worker = worker;
+          if (exportAbort.signal.aborted) worker.postMessage("cancel");
           let settled = false;
           worker.on("message", (data) => {
             if (data.type === "progress") {
-              client.progress = data.progress;
-              for (const listener of client.listeners)
-                listener.write(
-                  "data: " + JSON.stringify(data.progress) + "\n\n",
-                );
+              publish(data.progress);
             } else {
               settled = true;
               data.type === "complete" ? resolve() : reject(Error(data.error));
@@ -586,27 +630,19 @@ async function invoke(
         if (options.format === "sequence") {
           const file = destination + ".zip";
           try {
-            client.progress = {
+            publish({
               stage: "Packaging frames",
               done: 0,
               total: 1,
               destination: file,
-            };
-            for (const listener of client.listeners)
-              listener.write(
-                "data: " + JSON.stringify(client.progress) + "\n\n",
-              );
+            });
             await archiveSequence(destination, file, exportAbort.signal);
-            client.progress = {
+            publish({
               stage: "Complete",
               done: 1,
               total: 1,
               destination: file,
-            };
-            for (const listener of client.listeners)
-              listener.write(
-                "data: " + JSON.stringify(client.progress) + "\n\n",
-              );
+            });
           } finally {
             await fs.rm(destination, { recursive: true, force: true });
           }
@@ -633,9 +669,17 @@ async function invoke(
             options.format,
           owner,
         );
+      } catch (error) {
+        publish({
+          stage: exportAbort.signal.aborted ? "Cancelled" : "Failed",
+          done: 0,
+          total: 1,
+          error: (error as Error).message,
+        });
+        throw error;
       } finally {
-        client.worker = undefined;
-        client.exportAbort = undefined;
+        jobs.delete(id);
+        release?.();
       }
     }
     default:
@@ -698,8 +742,9 @@ async function start() {
           });
           res.write(": connected\n\n");
           client.listeners.add(res);
-          if (client.progress)
-            res.write("data: " + JSON.stringify(client.progress) + "\n\n");
+          for (const job of client.exports?.values() ?? [])
+            if (job.progress)
+              res.write("data: " + JSON.stringify(job.progress) + "\n\n");
           const pulse = setInterval(() => res.write(": heartbeat\n\n"), 20000);
           req.on("close", () => {
             clearInterval(pulse);
@@ -821,8 +866,10 @@ async function start() {
       client.chatgpt.close();
       client.mediaAbort?.abort();
       client.ai?.abort();
-      client.worker?.postMessage("cancel");
-      client.exportAbort?.abort();
+      for (const job of client.exports?.values() ?? []) {
+        job.controller.abort();
+        job.worker?.postMessage("cancel");
+      }
       for (const listener of client.listeners) listener.end();
     }
     server.close();

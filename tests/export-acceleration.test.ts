@@ -21,6 +21,28 @@ const options: ExportOptions = {
   time: 0,
 };
 const root = path.resolve("test-results");
+it("uses faster capture only for lossy opaque video and honors lossless selection", () => {
+  expect(plan.captureFormat({ ...options, format: "mp4" })).toBe("jpeg");
+  expect(
+    plan.captureFormat({ ...options, format: "mp4", captureMode: "lossless" }),
+  ).toBe("png");
+  expect(
+    plan.captureFormat(
+      { ...options, format: "mp4", quality: 0 },
+      { capture: "jpeg" },
+    ),
+  ).toBe("png");
+  expect(
+    plan.captureFormat(
+      { ...options, format: "webm", transparent: true },
+      { capture: "jpeg" },
+    ),
+  ).toBe("png");
+  for (const format of ["png", "sequence", "gif"] as const)
+    expect(
+      plan.captureFormat({ ...options, format }, { capture: "jpeg" }),
+    ).toBe("png");
+});
 async function folder() {
   const dir = path.join(root, "export-acceleration-" + crypto.randomUUID());
   await fs.mkdir(dir, { recursive: true });
@@ -30,6 +52,27 @@ async function cleanup(dir: string) {
   if (!dir.startsWith(root + path.sep)) throw Error("Invalid test folder");
   await fs.rm(dir, { recursive: true, force: true });
 }
+it("reports browser startup failures with repair instructions and cleans partial output", async () => {
+  const dir = await folder();
+  const stages: string[] = [];
+  try {
+    await expect(
+      renderExport(
+        newProject(),
+        { ...options, format: "mp4" },
+        path.join(dir, "missing.mp4"),
+        ffmpeg,
+        new AbortController().signal,
+        (p) => stages.push(p.stage),
+        path.join(dir, "missing-browser.exe"),
+      ),
+    ).rejects.toThrow("npx playwright install chromium");
+    expect(stages).toContain("Starting render browser");
+    expect(await fs.readdir(dir)).toEqual([]);
+  } finally {
+    await cleanup(dir);
+  }
+});
 function decode(args: string[]) {
   const result = spawnSync(
     ffmpeg,
@@ -121,6 +164,8 @@ it("fast snapshot preserves transparent pixels", async () => {
       ffmpeg,
       new AbortController().signal,
       () => {},
+      undefined,
+      { capture: "jpeg" },
     );
     const pixels = decode(["-i", path.join(dir, "alpha.png")]);
     expect([...pixels.subarray(0, 4)]).toEqual([255, 0, 0, 255]);
@@ -129,6 +174,75 @@ it("fast snapshot preserves transparent pixels", async () => {
     await cleanup(dir);
   }
 }, 30000);
+it("faster video preserves frame order and stays close to lossless reference pixels", async () => {
+  const dir = await folder(),
+    project = newProject();
+  project.settings = {
+    ...project.settings,
+    width: 160,
+    height: 90,
+    fps: 12,
+    duration: 1,
+  };
+  project.html = '<div id="moving">Frame</div>';
+  project.css =
+    "#moving{position:absolute;top:20px;font:18px Arial;color:white}";
+  project.js =
+    "window.renderFrame=t=>{document.body.style.background='rgb('+Math.round(t*220)+',30,70)';document.querySelector('#moving').style.left=t*100+'px'}";
+  try {
+    await renderExport(
+      project,
+      options,
+      path.join(dir, "reference"),
+      ffmpeg,
+      new AbortController().signal,
+      () => {},
+    );
+    await renderExport(
+      project,
+      { ...options, format: "mp4" },
+      path.join(dir, "fast.mp4"),
+      ffmpeg,
+      new AbortController().signal,
+      () => {},
+    );
+    const reference = decode([
+      "-framerate",
+      "12",
+      "-i",
+      path.join(dir, "reference", "frame-%06d.png"),
+    ]);
+    const actual = decode(["-i", path.join(dir, "fast.mp4")]);
+    expect(actual.length).toBe(reference.length);
+    const frameBytes = 160 * 90 * 4;
+    for (let frame = 0; frame < 12; frame++) {
+      let error = 0;
+      for (let i = frame * frameBytes; i < (frame + 1) * frameBytes; i++)
+        error += Math.abs(reference[i] - actual[i]);
+      expect(error / frameBytes).toBeLessThan(4);
+    }
+    const controller = new AbortController();
+    await expect(
+      renderExport(
+        project,
+        { ...options, format: "mp4" },
+        path.join(dir, "cancelled.mp4"),
+        ffmpeg,
+        controller.signal,
+        (p) => {
+          if (p.stage === "Rendering" && p.done === 2) controller.abort();
+        },
+      ),
+    ).rejects.toThrow("cancelled");
+    expect(
+      (await fs.readdir(dir)).some(
+        (name) => name.includes("partial-") || name === "cancelled.mp4",
+      ),
+    ).toBe(false);
+  } finally {
+    await cleanup(dir);
+  }
+}, 60000);
 it("automatically retries software when a hardware encoder fails at startup", async () => {
   const dir = await folder();
   const original = plan.videoEncoderArgs;

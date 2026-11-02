@@ -152,11 +152,17 @@ Prompts receive existing source/settings, storyboard metadata, asset identifiers
 
 Optional OpenAI uses a separately billed API account. Enter a key in Services for this server session, or supply OPENAI_API_KEY in the server environment. Remembered keys are encrypted by Windows; session-only keys remain in Node memory until restart. Keys are never returned by the API. Choose a Chat Completions model supporting JSON mode. The adapter follows the [official API reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create). Do not put credentials in project source. Live model quality and account compatibility require your own provider installation/account.
 
+### Export clips from multiple timelines
+
+Select a timeline, open Export, choose its filename/settings and start rendering. Minimize with the minus icon, switch timelines and open Export again to submit the next clip. The floating Exports box lists every clip with its timeline, progress, queue state and independent cancel/details controls. Completed clips remain listed with Download and Dismiss buttons; the plus button opens export settings for the current timeline.
+
+Two exports can render concurrently across the local server. Additional submissions wait in order, with at most ten active/queued jobs per browser. Each job uses the project/timeline snapshot and settings captured at submission, so editing or switching timelines does not change earlier exports. Downloads occur as clips finish; use each completed row's Download button if the browser blocks automatic multiple downloads. Keep the browser tab open; queue recovery after reload/server restart is not supported.
+
 ## Timing and export
 
 MP4/MKV exports automatically test hardware H.264 encoding at the requested dimensions and frame rate, using Intel Quick Sync, NVIDIA NVENC or AMD AMF when available. A failed hardware encode retries with software encoding. Advanced settings → Encoding can force CPU encoding. Hardware quality controls differ from software CRF, so compression and file size can vary. Resolution, frame rate, duration and frame sampling are preserved.
 
-Frame capture uses lossless PNG with fast encoding. Deterministic seek exports use a bounded pool of render pages (up to two at 4K), with ordered frames and backpressure to limit memory. Replay mode, network-enabled projects and PNG snapshots stay sequential. Cancellation closes all render pages and removes partial files. `npx tsx scripts/benchmark-export.ts optimized` runs a repeatable one-second 3840×2160/60 fps benchmark; `optimized-software` measures the CPU path.
+Compatible native-resolution, opaque 2D canvas videos now use direct lossless frame transfer automatically at 1080p or above. Each frame is checked for overlays and compositing effects; unsupported scenes restart using the selected screenshot mode. Other opaque MP4/MKV/WebM exports default to Faster video export, which captures maximum-quality JPEG frames. Choose Rendering → Lossless frame capture to avoid that additional lossy compression. Transparent exports, GIFs and PNG/sequence outputs use PNG; quality-zero video uses lossless PNG or compatible direct capture. Deterministic seek exports use a bounded pool of render pages (up to two at 4K), with ordered frames and backpressure to limit memory. Replay mode, network-enabled projects and PNG snapshots stay sequential. Cancellation closes all render pages and removes partial files. See [export performance and reproducible 4K/60 benchmarks](EXPORT_PERFORMANCE.md). `npx tsx scripts/benchmark-export.ts optimized` still runs the one-second benchmark; `optimized-software` measures the CPU encoder path.
 
 CSS/Web Animations are sought through currentTime. For deterministic JavaScript or Canvas, derive all state from time:
 
@@ -166,7 +172,7 @@ window.renderFrame = (timeInSeconds) => {
 };
 ```
 
-Preview and export share this runtime. Frame i samples source time `i / fps * speed`; duration is `duration / speed`, rounded up to an output frame. A Node worker controls Chromium through Playwright and streams PNG frames to FFmpeg with backpressure. Progress uses Server-Sent Events. Videos are decode-validated before finalization; cancellation removes partial output. PNG sequences are packaged into a streaming ZIP.
+Preview and export share this runtime. Frame i samples source time `i / fps * speed`; duration is `duration / speed`, rounded up to an output frame. A Node worker controls Chromium through Playwright and streams captured frames to FFmpeg with backpressure. Progress uses Server-Sent Events. Videos are decode-validated before finalization; cancellation removes partial output. PNG sequences are packaged into a streaming ZIP.
 
 Arbitrary timers, rAF loops, media, GIFs and libraries without a seek contract cannot guarantee accurate scrubbing. Replay export advances the browser clock sequentially, but network operations, randomness and decoder clocks can remain nondeterministic. Master scenes use local seek timing through the same runtime; use seekable animations for reliable composition. H.264 cannot preserve alpha. PNG sequences are the reliable transparency interchange format; VP9 alpha playback depends on the player. MOV and full keyframe editing remain outside this version. Managed audio clips are mixed separately through FFmpeg; arbitrary audio tags inside generated scene code are not mixed.
 
