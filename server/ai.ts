@@ -1,7 +1,7 @@
 import { aiSchema, projectSchema, type Project } from "../shared/project";
 import type { z } from "zod";
 export interface AIConfig {
-  provider: "ollama" | "openai" | "chatgpt";
+  provider: "ollama" | "openai" | "chatgpt" | "gemini";
   model: string;
   key?: string;
 }
@@ -13,8 +13,53 @@ export interface AIRequest {
   error?: string;
   selection?: unknown;
 }
-const instruction = `You are FrameScript Studio's animation developer. Return ONLY a JSON object with action (create or update), optional html/css/js strings (omit unchanged fields), optional settings (width,height,duration,fps,speed,background,loop,timing), optional assets (array of EXISTING asset ids), and explanation (short string). No markdown. Use asset://ID for actual imported assets. Preserve existing code unless replacement requested. For deterministic JavaScript/Canvas animation define window.renderFrame = (timeInSeconds) => {...}; do not rely on requestAnimationFrame or timers for seek mode. CSS animations are seekable. No external scripts or network resources. Use CSS dimensions relative to project canvas. No secrets, filesystem, or Node APIs. Complete replacements for individual fields, not textual diffs.`;
+const instruction = `You are FrameScript Studio's animation developer. Default to visual-only animation: do not add headlines, captions, labels, subtitles, typography, logos or decorative text unless the user explicitly asks for on-screen text. Narration and scene titles are context, not text to display. Existing storyboard visual directions requesting titles do not override this default. When revising a scene, remove unsolicited text overlays unless the user explicitly asks to keep them. Return ONLY a JSON object with action (create or update), optional html/css/js strings (omit unchanged fields), optional settings (width,height,duration,fps,speed,background,loop,timing), optional assets (array of EXISTING asset ids), and explanation (short string). No markdown. Use asset://ID for actual imported assets. Preserve existing code unless replacement requested. For deterministic JavaScript/Canvas animation define window.renderFrame = (timeInSeconds) => {...}; do not rely on requestAnimationFrame or timers for seek mode. CSS animations are seekable. No external scripts or network resources. Use CSS dimensions relative to project canvas. When project.brand is present, use its palette, font and background consistently unless the user explicitly overrides them. No secrets, filesystem, or Node APIs. Complete replacements for individual fields, not textual diffs.`;
 export async function models(config: AIConfig, signal?: AbortSignal) {
+  if (config.provider === "gemini") {
+    if (!config.key)
+      throw Error("Add a Google AI Studio API key in Services → Gemini first.");
+    const result = new Map<
+      string,
+      { name: string; label: string; vision: boolean }
+    >();
+    let token = "";
+    const seen = new Set<string>();
+    do {
+      if (seen.has(token) || seen.size >= 50)
+        throw Error("Incomplete Gemini model catalog. Refresh and retry.");
+      seen.add(token);
+      const url = new URL(
+        "https://generativelanguage.googleapis.com/v1beta/models",
+      );
+      if (token) url.searchParams.set("pageToken", token);
+      const r = await fetch(url, {
+        headers: { "x-goog-api-key": config.key },
+        signal,
+      });
+      if (!r.ok) throw await geminiError(r, config.key);
+      const data = await r.json();
+      if (!Array.isArray(data.models))
+        throw Error("Unexpected Gemini model catalog.");
+      for (const m of data.models)
+        if (
+          typeof m.name === "string" &&
+          /^models\/gemini-/.test(m.name) &&
+          !/image|tts|live|robotics|computer-use/.test(m.name) &&
+          m.supportedGenerationMethods?.includes("generateContent")
+        )
+          result.set(m.name, {
+            name: m.name,
+            label: m.displayName ?? m.name,
+            vision: true,
+          });
+      token = typeof data.nextPageToken === "string" ? data.nextPageToken : "";
+    } while (token);
+    return [...result.values()].sort(
+      (a, b) =>
+        Number(!a.name.includes("flash")) - Number(!b.name.includes("flash")) ||
+        a.name.localeCompare(b.name),
+    );
+  }
   if (config.provider === "chatgpt") {
     if (!config.key) throw Error("Connect your ChatGPT account first.");
     const r = await fetch("https://api.openai.com/v1/models", {
@@ -36,7 +81,7 @@ export async function models(config: AIConfig, signal?: AbortSignal) {
   if (config.provider === "openai") {
     if (!config.key)
       throw Error(
-        "OpenAI API key is missing. Add a key in Settings or choose the ChatGPT account provider.",
+        "OpenAI API key is missing. Add a key in Services or choose the ChatGPT account provider.",
       );
     const r = await fetch("https://api.openai.com/v1/models", {
       headers: { Authorization: `Bearer ${config.key}` },
@@ -150,6 +195,65 @@ export async function generate<T = z.infer<typeof aiSchema>>(
     });
     if (!r.ok) throw await chatGPTError(r, config.key);
     result = await readChatGPTStream(r, onProgress);
+  } else if (config.provider === "gemini") {
+    if (!config.key)
+      throw Error("Add a Google AI Studio API key in Services → Gemini first.");
+    if (!/^(models\/)?[a-zA-Z0-9._-]+$/.test(config.model))
+      throw Error("Select a Gemini model first.");
+    const contents = messages
+      .slice(1)
+      .map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content } as any],
+      }));
+    for (const image of req.images) {
+      const match = /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(image);
+      if (!match)
+        throw Error("Gemini references must be PNG, JPEG or WebP images.");
+      contents
+        .at(-1)!
+        .parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+    }
+    onProgress?.({
+      kind: "ai",
+      stage: "Gemini is generating animation code",
+      characters: 0,
+    });
+    const name = config.model.startsWith("models/")
+      ? config.model
+      : "models/" + config.model;
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${name}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": config.key,
+        },
+        signal,
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          contents,
+          generationConfig: { responseMimeType: "application/json" },
+        }),
+      },
+    );
+    if (!r.ok) throw await geminiError(r, config.key);
+    const data = await r.json(),
+      candidate = data.candidates?.[0];
+    if (candidate?.finishReason && candidate.finishReason !== "STOP")
+      throw Error(
+        `Gemini response incomplete: ${candidate.finishReason}. Try a shorter scene or another model.`,
+      );
+    result =
+      candidate?.content?.parts
+        ?.filter((p: any) => !p.thought && typeof p.text === "string")
+        .map((p: any) => p.text)
+        .join("") ?? "";
+    if (!result)
+      throw Error(
+        "Gemini returned no animation code. Try another prompt or model.",
+      );
   } else if (config.provider === "ollama") {
     if (req.images.length)
       messages[messages.length - 1].images = req.images.map(
@@ -203,6 +307,16 @@ export async function generate<T = z.infer<typeof aiSchema>>(
   ) as T;
 }
 
+async function geminiError(response: Response, key: string) {
+  const raw = (await response.text()).split(key).join("[redacted]");
+  let message = "Request rejected";
+  try {
+    message = JSON.parse(raw).error?.message ?? message;
+  } catch {}
+  return Error(
+    `Gemini ${response.status}: ${message.slice(0, 1200)}${response.status === 429 ? " Check your Google AI Studio quota or choose another provider." : ""}`,
+  );
+}
 export async function chatGPTError(response: Response, secret = "") {
   let raw = await response.text();
   if (secret) raw = raw.split(secret).join("[redacted]");

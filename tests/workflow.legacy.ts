@@ -1,3 +1,4 @@
+// Historical browser scenarios for the former UI. See tests/README.md.
 import { test, expect } from "@playwright/test";
 import { synthesizeSound } from "../shared/audio";
 test.beforeEach(async ({ page }) => {
@@ -8,11 +9,75 @@ test.beforeEach(async ({ page }) => {
     r.fulfill({ json: { result: { provider: "ollama" } } }),
   );
 });
+test("scene editing offers direct fields and quick actions without reloading preview for narration edits", async ({
+  page,
+}) => {
+  await page.goto("/#editor");
+  await page.getByRole("button", { name: "Code panel", exact: true }).click();
+  await page.getByRole("button", { name: "Storyboard", exact: true }).click();
+  const dialog = page.getByRole("dialog", {
+    name: "Storyboard & production workflow",
+  });
+  await dialog.getByRole("button", { name: "Scenes", exact: true }).click();
+  await dialog
+    .getByRole("button", { name: "Edit this scene", exact: true })
+    .click();
+  const editor = page.getByRole("region", { name: "Selected scene editor" });
+  await expect(editor).toBeVisible();
+  await expect(
+    editor.getByRole("button", { name: "Voice", exact: true }),
+  ).toBeVisible();
+  await page.waitForTimeout(800);
+  let reloads = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame.url() === "about:srcdoc") reloads++;
+  });
+  await editor
+    .getByRole("textbox", { name: "Selected scene narration", exact: true })
+    .fill("Voice-over context without on-screen text.");
+  await page.waitForTimeout(800);
+  expect(reloads).toBe(0);
+  await editor.getByRole("button", { name: "Voice", exact: true }).click();
+  await expect(
+    page
+      .getByRole("region", { name: "Production tools", exact: true })
+      .getByRole("heading", { name: "Voice generation", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Code panel", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Collapse code panel", exact: true })
+    .click();
+  await expect(page.locator(".scene-rail")).toBeVisible();
+  await page.screenshot({ path: "test-results/direct-scene-editor.png" });
+});
+test("Edit this scene reveals a collapsed editor and closes the storyboard", async ({
+  page,
+}) => {
+  await page.goto("/#editor");
+  await page.getByRole("button", { name: "Code panel", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Collapse code panel", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Storyboard", exact: true }).click();
+  const dialog = page.getByRole("dialog", {
+    name: "Storyboard & production workflow",
+  });
+  await dialog.getByRole("button", { name: "Scenes", exact: true }).click();
+  await dialog
+    .getByRole("button", { name: "Edit this scene", exact: true })
+    .click();
+  await expect(dialog).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: "Collapse code panel", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".status-bar")).toContainText("Editing scene:");
+});
 test("script breakdown, independent scene components and master playback", async ({
   page,
 }) => {
   page.on("dialog", (d) => d.accept());
-  await page.goto("/");
+  await page.goto("/#editor");
+  await page.getByRole("button", { name: "Code panel", exact: true }).click();
   await page.getByRole("button", { name: "Storyboard", exact: true }).click();
   const dialog = page.getByRole("dialog", {
     name: "Storyboard & production workflow",
@@ -85,29 +150,32 @@ test("audio library, narration timing and mascot references persist in a saved p
   page,
 }) => {
   page.on("dialog", (d) => d.accept());
-  await page.goto("/");
+  await page.goto("/#editor");
+  await page.getByRole("button", { name: "Code panel", exact: true }).click();
   await page.getByRole("button", { name: "Storyboard", exact: true }).click();
   const dialog = page.getByRole("dialog", {
     name: "Storyboard & production workflow",
   });
   await dialog
     .locator(".workflow-tabs")
-    .getByRole("button", { name: "Audio", exact: true })
+    .getByRole("button", { name: "Voice", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: "SFX & Music", exact: true })
     .click();
   await dialog
     .getByRole("button", { name: "Soft pop SFX", exact: true })
     .click();
   await expect(dialog.locator(".audio-clip")).toHaveCount(1);
   await expect(dialog.locator(".audio-waveform i")).toHaveCount(64);
+  await dialog.getByRole("button", { name: "Voice", exact: true }).click();
   const wav = synthesizeSound("Success chime");
-  await dialog
-    .locator('input[type=file][accept="audio/*"]')
-    .setInputFiles({
-      name: "narration.wav",
-      mimeType: "audio/wav",
-      buffer: Buffer.from(wav.data.split(",")[1], "base64"),
-    });
-  await expect(dialog.locator(".audio-clip")).toHaveCount(2);
+  await dialog.locator('input[type=file][accept="audio/*"]').setInputFiles({
+    name: "narration.wav",
+    mimeType: "audio/wav",
+    buffer: Buffer.from(wav.data.split(",")[1], "base64"),
+  });
+  await expect(dialog.locator(".audio-clip")).toHaveCount(1);
   await dialog
     .getByRole("button", { name: "Fit scene to this narration take" })
     .click();
@@ -151,7 +219,13 @@ test("audio library, narration timing and mascot references persist in a saved p
   await page.getByRole("button", { name: "Storyboard", exact: true }).click();
   await dialog
     .locator(".workflow-tabs")
-    .getByRole("button", { name: "Audio", exact: true })
+    .getByRole("button", { name: "Voice", exact: true })
     .click();
   await page.screenshot({ path: "test-results/workflow-audio.png" });
+});
+
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/workspaceGet", (r) =>
+    r.fulfill({ json: { result: null } }),
+  );
 });

@@ -14,6 +14,15 @@ import {
 import { composeProject } from "../shared/composition";
 import { useStudio } from "../src/store";
 beforeEach(() => useStudio.getState().load(newProject()));
+it("creates visual-only storyboard placeholders without displaying narration or scene titles", () => {
+  const text = "A black hole sits at the center of our galaxy.";
+  const plan = localStoryboard(text);
+  expect(plan.scenes[0].template).toBe("visual");
+  const scenes = scenesFromPlan(text, plan, newProject());
+  expect(scenes[0].html).not.toMatch(/<h1|<p>|blockquote/);
+  expect(scenes[0].html).not.toContain(text);
+  expect(scenes[0].narration).toBe(text);
+});
 const script =
   "Our universe is enormous. Every star has a story. Some stars live for billions of years. Others burn brightly before exploding. A telescope lets us explore their light and understand our place in space. Small discoveries can change how we see everything.";
 it("splits scripts without rewriting or dropping narration and rejects incomplete AI plans", () => {
@@ -42,12 +51,10 @@ it("keeps source code independent across scene switches and saves a portable sto
       scenes,
       selectedId: scenes[0].id,
     };
-  useStudio
-    .getState()
-    .change({
-      ...activateScene({ ...p, workflow }, workflow.selectedId),
-      workflow,
-    });
+  useStudio.getState().change({
+    ...activateScene({ ...p, workflow }, workflow.selectedId),
+    workflow,
+  });
   useStudio.getState().change({ html: "<h1>First edit</h1>" });
   let state = useStudio.getState();
   state.change(activateScene(state.project, scenes[1].id));

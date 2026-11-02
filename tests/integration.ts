@@ -139,6 +139,23 @@ await assert.rejects(() =>
 await assert.rejects(() => fs.stat(cancelled));
 assert(!(await fs.readdir(dir)).some((f) => f.includes(".partial-")));
 console.log("PASS cancellation and partial-file cleanup");
+const verifyCancellation = new AbortController();
+const verifyOutput = path.join(dir, "cancelled-verification.mp4");
+await assert.rejects(() =>
+  renderExport(
+    reopened,
+    { ...base, duration: 0.2 },
+    verifyOutput,
+    ffmpeg,
+    verifyCancellation.signal,
+    (progress) => {
+      if (progress.stage === "Verifying video") verifyCancellation.abort();
+    },
+  ),
+);
+await assert.rejects(() => fs.stat(verifyOutput));
+assert(!(await fs.readdir(dir)).some((file) => file.includes(".partial-")));
+console.log("PASS verification-stage cancellation and cleanup");
 await fs.writeFile(
   path.join(dir, "results.json"),
   JSON.stringify(

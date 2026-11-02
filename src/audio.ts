@@ -9,7 +9,7 @@ export async function readData(file: File) {
     reader.readAsDataURL(file);
   });
 }
-export async function audioDetails(data: string) {
+export async function audioDetails(data: string, bins = 2048) {
   const encoded = data.split(",")[1];
   if (!encoded) throw Error("Invalid audio file");
   const binary = atob(encoded),
@@ -17,9 +17,15 @@ export async function audioDetails(data: string) {
   const context = new AudioContext();
   try {
     const audio = await context.decodeAudioData(bytes.buffer);
+    const channels = Array.from(
+      { length: audio.numberOfChannels },
+      (_, index) => waveform(audio.getChannelData(index), bins),
+    );
     return {
       duration: audio.duration,
-      peaks: waveform(audio.getChannelData(0)),
+      peaks: Array.from({ length: bins }, (_, index) =>
+        Math.max(...channels.map((channel) => channel[index])),
+      ),
     };
   } finally {
     await context.close();

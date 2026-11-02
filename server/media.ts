@@ -1,6 +1,67 @@
 import { z } from "zod";
 import { projectSchema, type Project } from "../shared/project";
+import { transcriptWordSchema } from "../shared/transcript";
 const keySchema = z.string().min(1).max(1000);
+export async function transcribeAudio(
+  key: string,
+  input: { data: string; name: string },
+) {
+  if (!key)
+    throw Error("Connect an ElevenLabs API key in Services to extract text.");
+  const match =
+    /^data:(audio\/[\w.+-]+|application\/octet-stream);base64,([A-Za-z0-9+/=]+)$/.exec(
+      input.data,
+    );
+  if (!match) throw Error("Choose an imported audio file to transcribe.");
+  const bytes = Buffer.from(match[2], "base64");
+  if (!bytes.length || bytes.length > 25000000)
+    throw Error("Transcription supports audio files up to 25 MB.");
+  const form = new FormData();
+  form.set("model_id", "scribe_v2");
+  form.set("tag_audio_events", "false");
+  form.set("timestamps_granularity", "word");
+  form.set(
+    "file",
+    new Blob([new Uint8Array(bytes)], { type: match[1] }),
+    input.name,
+  );
+  const response = await checked(
+    await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+      method: "POST",
+      headers: { "xi-api-key": key },
+      body: form,
+      signal: AbortSignal.timeout(180000),
+    }),
+    key,
+  );
+  const raw = z
+    .object({
+      text: z.string().max(50000),
+      words: z
+        .array(
+          z.object({
+            text: z.string(),
+            start: z.number(),
+            end: z.number(),
+            type: z.string().optional(),
+          }),
+        )
+        .max(30000)
+        .optional(),
+    })
+    .parse(await response.json());
+  const result = {
+    text: raw.text,
+    words: (raw.words ?? [])
+      .filter(
+        (word) => (!word.type || word.type === "word") && word.text.trim(),
+      )
+      .map((word) => transcriptWordSchema.parse(word))
+      .slice(0, 10000),
+  };
+  if (!result.text.trim()) throw Error("No speech was detected in this audio.");
+  return result;
+}
 async function checked(response: Response, key: string) {
   if (response.ok) return response;
   let text = (await response.text())
@@ -17,22 +78,63 @@ async function checked(response: Response, key: string) {
 }
 export async function googleImageModels(key: string) {
   keySchema.parse(key);
-  const r = await checked(
-    await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
-      headers: { "x-goog-api-key": key },
+  const signal = AbortSignal.timeout(15000),
+    result = new Map<string, { id: string; name: string }>(),
+    seen = new Set<string>();
+  let token = "";
+  do {
+    if (seen.has(token) || seen.size >= 50)
+      throw Error("Gemini returned an incomplete model catalog. Try again.");
+    seen.add(token);
+    const url = new URL(
+      "https://generativelanguage.googleapis.com/v1beta/models",
+    );
+    if (token) url.searchParams.set("pageToken", token);
+    const r = await checked(
+      await fetch(url.href, { headers: { "x-goog-api-key": key }, signal }),
+      key,
+    );
+    const data = await r.json();
+    if (!Array.isArray(data.models))
+      throw Error("Unexpected Gemini model catalog.");
+    for (const m of data.models)
+      if (
+        typeof m.name === "string" &&
+        m.name.includes("image") &&
+        m.supportedGenerationMethods?.includes("generateContent")
+      )
+        result.set(m.name, { id: m.name, name: m.displayName ?? m.name });
+    token = typeof data.nextPageToken === "string" ? data.nextPageToken : "";
+  } while (token);
+  return [...result.values()];
+}
+export async function elevenSubscription(key: string) {
+  keySchema.parse(key);
+  const response = await checked(
+    await fetch("https://api.elevenlabs.io/v1/user/subscription", {
+      headers: { "xi-api-key": key },
       signal: AbortSignal.timeout(15000),
     }),
     key,
   );
-  return (
-    (await r.json()).models
-      ?.filter(
-        (m: any) =>
-          m.name.includes("image") &&
-          m.supportedGenerationMethods?.includes("generateContent"),
-      )
-      .map((m: any) => ({ id: m.name, name: m.displayName })) ?? []
-  );
+  const subscription = z
+    .object({
+      character_count: z.number().nonnegative(),
+      character_limit: z.number().nonnegative(),
+      next_character_count_reset_unix: z.number().nullable().optional(),
+      tier: z.string().optional(),
+    })
+    .parse(await response.json());
+  return {
+    used: subscription.character_count,
+    limit: subscription.character_limit,
+    remaining: Math.max(
+      0,
+      subscription.character_limit - subscription.character_count,
+    ),
+    resetAt: subscription.next_character_count_reset_unix ?? undefined,
+    tier: subscription.tier,
+  };
 }
 export async function generateImage(
   key: string,
@@ -97,24 +199,51 @@ export async function generateImage(
 export async function elevenCatalog(key: string) {
   keySchema.parse(key);
   const headers = { "xi-api-key": key };
+  const signal = AbortSignal.timeout(15000);
+  const loadVoices = async () => {
+    const voices = new Map<string, { id: string; name: string }>(),
+      seen = new Set<string>();
+    let token = "";
+    do {
+      if (seen.has(token) || seen.size >= 50)
+        throw Error(
+          "ElevenLabs returned an incomplete voice catalog. Try again.",
+        );
+      seen.add(token);
+      const url = new URL("https://api.elevenlabs.io/v2/voices");
+      url.searchParams.set("page_size", "100");
+      if (token) url.searchParams.set("next_page_token", token);
+      const response = await checked(
+          await fetch(url.href, { headers, signal }),
+          key,
+        ),
+        data = await response.json();
+      if (!Array.isArray(data.voices))
+        throw Error("Unexpected ElevenLabs voice catalog.");
+      for (const voice of data.voices)
+        voices.set(voice.voice_id, { id: voice.voice_id, name: voice.name });
+      if (data.has_more && !data.next_page_token)
+        throw Error("ElevenLabs voice pagination is incomplete. Try again.");
+      token = data.has_more ? data.next_page_token : "";
+    } while (token);
+    return [...voices.values()];
+  };
   const [voices, models] = await Promise.all([
-    fetch("https://api.elevenlabs.io/v1/voices", {
-      headers,
-      signal: AbortSignal.timeout(15000),
-    }),
-    fetch("https://api.elevenlabs.io/v1/models", {
-      headers,
-      signal: AbortSignal.timeout(15000),
-    }),
+    loadVoices(),
+    (async () => {
+      const response = await checked(
+        await fetch("https://api.elevenlabs.io/v1/models", { headers, signal }),
+        key,
+      );
+      const data = await response.json();
+      if (!Array.isArray(data))
+        throw Error("Unexpected ElevenLabs model catalog.");
+      return data;
+    })(),
   ]);
-  await checked(voices, key);
-  await checked(models, key);
   return {
-    voices: (await voices.json()).voices.map((v: any) => ({
-      id: v.voice_id,
-      name: v.name,
-    })),
-    models: (await models.json())
+    voices,
+    models: models
       .filter((m: any) => m.can_do_text_to_speech)
       .map((m: any) => ({ id: m.model_id, name: m.name })),
   };

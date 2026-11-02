@@ -9,6 +9,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import { atomicWrite } from "./storage";
+import type { CredentialStore } from "./credentials";
 const issuer = "https://auth.openai.com",
   resource = "https://api.openai.com/v1";
 type Registration = { clientId: string; subject?: string; email?: string };
@@ -17,6 +18,7 @@ type Tokens = Registration & {
   refresh?: string;
   expires: number;
   scopes: string[];
+  idToken?: string;
 };
 type Pending = {
   state: string;
@@ -31,6 +33,7 @@ type Pending = {
 type Deps = {
   fetch?: typeof fetch;
   verify?: (token: string, clientId: string) => Promise<JWTPayload>;
+  credentials?: CredentialStore;
 };
 export class ChatGPTConnection {
   private starting = false;
@@ -39,12 +42,28 @@ export class ChatGPTConnection {
   private error = "";
   private renewing?: Promise<string>;
   private discovery?: any;
+  private credentials?: CredentialStore;
+  private remember = false;
   private request: typeof fetch;
   private verifier: NonNullable<Deps["verify"]>;
   constructor(
     private directory: string,
     deps: Deps = {},
   ) {
+    this.credentials = deps.credentials;
+    const saved = deps.credentials?.get("chatgpt");
+    if (
+      saved &&
+      typeof saved.access === "string" &&
+      typeof saved.clientId === "string" &&
+      typeof saved.subject === "string" &&
+      typeof saved.expires === "number" &&
+      Array.isArray(saved.scopes) &&
+      saved.scopes.includes("chatgpt.tokens.use.direct")
+    ) {
+      this.tokens = saved;
+      this.remember = true;
+    }
     this.request = deps.fetch ?? fetch;
     this.verifier =
       deps.verify ??
@@ -109,6 +128,7 @@ export class ChatGPTConnection {
   status() {
     return {
       connected: !!this.tokens,
+      remembered: this.remember,
       pending: !!this.pending,
       email: this.tokens?.email,
       subject: this.tokens?.subject,
@@ -117,12 +137,13 @@ export class ChatGPTConnection {
       error: this.error,
     };
   }
-  async begin(newAccount = false) {
+  async begin(newAccount = false, remember = false) {
     if (this.pending || this.starting)
       throw Error(
         "A ChatGPT sign-in is already pending. Cancel it before retrying.",
       );
     this.starting = true;
+    this.remember = remember;
     try {
       this.error = "";
       await fs.mkdir(this.directory, { recursive: true });
@@ -288,13 +309,20 @@ export class ChatGPTConnection {
         path.join(this.directory, "chatgpt-registration.json"),
         JSON.stringify(registration),
       );
-      this.tokens = {
+      const nextTokens = {
         ...registration,
         access: data.access_token,
         refresh: data.refresh_token,
         expires: Date.now() + Number(data.expires_in ?? 3600) * 1000,
         scopes,
+        idToken: data.id_token,
       };
+      if (this.credentials)
+        await this.credentials.set(
+          "chatgpt",
+          this.remember ? nextTokens : undefined,
+        );
+      this.tokens = nextTokens;
       this.error = "";
       res.end(
         "Connected to FrameScript Studio. You may close this tab and return to the animation editor.",
@@ -359,6 +387,8 @@ export class ChatGPTConnection {
         throw Error(
           "ChatGPT plan access is unavailable. Reconnect your account.",
         );
+      if (this.credentials && this.remember)
+        await this.credentials.set("chatgpt", this.tokens);
       return this.tokens.access;
     })().finally(() => {
       this.renewing = undefined;
@@ -366,6 +396,8 @@ export class ChatGPTConnection {
     return this.renewing;
   }
   async disconnect() {
+    if (this.credentials) await this.credentials.set("chatgpt", undefined);
+    this.remember = false;
     this.stopPending();
     const t = this.tokens;
     this.tokens = undefined;

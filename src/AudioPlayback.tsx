@@ -1,19 +1,18 @@
 import { useEffect, useRef } from "react";
 import type { Project, AudioClip } from "../shared/project";
 import { sceneOffset } from "../shared/workflow";
+import { useStudio } from "./store";
 export function AudioPlayback({
   project,
-  time,
-  playing,
   master,
   onError,
 }: {
   project: Project;
-  time: number;
-  playing: boolean;
   master: boolean;
   onError: (message: string) => void;
 }) {
+  const time = useStudio((s) => s.time);
+  const playing = useStudio((s) => s.playing);
   const nodes = useRef(new Map<string, HTMLAudioElement>());
   const blocked = useRef(new Set<string>());
   const globalTime =

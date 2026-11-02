@@ -10,9 +10,9 @@ import {
   Trash2,
   Unlock,
 } from "lucide-react";
-import { useStudio } from "./store";
+import { useStudio, useProjectState } from "./store";
 import { bridge } from "./bridge";
-import { Modal, Field } from "./components";
+import { WorkflowSurface, Field } from "./components";
 import {
   initialWorkflow,
   activateScene,
@@ -23,59 +23,16 @@ import {
   templateIds,
   templateCode,
   mascotPrompt,
+  sceneOffset,
 } from "../shared/workflow";
+import {
+  timeScenesToNarration,
+  withAudioClip,
+  narrationLength,
+} from "../shared/narration";
 import type { Project, Scene, AudioClip } from "../shared/project";
 import { builtinSounds, synthesizeSound } from "../shared/audio";
 import { readData, audioDetails, clipFromAudio } from "./audio";
-
-export function SceneRail({
-  master,
-  onMaster,
-  busy,
-}: {
-  master: boolean;
-  onMaster: (value: boolean) => void;
-  busy: boolean;
-}) {
-  const s = useStudio(),
-    w = s.project.workflow;
-  if (!w) return null;
-  return (
-    <div className="scene-rail">
-      <div className="scene-rail-heading">
-        <strong>SCENES · {w.scenes.length}</strong>
-        <button
-          disabled={busy}
-          className={master ? "accent" : ""}
-          onClick={() => onMaster(!master)}
-        >
-          {master ? "Edit scene" : "Master preview"}
-        </button>
-      </div>
-      <div className="scene-rail-list">
-        {w.scenes.map((scene, i) => (
-          <button
-            key={scene.id}
-            disabled={busy}
-            className={!master && scene.id === w.selectedId ? "active" : ""}
-            onClick={() => {
-              s.change(activateScene(s.project, scene.id), "Select scene");
-              s.setTime(0);
-              s.setPlaying(false);
-              onMaster(false);
-            }}
-          >
-            <span>{String(i + 1).padStart(2, "0")}</span>
-            <strong>{scene.title}</strong>
-            <small>
-              {scene.duration.toFixed(1)}s {scene.locked ? "🔒" : ""}
-            </small>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 export function Workflow({
   open,
@@ -85,6 +42,13 @@ export function Workflow({
   busy,
   onMaster,
   onNotice,
+  onServices,
+  onEditScene,
+  onGenerateScene,
+  requestedTab,
+  masterMode = false,
+  embedded = false,
+  onTabChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -93,8 +57,15 @@ export function Workflow({
   busy: boolean;
   onMaster: (value: boolean) => void;
   onNotice: (message: string) => void;
+  onServices: () => void;
+  onEditScene: () => void;
+  onGenerateScene: (id: string) => void;
+  requestedTab?: string;
+  masterMode?: boolean;
+  embedded?: boolean;
+  onTabChange?: (tab: string) => void;
 }) {
-  const s = useStudio(),
+  const s = useProjectState(),
     p = s.project,
     w = p.workflow ?? initialWorkflow(p),
     scene = selectedScene(p) ?? w.scenes[0];
@@ -104,25 +75,50 @@ export function Workflow({
     [error, setError] = useState("");
   const [component, setComponent] = useState("headline"),
     [text, setText] = useState("A clear idea. Beautifully explained."),
-    [color, setColor] = useState("#67b4ff"),
-    [font, setFont] = useState("Segoe UI");
+    [color, setColor] = useState(p.brand?.primary ?? "#67b4ff"),
+    [font, setFont] = useState(p.brand?.font ?? "Segoe UI");
   const [variation, setVariation] = useState(
       "Happy expression, waving hello, facing the viewer",
     ),
-    [imageKey, setImageKey] = useState(""),
     [imageModel, setImageModel] = useState(""),
     [imageModels, setImageModels] = useState<any[]>([]),
     [status, setStatus] = useState({ gemini: false, eleven: false });
-  const [elevenKey, setElevenKey] = useState(""),
-    [voice, setVoice] = useState(""),
+  const [voice, setVoice] = useState(""),
     [voiceModel, setVoiceModel] = useState("eleven_v4"),
     [voices, setVoices] = useState<any[]>([]),
     [voiceModels, setVoiceModels] = useState<any[]>([]),
     [sfxPrompt, setSFXPrompt] = useState("A soft, short cinematic whoosh");
   const [audioLane, setAudioLane] = useState<AudioClip["lane"]>("voice");
+  const [audioDragging, setAudioDragging] = useState(false);
+  const [importNotice, setImportNotice] = useState("");
+  const [voiceScope, setVoiceScope] = useState<"auto" | "script" | "scene">(
+    "auto",
+  );
+  const fullScript =
+    voiceScope === "script" ||
+    (voiceScope === "auto" &&
+      !!w.script.trim() &&
+      (!scene.narration.trim() ||
+        p.audio?.some(
+          (clip) => clip.lane === "voice" && !clip.sceneId && !clip.muted,
+        )));
+  const narrationText = fullScript ? w.script : scene.narration;
+  const voiceBlocked =
+    !fullScript &&
+    (scene.locked ||
+      p.audio?.some(
+        (clip) => clip.lane === "voice" && !clip.sceneId && !clip.muted,
+      ));
   const imagesRef = useRef<HTMLInputElement>(null),
     audioRef = useRef<HTMLInputElement>(null);
   const importKind = useRef<"reference" | "variant">("reference");
+  const goToTab = (value: string) => {
+    setTab(value);
+    onTabChange?.(value);
+  };
+  useEffect(() => {
+    if (open && requestedTab) setTab(requestedTab);
+  }, [open, requestedTab]);
   useEffect(() => {
     if (open) {
       setScript(p.workflow?.script ?? "");
@@ -132,6 +128,65 @@ export function Workflow({
         .catch((e) => setError(e.message));
     }
   }, [open]);
+  const [preferencesReady, setPreferencesReady] = useState(false);
+  useEffect(() => {
+    void bridge
+      .call("settingsGet")
+      .then((settings) => {
+        const v = settings.mediaPreferences;
+        if (v) {
+          setVoice(v.voice ?? "");
+          setVoiceModel(v.voiceModel ?? "eleven_v4");
+          setImageModel(v.imageModel ?? "");
+          setFont(v.font ?? "Segoe UI");
+          setColor(v.color ?? "#67b4ff");
+        }
+        setPreferencesReady(true);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!preferencesReady) return;
+    const timer = setTimeout(() => {
+      void bridge
+        .call("settingsSet", {
+          mediaPreferences: { voice, voiceModel, imageModel, font, color },
+        })
+        .catch((e) => setError(e.message));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [preferencesReady, voice, voiceModel, imageModel, font, color]);
+  useEffect(() => {
+    if (!open || tab !== "voice" || !preferencesReady) return;
+    let cancelled = false;
+    void (async () => {
+      const connected = await bridge.call("mediaStatus");
+      if (cancelled) return;
+      setStatus(connected);
+      if (!connected.eleven) return;
+      const catalog = await bridge.call("elevenCatalog");
+      if (cancelled) return;
+      setVoices(catalog.voices);
+      setVoiceModels(catalog.models);
+      setVoice((current) =>
+        catalog.voices.some((v: any) => v.id === current)
+          ? current
+          : (catalog.voices[0]?.id ?? ""),
+      );
+      setVoiceModel((current) =>
+        catalog.models.some((v: any) => v.id === current)
+          ? current
+          : (catalog.models.find((v: any) => v.id === "eleven_v4")?.id ??
+            catalog.models[0]?.id ??
+            ""),
+      );
+    })().catch((e) => {
+      if (!cancelled) setError(e.message);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, tab, preferencesReady]);
   const task = async (label: string, fn: () => Promise<void>) => {
     if (working || busy) return;
     setWorking(label);
@@ -168,9 +223,15 @@ export function Workflow({
       edits.settings = { ...p.settings, duration: patch.duration };
     s.change(edits, "Edit scene");
   };
-  const setPlan = (plan: unknown) => {
-    const p = current(),
-      scenes = scenesFromPlan(script, plan, p);
+  const setPlan = async (plan: unknown, narration?: AudioClip) => {
+    const p = current();
+    const take =
+      narration ??
+      [...(p.audio ?? [])]
+        .reverse()
+        .find((clip) => clip.lane === "voice" && !clip.sceneId && !clip.muted);
+    let scenes = scenesFromPlan(script, plan, p);
+    if (take) scenes = timeScenesToNarration(scenes, take, script);
     if (
       p.workflow?.scenes.length &&
       !confirm(
@@ -184,6 +245,10 @@ export function Workflow({
       scenes,
       selectedId: scenes[0].id,
     };
+    const revision = useStudio.getState().revision;
+    await bridge.call("checkpoint", "Before replacing storyboard", p);
+    if (useStudio.getState().revision !== revision)
+      throw Error("Project changed before replacing storyboard. Try again.");
     s.change(
       {
         ...activateScene({ ...p, workflow }, workflow.selectedId),
@@ -195,28 +260,20 @@ export function Workflow({
     s.setTime(0);
     s.setPlaying(false);
     onMaster(false);
-    setTab("scenes");
+    goToTab("scenes");
   };
   const addAudio = (clip: AudioClip) => {
-    const p = current();
-    if (clip.sceneId && !p.workflow?.scenes.some((s) => s.id === clip.sceneId))
-      throw Error("The target scene changed. Select a scene and try again.");
-    s.change(
-      {
-        audio: [
-          ...(p.audio ?? []).map((a) =>
-            clip.lane === "voice" &&
-            a.lane === "voice" &&
-            a.sceneId === clip.sceneId
-              ? { ...a, muted: true }
-              : a,
-          ),
-          clip,
-        ],
-      },
-      "Add audio",
-    );
+    s.change(withAudioClip(current(), clip), "Add audio and narration timing");
   };
+  const soundStart = () =>
+    Math.max(
+      0,
+      Math.min(
+        scene.duration - 0.01,
+        useStudio.getState().time -
+          (masterMode ? sceneOffset(current(), scene.id) : 0),
+      ),
+    );
   const importImages = async (files: FileList | null) => {
     if (!files) return;
     const p = current(),
@@ -246,6 +303,56 @@ export function Workflow({
       "Import mascot images",
     );
   };
+  const importAudioFiles = async (files: File[], lane: AudioClip["lane"]) => {
+    setImportNotice("");
+    for (const file of files) {
+      if (
+        !file.type.startsWith("audio/") &&
+        !/\.(mp3|wav|m4a|ogg|flac|aac|opus|aiff?|webm)$/i.test(file.name)
+      )
+        throw Error("Choose an audio file such as MP3 or WAV.");
+      if (lane === "voice" && voiceBlocked)
+        throw Error(
+          "Unlock the scene or mute the full-script take before importing scene narration.",
+        );
+      const targetScope =
+        lane === "music" || (lane === "voice" && fullScript)
+          ? undefined
+          : w.selectedId;
+      const expectedText = narrationText,
+        placement = soundStart(),
+        revision = useStudio.getState().revision;
+      const data = await readData(file),
+        details = await audioDetails(data);
+      if (useStudio.getState().revision !== revision)
+        throw Error(
+          "Project changed while importing audio. Import the file again.",
+        );
+      if (
+        lane === "voice" &&
+        (fullScript
+          ? current().workflow?.script
+          : current().workflow?.scenes.find((item) => item.id === targetScope)
+              ?.narration) !== expectedText
+      )
+        throw Error(
+          "Narration text changed while importing. Import the take again.",
+        );
+      addAudio({
+        ...clipFromAudio(
+          { name: file.name, data, ...details },
+          lane,
+          targetScope,
+        ),
+        ...(lane === "voice" && expectedText.trim()
+          ? { transcript: expectedText }
+          : {}),
+        ...(lane === "sfx" ? { start: placement } : {}),
+      });
+      setImportNotice(`${file.name} · ${details.duration.toFixed(2)}s loaded`);
+      onNotice(`Imported audio · ${file.name}`);
+    }
+  };
   const insertAsset = (id: string) => {
     const p = current();
     if (selectedScene(p)?.locked) throw Error("Unlock the scene first");
@@ -260,24 +367,29 @@ export function Workflow({
     onNotice("Image inserted into the selected scene");
   };
   return (
-    <Modal
+    <WorkflowSurface
+      embedded={embedded}
       title="Storyboard & production workflow"
       wide
       open={open}
       onClose={onClose}
     >
       <nav className="workflow-tabs">
-        {["script", "scenes", "components", "audio", "mascot"].map((t) => (
-          <button
-            key={t}
-            className={tab === t ? "active" : ""}
-            onClick={() => setTab(t)}
-          >
-            {t === "mascot"
-              ? "Mascot & images"
-              : t[0].toUpperCase() + t.slice(1)}
-          </button>
-        ))}
+        {["script", "scenes", "components", "voice", "sound", "mascot"].map(
+          (t) => (
+            <button
+              key={t}
+              className={tab === t ? "active" : ""}
+              onClick={() => goToTab(t)}
+            >
+              {t === "sound"
+                ? "SFX & Music"
+                : t === "mascot"
+                  ? "Mascot & images"
+                  : t[0].toUpperCase() + t.slice(1)}
+            </button>
+          ),
+        )}
       </nav>
       <div className="workflow-context">
         <span>
@@ -332,6 +444,16 @@ export function Workflow({
               </small>
               <div className="workflow-actions">
                 <button
+                  disabled={!script.trim()}
+                  onClick={() => {
+                    setVoiceScope("script");
+                    setAudioLane("voice");
+                    goToTab("voice");
+                  }}
+                >
+                  Generate narration first
+                </button>
+                <button
                   className="primary"
                   onClick={() =>
                     void task("Splitting script", async () =>
@@ -363,7 +485,7 @@ export function Workflow({
                         throw Error(
                           "The project changed while planning. Try again with the current script.",
                         );
-                      setPlan(result);
+                      await setPlan(result);
                     })
                   }
                 >
@@ -391,15 +513,17 @@ export function Workflow({
                 editable HTML, CSS and JavaScript.
               </p>
               <p className="muted">
-                Suggested sequence: plan scenes → choose typography → add
-                narration → fit scene durations → add mascot variants and sound
-                → preview/export master.
+                Suggested sequence: script → generate or import full narration →
+                compose scenes to its measured length → create visuals → add
+                SFX/music → preview/export master. Scene boundaries are
+                approximate until reviewed; audio length alone does not identify
+                spoken-word timestamps.
               </p>
               <button
                 onClick={() => {
                   if (!p.workflow)
                     s.change({ workflow: initialWorkflow(p) }, "Enable scenes");
-                  setTab("scenes");
+                  goToTab("scenes");
                 }}
               >
                 Keep the current animation as Scene 1
@@ -496,10 +620,57 @@ export function Workflow({
                       s.setPlaying(false);
                       s.setTime(0);
                       onMaster(false);
+                      onEditScene();
                       onClose();
                     }}
                   >
                     Edit this scene
+                  </button>
+                  <button
+                    className="primary"
+                    disabled={busy || item.locked}
+                    onClick={() => {
+                      s.change(
+                        activateScene(current(), item.id),
+                        "Select scene for generation",
+                      );
+                      s.setPlaying(false);
+                      s.setTime(0);
+                      onMaster(false);
+                      onEditScene();
+                      onClose();
+                      onGenerateScene(item.id);
+                    }}
+                  >
+                    Generate scene
+                  </button>
+                  <button
+                    disabled={item.locked}
+                    onClick={() => {
+                      const doc = new DOMParser().parseFromString(
+                        item.html,
+                        "text/html",
+                      );
+                      const walker = doc.createTreeWalker(
+                        doc.body,
+                        NodeFilter.SHOW_TEXT,
+                      );
+                      const nodes: Text[] = [];
+                      while (walker.nextNode()) {
+                        const node = walker.currentNode as Text;
+                        if (!node.parentElement?.closest("script,style"))
+                          nodes.push(node);
+                      }
+                      nodes.forEach((node) => (node.textContent = ""));
+                      if (item.id === w.selectedId)
+                        s.change(
+                          { html: doc.body.innerHTML },
+                          "Remove scene text",
+                        );
+                      else updateScene(item.id, { html: doc.body.innerHTML });
+                    }}
+                  >
+                    Remove scene text
                   </button>
                   <button
                     onClick={() => {
@@ -672,6 +843,7 @@ export function Workflow({
                     color,
                     font,
                     w.mascot.references[0],
+                    p.brand?.background,
                   );
                   s.change(
                     {
@@ -851,25 +1023,12 @@ export function Workflow({
                   Google Flow subscription. References improve consistency but
                   do not guarantee it.
                 </p>
-                <Field label="Gemini API key (server session only)">
-                  <input
-                    type="password"
-                    value={imageKey}
-                    onChange={(e) => setImageKey(e.target.value)}
-                    autoComplete="off"
-                  />
-                </Field>
+                <button onClick={onServices}>
+                  Manage image connection in Services
+                </button>
                 <button
                   onClick={() =>
-                    void task("Connecting Gemini", async () => {
-                      if (imageKey) {
-                        await bridge.call(
-                          "mediaCredentials",
-                          "gemini",
-                          imageKey,
-                        );
-                        setImageKey("");
-                      }
+                    void task("Loading image models", async () => {
                       setStatus(await bridge.call("mediaStatus"));
                       const models = await bridge.call("imageModels");
                       setImageModels(models);
@@ -877,10 +1036,11 @@ export function Workflow({
                     })
                   }
                 >
-                  Connect / load image models
+                  Load image models
                 </button>
                 <Field label="Image model">
                   <select
+                    aria-label="Image model"
                     value={imageModel}
                     onChange={(e) => setImageModel(e.target.value)}
                   >
@@ -931,56 +1091,269 @@ export function Workflow({
             </div>
           </div>
         )}
-        {tab === "audio" && (
+        {(tab === "voice" || tab === "sound") && (
           <div>
-            <div className="workflow-two-columns">
-              <div>
-                <h3>Voice, SFX & background music</h3>
+            <input
+              ref={audioRef}
+              type="file"
+              accept="audio/*"
+              multiple
+              hidden
+              onChange={(e) => {
+                const files = Array.from(e.currentTarget.files ?? []);
+                e.currentTarget.value = "";
+                void task("Importing audio", () =>
+                  importAudioFiles(files, audioLane),
+                );
+              }}
+            />
+            <div className="audio-production-sections">
+              <section
+                className="audio-production-section"
+                hidden={tab !== "voice"}
+                aria-label="Voice generation"
+              >
+                <h3>Voice generation</h3>
                 <p className="muted">
-                  Imported and built-in audio stays local. Music is ducked while
-                  narration plays. Attach clips to a scene or keep them on the
-                  master timeline.
+                  Generate or import the full script first, then compose scenes
+                  using the measured audio length. Scene narration takes
+                  automatically fit their scene duration.
+                </p>
+                <Field label="Narration scope">
+                  <select
+                    value={fullScript ? "script" : "scene"}
+                    onChange={(e) =>
+                      setVoiceScope(e.target.value as "script" | "scene")
+                    }
+                  >
+                    <option value="script">
+                      Full script · before scene composition
+                    </option>
+                    <option value="scene">Selected scene</option>
+                  </select>
+                </Field>
+                {voiceBlocked && (
+                  <p className="muted">
+                    {scene.locked
+                      ? "Unlock the selected scene before adding its narration."
+                      : "Mute the full-script narration take before adding a separate scene voice track."}
+                  </p>
+                )}
+                <section
+                  className="audio-import-section"
+                  aria-label="Import audio"
+                >
+                  <h4>Import audio</h4>
+                  <p className="muted">
+                    Already have a recording? Import it here without an account
+                    or API key. MP3, WAV or other browser-supported audio · up
+                    to 30 MB per file.
+                  </p>
+                  <div
+                    className="audio-import-zone"
+                    data-dragging={audioDragging}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!voiceBlocked && !working && !busy)
+                        setAudioDragging(true);
+                    }}
+                    onDragLeave={() => setAudioDragging(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setAudioDragging(false);
+                      if (voiceBlocked || working || busy) return;
+                      const files = Array.from(e.dataTransfer.files);
+                      void task("Importing audio", () =>
+                        importAudioFiles(files, "voice"),
+                      );
+                    }}
+                  >
+                    <strong>Drop your audio recording here</strong>
+                    <button
+                      className="primary"
+                      disabled={!!voiceBlocked}
+                      onClick={() => {
+                        setAudioLane("voice");
+                        audioRef.current?.click();
+                      }}
+                    >
+                      Choose audio files
+                    </button>
+                    <small>
+                      {fullScript
+                        ? "Imports as full-script narration; compose scenes from its measured length."
+                        : "Imports into the selected scene and fits its duration automatically."}
+                    </small>
+                  </div>
+                  {importNotice && (
+                    <p role="status" className="audio-import-status">
+                      {importNotice}
+                    </p>
+                  )}
+                </section>
+                <details className="media-configuration" open>
+                  <summary>ElevenLabs voice generation</summary>{" "}
+                  <p className="muted">
+                    Uses your ElevenLabs API credits. Manage the connection and
+                    protected credential storage in Services. Generate a take
+                    only when needed; changing visuals does not regenerate
+                    audio.
+                  </p>
+                  <button onClick={onServices}>
+                    Manage voice connection in Services
+                  </button>
+                  <button
+                    onClick={() =>
+                      void task("Loading ElevenLabs voices", async () => {
+                        setStatus(await bridge.call("mediaStatus"));
+                        const catalog = await bridge.call("elevenCatalog");
+                        setVoices(catalog.voices);
+                        setVoiceModels(catalog.models);
+                        setVoiceModel((current) =>
+                          catalog.models.some((m: any) => m.id === current)
+                            ? current
+                            : catalog.models.some(
+                                  (m: any) => m.id === "eleven_v4",
+                                )
+                              ? "eleven_v4"
+                              : (catalog.models[0]?.id ?? ""),
+                        );
+                        setVoice((v) =>
+                          catalog.voices.some((a: any) => a.id === v)
+                            ? v
+                            : (catalog.voices[0]?.id ?? ""),
+                        );
+                      })
+                    }
+                  >
+                    Load voices & models
+                  </button>
+                  <Field label="Voice">
+                    <select
+                      aria-label="Voice"
+                      value={voice}
+                      onChange={(e) => setVoice(e.target.value)}
+                    >
+                      <option value="">Select voice</option>
+                      {voices.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Speech model">
+                    <select
+                      aria-label="Speech model"
+                      value={voiceModel}
+                      onChange={(e) => setVoiceModel(e.target.value)}
+                    >
+                      <option value="">Select a speech model</option>
+                      {voiceModels.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <p className="muted">
+                    {fullScript
+                      ? "Full script narration: "
+                      : "Selected scene narration: "}
+                    {narrationText || "Add narration text first."}
+                  </p>
+                  <button
+                    className="primary"
+                    disabled={
+                      !status.eleven ||
+                      !voice ||
+                      !voiceModel ||
+                      !narrationText.trim() ||
+                      !!voiceBlocked
+                    }
+                    onClick={() =>
+                      void task("Generating narration…", async () => {
+                        const revision = useStudio.getState().revision;
+                        if (narrationText.length > 10000)
+                          throw Error(
+                            "This voice provider supports up to 10,000 characters per take. Shorten the script or use scene narration takes.",
+                          );
+                        const result = await bridge.call("generateAudio", {
+                          type: "voice",
+                          voice,
+                          model: voiceModel,
+                          text: narrationText,
+                        });
+                        const details = await audioDetails(result.data);
+                        const latest = current();
+                        if (useStudio.getState().revision !== revision)
+                          throw Error(
+                            "Project changed while generating narration. The take was not applied; try again with the current project.",
+                          );
+                        if (
+                          (fullScript
+                            ? latest.workflow?.script
+                            : latest.workflow?.scenes.find(
+                                (item) => item.id === scene.id,
+                              )?.narration) !== narrationText
+                        )
+                          throw Error(
+                            "Narration text changed while generating. The take was not applied; generate again from the current text.",
+                          );
+                        addAudio({
+                          ...clipFromAudio(
+                            {
+                              name:
+                                (fullScript ? "Full script" : scene.title) +
+                                " — narration take",
+                              data: result.data,
+                              ...details,
+                            },
+                            "voice",
+                            fullScript ? undefined : scene.id,
+                          ),
+                          transcript: narrationText,
+                        });
+                      })
+                    }
+                  >
+                    Generate narration take
+                  </button>
+                </details>
+              </section>
+              <section
+                className="audio-production-section"
+                hidden={tab !== "sound"}
+                aria-label="SFX & background music"
+              >
+                <h3>SFX & background music</h3>
+                <p className="muted">
+                  Add sound effects and music separately. Background music ducks
+                  beneath narration.
                 </p>
                 <div className="workflow-actions">
                   <select
                     aria-label="Audio import category"
-                    value={audioLane}
+                    value={audioLane === "voice" ? "sfx" : audioLane}
                     onChange={(e) =>
                       setAudioLane(e.target.value as AudioClip["lane"])
                     }
                   >
-                    <option value="voice">Narration</option>
                     <option value="sfx">Sound effect</option>
                     <option value="music">Background music</option>
                   </select>
-                  <button onClick={() => audioRef.current?.click()}>
+                  <button
+                    onClick={() => {
+                      if (audioLane === "voice") setAudioLane("sfx");
+                      audioRef.current?.click();
+                    }}
+                  >
                     Import audio
                   </button>
                 </div>
-                <input
-                  ref={audioRef}
-                  type="file"
-                  accept="audio/*"
-                  multiple
-                  hidden
-                  onChange={(e) =>
-                    void task("Importing audio", async () => {
-                      if (!e.target.files) return;
-                      for (const file of Array.from(e.target.files)) {
-                        const data = await readData(file),
-                          details = await audioDetails(data);
-                        addAudio(
-                          clipFromAudio(
-                            { name: file.name, data, ...details },
-                            audioLane,
-                            audioLane === "music" ? undefined : w.selectedId,
-                          ),
-                        );
-                      }
-                      e.target.value = "";
-                    })
-                  }
-                />
+
                 <h4>Built-in synthesized sounds · no API</h4>
                 <div className="sound-presets">
                   {builtinSounds.map((sound) => (
@@ -996,6 +1369,7 @@ export function Workflow({
                         clip.license = value.license;
                         if (clip.lane === "music")
                           clip.length = totalDuration({ ...p, workflow: w });
+                        if (clip.lane === "sfx") clip.start = soundStart();
                         addAudio(clip);
                       }}
                     >
@@ -1006,105 +1380,12 @@ export function Workflow({
                     </button>
                   ))}
                 </div>
-              </div>
-              <div>
-                <details className="media-configuration">
-                  <summary>ElevenLabs voice & sound generation</summary>
-                  <p className="muted">
-                    Uses your ElevenLabs API credits. The key stays in Node
-                    memory until restart. Generate a take only when needed;
-                    changing visuals does not regenerate audio.
-                  </p>
-                  <Field label="ElevenLabs API key">
-                    <input
-                      type="password"
-                      value={elevenKey}
-                      onChange={(e) => setElevenKey(e.target.value)}
-                      autoComplete="off"
-                    />
-                  </Field>
-                  <button
-                    onClick={() =>
-                      void task("Connecting ElevenLabs", async () => {
-                        if (elevenKey) {
-                          await bridge.call(
-                            "mediaCredentials",
-                            "eleven",
-                            elevenKey,
-                          );
-                          setElevenKey("");
-                        }
-                        setStatus(await bridge.call("mediaStatus"));
-                        const catalog = await bridge.call("elevenCatalog");
-                        setVoices(catalog.voices);
-                        setVoiceModels(catalog.models);
-                        setVoice(catalog.voices[0]?.id ?? "");
-                      })
-                    }
-                  >
-                    Connect / load voices
-                  </button>
-                  <Field label="Voice">
-                    <select
-                      value={voice}
-                      onChange={(e) => setVoice(e.target.value)}
-                    >
-                      <option value="">Select voice</option>
-                      {voices.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Speech model">
-                    <select
-                      value={voiceModel}
-                      onChange={(e) => setVoiceModel(e.target.value)}
-                    >
-                      <option value="eleven_v4">Eleven v4</option>
-                      {voiceModels
-                        .filter((m) => m.id !== "eleven_v4")
-                        .map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name}
-                          </option>
-                        ))}
-                    </select>
-                  </Field>
-                  <p className="muted">
-                    Selected scene narration:{" "}
-                    {scene.narration ||
-                      "Add narration in the Scenes tab first."}
-                  </p>
-                  <button
-                    className="primary"
-                    disabled={!status.eleven || !voice || !scene.narration}
-                    onClick={() =>
-                      void task("Generating narration…", async () => {
-                        const result = await bridge.call("generateAudio", {
-                          type: "voice",
-                          voice,
-                          model: voiceModel,
-                          text: scene.narration,
-                        });
-                        const details = await audioDetails(result.data);
-                        addAudio(
-                          clipFromAudio(
-                            {
-                              name: scene.title + " — narration take",
-                              data: result.data,
-                              ...details,
-                            },
-                            "voice",
-                            scene.id,
-                          ),
-                        );
-                      })
-                    }
-                  >
-                    Generate narration take
-                  </button>
+
+                <details className="media-configuration" open>
+                  <summary>ElevenLabs sound effects</summary>
+                  <button onClick={onServices}>
+                    Manage sound connection in Services
+                  </button>{" "}
                   <Field label="Custom sound effect">
                     <textarea
                       value={sfxPrompt}
@@ -1115,14 +1396,15 @@ export function Workflow({
                     disabled={!status.eleven}
                     onClick={() =>
                       void task("Generating sound effect…", async () => {
+                        const placement = soundStart();
                         const result = await bridge.call("generateAudio", {
                           type: "sfx",
                           text: sfxPrompt,
                           duration: 2,
                         });
                         const details = await audioDetails(result.data);
-                        addAudio(
-                          clipFromAudio(
+                        addAudio({
+                          ...clipFromAudio(
                             {
                               name: sfxPrompt.slice(0, 100),
                               data: result.data,
@@ -1131,182 +1413,258 @@ export function Workflow({
                             "sfx",
                             scene.id,
                           ),
-                        );
+                          start: placement,
+                        });
                       })
                     }
                   >
                     Generate SFX
                   </button>
                 </details>
-              </div>
+              </section>
             </div>
             <div className="audio-clips">
-              {(p.audio ?? []).map((clip) => (
-                <article key={clip.id} className="audio-clip">
-                  <div className="audio-clip-heading">
-                    <strong>{clip.name}</strong>
-                    <span>
-                      {clip.lane} · {clip.duration.toFixed(2)}s source
-                    </span>
-                    <button
-                      title="Delete audio clip"
-                      onClick={() =>
-                        s.change(
-                          { audio: p.audio?.filter((a) => a.id !== clip.id) },
-                          "Remove audio",
-                        )
-                      }
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                  <audio controls src={clip.data} preload="metadata" />
-                  <div className="audio-waveform" aria-label="Audio waveform">
-                    {clip.peaks?.map((peak, i) => (
-                      <i key={i} style={{ height: Math.max(2, peak * 40) }} />
-                    ))}
-                  </div>
-                  <div className="audio-clip-controls">
-                    {(
-                      [
-                        "start",
-                        "trimIn",
-                        "length",
-                        "volume",
-                        "fadeIn",
-                        "fadeOut",
-                      ] as const
-                    ).map((key) => (
-                      <Field key={key} label={key}>
-                        <input
-                          type="number"
-                          min="0"
-                          max={key === "volume" ? 1 : 600}
-                          step=".1"
-                          value={clip[key]}
-                          onChange={(e) => {
-                            const n = +e.target.value;
-                            if (
-                              n < 0 ||
-                              (key === "length" && n <= 0) ||
-                              (key === "volume" && n > 1) ||
-                              (key === "trimIn" && n >= clip.duration) ||
-                              ((key === "fadeIn" || key === "fadeOut") &&
-                                n > 60) ||
-                              n > 600
-                            )
-                              return;
-                            s.change(
-                              {
-                                audio: p.audio?.map((a) =>
-                                  a.id === clip.id ? { ...a, [key]: n } : a,
-                                ),
-                              },
-                              "Edit audio clip",
-                            );
-                          }}
-                        />
-                      </Field>
-                    ))}
-                    <Field label="Timeline scope">
-                      <select
-                        value={clip.sceneId ?? ""}
-                        onChange={(e) =>
+              {[...(p.audio ?? [])]
+                .filter((clip) =>
+                  tab === "voice"
+                    ? clip.lane === "voice"
+                    : clip.lane !== "voice",
+                )
+                .sort(
+                  (a, b) =>
+                    Number(a.lane !== "voice") - Number(b.lane !== "voice"),
+                )
+                .map((clip, index, clips) => (
+                  <article key={clip.id} className="audio-clip">
+                    {(index === 0 ||
+                      (clip.lane === "voice") !==
+                        (clips[index - 1].lane === "voice")) && (
+                      <h3>
+                        {clip.lane === "voice"
+                          ? "Narration takes"
+                          : "Sound effects & music clips"}
+                      </h3>
+                    )}
+                    <div className="audio-clip-heading">
+                      <strong>{clip.name}</strong>
+                      <span>
+                        {clip.lane} · {clip.duration.toFixed(2)}s source
+                      </span>
+                      <button
+                        title="Delete audio clip"
+                        onClick={() =>
                           s.change(
-                            {
-                              audio: p.audio?.map((a) =>
-                                a.id === clip.id
-                                  ? {
-                                      ...a,
-                                      sceneId: e.target.value || undefined,
-                                    }
-                                  : a,
-                              ),
-                            },
-                            "Move audio scope",
+                            { audio: p.audio?.filter((a) => a.id !== clip.id) },
+                            "Remove audio",
                           )
                         }
                       >
-                        <option value="">Master timeline</option>
-                        {w.scenes.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.title}
-                          </option>
-                        ))}
-                      </select>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    <audio controls src={clip.data} preload="metadata" />
+                    <div className="audio-waveform" aria-label="Audio waveform">
+                      {clip.peaks?.map((peak, i) => (
+                        <i key={i} style={{ height: Math.max(2, peak * 40) }} />
+                      ))}
+                    </div>
+                    <div className="audio-clip-controls">
+                      {(
+                        [
+                          "start",
+                          "trimIn",
+                          "length",
+                          "volume",
+                          "fadeIn",
+                          "fadeOut",
+                        ] as const
+                      ).map((key) => (
+                        <Field key={key} label={key}>
+                          <input
+                            type="number"
+                            min="0"
+                            max={key === "volume" ? 1 : 600}
+                            step=".1"
+                            value={clip[key]}
+                            onChange={(e) => {
+                              const n = +e.target.value;
+                              if (
+                                n < 0 ||
+                                (key === "length" && n <= 0) ||
+                                (key === "volume" && n > 1) ||
+                                (key === "trimIn" && n >= clip.duration) ||
+                                ((key === "fadeIn" || key === "fadeOut") &&
+                                  n > 60) ||
+                                n > 600
+                              )
+                                return;
+                              s.change(
+                                {
+                                  audio: p.audio?.map((a) =>
+                                    a.id === clip.id ? { ...a, [key]: n } : a,
+                                  ),
+                                },
+                                "Edit audio clip",
+                              );
+                            }}
+                          />
+                        </Field>
+                      ))}
+                      <Field label="Timeline scope">
+                        <select
+                          value={clip.sceneId ?? ""}
+                          onChange={(e) =>
+                            s.change(
+                              {
+                                audio: p.audio?.map((a) =>
+                                  a.id === clip.id
+                                    ? {
+                                        ...a,
+                                        sceneId: e.target.value || undefined,
+                                      }
+                                    : a,
+                                ),
+                              },
+                              "Move audio scope",
+                            )
+                          }
+                        >
+                          <option value="">Master timeline</option>
+                          {w.scenes.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.title}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={clip.loop}
+                          onChange={(e) =>
+                            s.change(
+                              {
+                                audio: p.audio?.map((a) =>
+                                  a.id === clip.id
+                                    ? { ...a, loop: e.target.checked }
+                                    : a,
+                                ),
+                              },
+                              "Loop audio",
+                            )
+                          }
+                        />{" "}
+                        Loop
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={clip.muted}
+                          onChange={(e) =>
+                            s.change(
+                              {
+                                audio: p.audio?.map((a) =>
+                                  a.id === clip.id
+                                    ? { ...a, muted: e.target.checked }
+                                    : a,
+                                ),
+                              },
+                              "Mute audio",
+                            )
+                          }
+                        />{" "}
+                        Mute
+                      </label>
+                    </div>
+                    <Field label="Source / license note">
+                      <input
+                        value={clip.license}
+                        onChange={(e) =>
+                          s.change(
+                            {
+                              audio: p.audio?.map((a) =>
+                                a.id === clip.id
+                                  ? { ...a, license: e.target.value }
+                                  : a,
+                              ),
+                            },
+                            "Edit audio attribution",
+                          )
+                        }
+                      />
                     </Field>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={clip.loop}
-                        onChange={(e) =>
-                          s.change(
-                            {
-                              audio: p.audio?.map((a) =>
-                                a.id === clip.id
-                                  ? { ...a, loop: e.target.checked }
-                                  : a,
-                              ),
-                            },
-                            "Loop audio",
-                          )
+                    {clip.lane === "voice" && clip.sceneId && (
+                      <button
+                        disabled={
+                          clip.muted ||
+                          clip.loop ||
+                          w.scenes.find((a) => a.id === clip.sceneId)?.locked
                         }
-                      />{" "}
-                      Loop
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={clip.muted}
-                        onChange={(e) =>
-                          s.change(
-                            {
-                              audio: p.audio?.map((a) =>
-                                a.id === clip.id
-                                  ? { ...a, muted: e.target.checked }
-                                  : a,
-                              ),
-                            },
-                            "Mute audio",
-                          )
-                        }
-                      />{" "}
-                      Mute
-                    </label>
-                  </div>
-                  <Field label="Source / license note">
-                    <input
-                      value={clip.license}
-                      onChange={(e) =>
-                        s.change(
-                          {
-                            audio: p.audio?.map((a) =>
-                              a.id === clip.id
-                                ? { ...a, license: e.target.value }
-                                : a,
+                        onClick={() =>
+                          updateScene(clip.sceneId!, {
+                            duration: Math.max(
+                              0.1,
+                              clip.start + narrationLength(clip),
                             ),
-                          },
-                          "Edit audio attribution",
-                        )
-                      }
-                    />
-                  </Field>
-                  {clip.lane === "voice" && clip.sceneId && (
-                    <button
-                      disabled={
-                        w.scenes.find((a) => a.id === clip.sceneId)?.locked
-                      }
-                      onClick={() =>
-                        updateScene(clip.sceneId!, {
-                          duration: Math.max(0.1, clip.start + clip.length),
-                        })
-                      }
-                    >
-                      Fit scene to this narration take
-                    </button>
-                  )}
-                </article>
-              ))}
+                          })
+                        }
+                      >
+                        Fit scene to this narration take
+                      </button>
+                    )}
+                    {clip.lane === "voice" && !clip.sceneId && !clip.muted && (
+                      <>
+                        <button
+                          onClick={() =>
+                            void task(
+                              "Composing scenes from narration",
+                              async () =>
+                                setPlan(localStoryboard(script), clip),
+                            )
+                          }
+                        >
+                          Compose scenes from this narration
+                        </button>
+                        {w.scenes.some((item) => item.narration.trim()) && (
+                          <button
+                            onClick={() =>
+                              void task(
+                                "Fitting scenes to narration",
+                                async () => {
+                                  const latest = current();
+                                  const workflow = latest.workflow!;
+                                  const scenes = timeScenesToNarration(
+                                    workflow.scenes,
+                                    clip,
+                                    workflow.script,
+                                  );
+                                  s.change(
+                                    {
+                                      workflow: { ...workflow, scenes },
+                                      settings: {
+                                        ...latest.settings,
+                                        duration: scenes.find(
+                                          (item) =>
+                                            item.id === workflow.selectedId,
+                                        )!.duration,
+                                      },
+                                    },
+                                    "Fit existing visuals to narration",
+                                  );
+                                  onNotice(
+                                    "Existing scene visuals preserved; timing fitted to narration",
+                                  );
+                                },
+                              )
+                            }
+                          >
+                            Fit existing scenes to this narration
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </article>
+                ))}
             </div>
             {!p.audio?.length && (
               <p className="muted">
@@ -1317,6 +1675,6 @@ export function Workflow({
           </div>
         )}
       </fieldset>
-    </Modal>
+    </WorkflowSurface>
   );
 }

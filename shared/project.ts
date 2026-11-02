@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { transcriptWordSchema } from "./transcript";
 export const settingsSchema = z.object({
   width: z.number().int().min(64).max(7680),
   height: z.number().int().min(64).max(4320),
@@ -18,6 +19,7 @@ export const assetSchema = z.object({
   mascot: z.string().optional(),
 });
 export const sceneSchema = z.object({
+  sourceOffset: z.number().min(0).max(600).optional(),
   id: z.string(),
   title: z.string().min(1).max(200),
   narration: z.string().max(30000),
@@ -73,8 +75,12 @@ export const audioSchema = z
     fadeOut: z.number().min(0).max(60),
     loop: z.boolean(),
     muted: z.boolean(),
-    peaks: z.array(z.number().min(0).max(1)).max(128).optional(),
+    peaks: z.array(z.number().min(0).max(1)).max(4096).optional(),
     license: z.string().max(1000).default("User supplied; verify usage rights"),
+    transcript: z.string().max(50000).optional(),
+    transcriptWords: z.array(transcriptWordSchema).max(10000).optional(),
+    generatedSource: z.string().max(300).optional(),
+    sourceId: z.string().max(100).optional(),
   })
   .refine((a) => a.trimIn < a.duration, {
     message: "Audio trim must start before the end of the recording",
@@ -92,6 +98,16 @@ export const projectSchema = z.object({
   markers: z.array(z.number()).default([]),
   workflow: workflowSchema.optional(),
   audio: z.array(audioSchema).max(60).optional(),
+  audioLibrary: z.array(audioSchema).max(100).optional(),
+  brand: z
+    .object({
+      name: z.string().max(200),
+      font: z.string().min(1).max(200),
+      primary: z.string().regex(/^#[0-9a-f]{6}$/i),
+      secondary: z.string().regex(/^#[0-9a-f]{6}$/i),
+      background: z.string().regex(/^#[0-9a-f]{6}$/i),
+    })
+    .optional(),
 });
 export type Project = z.infer<typeof projectSchema>;
 export type Settings = Project["settings"];
@@ -137,9 +153,12 @@ export function parseCombined(
   if (doc.head.querySelector(":not(meta):not(title):not(style):not(script)"))
     throw Error("Unsupported head content. Separate editors are unchanged.");
   const css = styles.map((s) => s.textContent ?? "").join("\n");
-  const js = scripts.map((s) => s.textContent ?? "").join("\n");
+  const audioScripts = scripts.filter((script) => script.id === "framescript-audio" && script.type === "application/json");
+  if (audioScripts.length > 1) throw Error("Use only one framescript-audio manifest.");
+  const js = scripts.filter((script) => !audioScripts.includes(script)).map((s) => s.textContent ?? "").join("\n");
   styles.forEach((s) => s.remove());
-  scripts.forEach((s) => s.remove());
+  scripts.filter((script) => !audioScripts.includes(script)).forEach((s) => s.remove());
+  audioScripts.forEach((script) => doc.body.append(script));
   return { html: doc.body.innerHTML.trim(), css, js };
 }
 export const aiSchema = z
@@ -162,11 +181,24 @@ export function applyAI(p: Project, value: unknown): Project {
     ...(a.html !== undefined ? { html: a.html } : {}),
     ...(a.css !== undefined ? { css: a.css } : {}),
     ...(a.js !== undefined ? { js: a.js } : {}),
-    settings: { ...p.settings, ...a.settings },
+    settings: {
+      ...p.settings,
+      ...a.settings,
+      ...(p.audio?.some(
+        (clip) =>
+          clip.lane === "voice" &&
+          !clip.muted &&
+          (!clip.sceneId || clip.sceneId === p.workflow?.selectedId),
+      )
+        ? { duration: p.settings.duration }
+        : {}),
+    },
   });
 }
 export const exportSchema = z
   .object({
+    acceleration: z.enum(["auto", "software"]).optional(),
+    fileName: z.string().trim().min(1).max(150).optional(),
     format: z.enum(["mp4", "mkv", "webm", "gif", "sequence", "png"]),
     width: z.number().int().min(64).max(7680),
     height: z.number().int().min(64).max(4320),

@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { runProcess } from "./process";
 import type { Project, ExportOptions } from "../shared/project";
 import { sceneOffset } from "../shared/workflow";
 export function audioPlan(p: Project, o: ExportOptions) {
@@ -52,6 +52,7 @@ export async function mixAudio(
     }));
   try {
     for (let i = 0; i < clips.length; i++) {
+      if (signal.aborted) throw Error("Export cancelled");
       const clip = clips[i],
         match = clip.data.match(/^data:audio\/[\w.+-]+;base64,(.+)$/s);
       if (!match) throw Error("Invalid embedded audio");
@@ -108,31 +109,7 @@ export async function mixAudio(
       String(duration),
       output,
     );
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn(ffmpeg, args, {
-        windowsHide: true,
-        stdio: ["ignore", "ignore", "pipe"],
-      });
-      let log = "";
-      const cancel = () => child.kill();
-      signal.addEventListener("abort", cancel, { once: true });
-      if (signal.aborted) cancel();
-      child.stderr!.on("data", (d) => {
-        log = (log + d).slice(-5000);
-      });
-      child.once("error", (error) => {
-        signal.removeEventListener("abort", cancel);
-        reject(error);
-      });
-      child.once("close", (code) => {
-        signal.removeEventListener("abort", cancel);
-        signal.aborted
-          ? reject(Error("Export cancelled"))
-          : code === 0
-            ? resolve()
-            : reject(Error("Audio mixing failed: " + log));
-      });
-    });
+    await runProcess(ffmpeg, args, signal, "Audio mixing");
     if (signal.aborted) throw Error("Export cancelled");
     await fs.copyFile(output, video);
   } finally {

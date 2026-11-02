@@ -1,3 +1,4 @@
+// Historical browser scenarios for the former UI. See tests/README.md.
 import { test, expect } from "@playwright/test";
 test("generation progress is visible in chat and connected account controls stay compact", async ({
   page,
@@ -46,12 +47,13 @@ test("generation progress is visible in chat and connected account controls stay
     finish();
     return r.fulfill({ json: { result: true } });
   });
-  await page.goto("/");
+  await page.goto("/#editor");
+  await page.getByRole("button", { name: "Assistant", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "AI model" })).toHaveValue(
     "test-model",
   );
   const account = page.locator(".chatgpt-connection");
-  await expect(account).not.toHaveAttribute("open");
+  await expect(account).toHaveAttribute("aria-label", "Manage services");
   expect((await account.boundingBox())!.height).toBeLessThan(45);
   await page
     .getByRole("textbox", { name: "Animation prompt" })
@@ -144,7 +146,9 @@ test("ChatGPT sign-in opens official authorization, loads models, generates code
       },
     });
   });
-  await page.goto("/");
+  await page.goto("/#editor");
+  await page.getByRole("button", { name: "Assistant", exact: true }).click();
+  await page.getByRole("button", { name: "Services", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Continue with ChatGPT", exact: true }),
   ).toBeVisible();
@@ -160,14 +164,10 @@ test("ChatGPT sign-in opens official authorization, loads models, generates code
   connected = true;
   pending = false;
   await popup.close();
-  await expect(page.locator(".chatgpt-connection summary")).toContainText(
-    "ChatGPT connected",
-  );
-  await expect(page.locator(".chatgpt-connection")).not.toHaveAttribute("open");
-  await page.locator(".chatgpt-connection summary").click();
   await expect(
     page.getByText("Connected · account@example.com", { exact: true }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "AI model" })).toHaveValue(
     "account-model",
   );
@@ -182,8 +182,15 @@ test("ChatGPT sign-in opens official authorization, loads models, generates code
       .frameLocator('iframe[title="Animation preview"]')
       .locator("#chatgpt-result"),
   ).toHaveText("Connected generation");
+  await page.getByRole("button", { name: "Services", exact: true }).click();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Continue with ChatGPT", exact: true }),
   ).toBeVisible();
+});
+
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/workspaceGet", (r) =>
+    r.fulfill({ json: { result: null } }),
+  );
 });

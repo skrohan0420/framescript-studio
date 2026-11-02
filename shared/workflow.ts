@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { newProject, type Project, type Scene } from "./project";
 export const templateIds = [
+  "visual",
   "headline",
   "quote",
   "bullets",
@@ -22,12 +23,12 @@ export const storyboardSchema = z.object({
     .max(30),
 });
 export const plannerInstruction =
-  'You are a storyboard editor. Return ONLY JSON {"scenes":[{"title":"...","narration":"exact excerpt","visual":"visual direction","duration":8,"template":"headline"}]}. Split the supplied script into meaningful sequential scenes. Preserve ALL script text in narration verbatim and in order; concatenating narrations with spaces must equal the original ignoring whitespace. Do not invent dialogue. Estimate durations in seconds. Templates: headline, quote, bullets, stat, mascot. Do not return HTML or code. Maximum 30 scenes, total duration at most 600 seconds. Follow the project visual style and mascot rules.';
+  'You are a storyboard editor. Return ONLY JSON {"scenes":[{"title":"...","narration":"exact excerpt","visual":"visual direction","duration":8,"template":"headline"}]}. Split the supplied script into meaningful sequential scenes. Preserve ALL script text in narration verbatim and in order; concatenating narrations with spaces must equal the original ignoring whitespace. Do not invent dialogue. Estimate durations in seconds. Default to visual-only scenes with no titles, captions, labels or on-screen typography. Narration is voice-over context only. Choose visual by default; use typography only when explicitly requested. Templates: visual, headline, quote, bullets, stat, mascot. Do not return HTML or code. Maximum 30 scenes, total duration at most 600 seconds. Follow the project visual style and mascot rules.';
 export function initialWorkflow(p: Project): NonNullable<Project["workflow"]> {
   return {
     script: "",
     style:
-      "Clean editorial motion graphics. Consistent typography, colors and spacing.",
+      "Visual-only cinematic motion graphics. No on-screen text unless explicitly requested. Consistent colors, composition and spacing.",
     selectedId: "scene-1",
     scenes: [
       {
@@ -72,10 +73,10 @@ export function localStoryboard(script: string) {
       narration: text,
       visual:
         i === 0
-          ? "Opening headline introducing the subject"
-          : "Support the narration with clear typography and visuals",
+          ? "Opening visual introducing the subject; no on-screen text"
+          : "Support the voice-over with animation and imagery; no on-screen text",
       duration: Math.max(3, Math.round(text.split(/\s+/).length / 2.5)),
-      template: (i === 0 ? "headline" : "quote") as "headline" | "quote",
+      template: "visual" as const,
     })),
   };
 }
@@ -102,10 +103,17 @@ export function templateCode(
   color = "#67b4ff",
   font = "Segoe UI",
   imageId?: string,
+  background = "#101321",
 ) {
+  if (template === "visual")
+    return {
+      html: '<div id="scene-visual" aria-hidden="true"></div>',
+      css: `body{background:${background};display:grid;place-items:center}#scene-visual{width:45vmin;height:45vmin;border-radius:50%;background:radial-gradient(circle,${color}22,transparent 70%);animation:breathe 4s ease-in-out infinite alternate}@keyframes breathe{from{transform:scale(.8);opacity:.4}to{transform:scale(1.2);opacity:1}}`,
+      js: "",
+    };
   const safe = escape(text),
     words = safe.split(/\s+/),
-    base = `body{display:flex;align-items:center;justify-content:center;background:#111923;color:#edf3fa;font-family:${JSON.stringify(font)}}.content{max-width:80%;text-align:center}h1,p,blockquote{margin:0;line-height:1.2}h1{font-size:96px;font-weight:750}p,blockquote{font-size:64px} .accent{color:${color}}@keyframes enter{from{opacity:0;transform:translateY(45px)}to{opacity:1;transform:translateY(0)}}.content{animation:enter .8s ease-out both}`;
+    base = `body{display:flex;align-items:center;justify-content:center;background:${background};color:#edf3fa;font-family:${JSON.stringify(font)}}.content{max-width:80%;text-align:center}h1,p,blockquote{margin:0;line-height:1.2}h1{font-size:96px;font-weight:750}p,blockquote{font-size:64px} .accent{color:${color}}@keyframes enter{from{opacity:0;transform:translateY(45px)}to{opacity:1;transform:translateY(0)}}.content{animation:enter .8s ease-out both}`;
   if (template === "bullets")
     return {
       html: `<div id="scene-content" class="content"><ul>${text
@@ -152,14 +160,16 @@ export function scenesFromPlan(
 ): Scene[] {
   return verifyPlan(script, plan).scenes.map((scene) => ({
     ...scene,
+    template: "visual",
     id: crypto.randomUUID(),
     locked: false,
     ...templateCode(
-      scene.template,
+      "visual",
       scene.title,
-      "#67b4ff",
-      "Segoe UI",
+      p.brand?.primary ?? "#67b4ff",
+      p.brand?.font ?? "Segoe UI",
       p.workflow?.mascot.references[0],
+      p.brand?.background,
     ),
   }));
 }

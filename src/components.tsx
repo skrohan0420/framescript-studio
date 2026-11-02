@@ -48,3 +48,23 @@ export function Field({
     </label>
   );
 }
+
+export function WorkflowSurface({
+  embedded,
+  ...props
+}: {
+  embedded?: boolean;
+  title: string;
+  open: boolean;
+  onClose: () => void;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  return embedded ? (
+    <section className="workflow-inline" aria-label="Production tools">
+      {props.children}
+    </section>
+  ) : (
+    <Modal {...props} />
+  );
+}

@@ -1,6 +1,13 @@
 import type { Project } from "./project";
+import { typographyRuntime } from "./typography-runtime";
 // This function is serialized verbatim into the unprivileged document.
-function runtime(replay = false, standalone = false, duration = 10, speed = 1) {
+function runtime(
+  replay = false,
+  standalone = false,
+  duration = 10,
+  speed = 1,
+  sourceOffset = 0,
+) {
   const w = window as any;
   let current = 0;
   let selection = false;
@@ -8,23 +15,65 @@ function runtime(replay = false, standalone = false, duration = 10, speed = 1) {
   let failed = false;
   const send = (type: string, value: unknown) =>
     parent.postMessage({ framescript: true, type, value }, "*");
+  window.addEventListener("keydown", (event) => {
+    if (
+      standalone ||
+      event.code !== "Space" ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      (event.target as HTMLElement)?.closest(
+        "input, textarea, select, [contenteditable]",
+      )
+    )
+      return;
+    event.preventDefault();
+    if (!event.repeat) send("toggle-play", null);
+  });
   window.addEventListener("error", (e) => {
     failed = true;
-    send("error", e.message);
+    const user = e.filename?.includes("framescript-user.js");
+    send("error", {
+      message: e.message,
+      ...(user
+        ? {
+            line: Math.max(
+              1,
+              e.error?.name === "SyntaxError" &&
+                !/\n\s+at /.test(e.error?.stack ?? "")
+                ? e.lineno - w.__fsUserLine + 1
+                : e.lineno - 1,
+            ),
+            column: e.colno || 1,
+          }
+        : {}),
+    });
   });
   window.addEventListener("unhandledrejection", (e) => {
     failed = true;
     send("error", String(e.reason));
   });
   w.__fsSeek = (time: number) => {
+    time += sourceOffset;
     current = time;
     document.getAnimations().forEach((a) => {
       a.pause();
       a.currentTime = time * 1000;
     });
     if (typeof w.renderFrame === "function") w.renderFrame(time);
+    w.__fsTypography?.(time);
   };
   window.addEventListener("message", (e) => {
+    if (
+      e.data?.framescript &&
+      e.data.type === "toggle-play" &&
+      [...document.querySelectorAll("iframe")].some(
+        (frame) => frame.contentWindow === e.source,
+      )
+    ) {
+      if (!standalone) send("toggle-play", null);
+      return;
+    }
     if (e.source !== parent || !e.data?.framescript) return;
     const { type, value } = e.data;
     if (type === "seek") w.__fsSeek(value);
@@ -33,6 +82,7 @@ function runtime(replay = false, standalone = false, duration = 10, speed = 1) {
   document.addEventListener(
     "click",
     (e) => {
+      if ((e.target as HTMLElement)?.closest?.("[data-fs-text]")) return;
       if (!selection) return;
       e.preventDefault();
       e.stopPropagation();
@@ -107,6 +157,8 @@ function runtime(replay = false, standalone = false, duration = 10, speed = 1) {
     if (!replay) w.__fsSeek(0);
     if (!failed)
       send("ready", {
+        thumbnail: (() => { try { const source = document.querySelector("canvas"); if (!source?.width || !source.height) return undefined; const image = document.createElement("canvas"); image.width = 384; image.height = 216; const context = image.getContext("2d")!; context.fillStyle = getComputedStyle(document.body).backgroundColor; context.fillRect(0, 0, 384, 216); context.drawImage(source, 0, 0, 384, 216); return image.toDataURL("image/jpeg", .7); } catch { return undefined; } })(),
+        typography: w.__fsCaptureText?.() ?? [],
         animations: document.getAnimations().map((a) => ({
           name: (a as CSSAnimation).animationName ?? "Web animation",
           duration: a.effect?.getTiming().duration,
@@ -126,7 +178,13 @@ function runtime(replay = false, standalone = false, duration = 10, speed = 1) {
 }
 export function documentFor(
   p: Project,
-  options?: { export?: boolean; transparent?: boolean; standalone?: boolean },
+  options?: {
+    export?: boolean;
+    transparent?: boolean;
+    standalone?: boolean;
+    sourceOffset?: number;
+    textEditing?: boolean;
+  },
 ) {
   let html = p.html,
     css = p.css,
@@ -147,5 +205,12 @@ export function documentFor(
   const csp = `default-src 'none'; frame-src about:; script-src 'unsafe-inline'${remote}; style-src 'unsafe-inline'${remote}; img-src data: blob:${remote}; font-src data:${remote}; media-src data:; connect-src${remote || " 'none'"}; base-uri 'none'; form-action 'none';`;
   const safe = (s: string, tag: string) =>
     s.replace(new RegExp(`</${tag}`, "gi"), `<\\/${tag}`);
-  return `<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:${options?.transparent ? "transparent" : p.settings.background}}${safe(css, "style")}</style><script>(()=>{const __name=(fn)=>fn;(${runtime.toString()})(${!!options?.export && p.settings.timing === "replay"},${!!options?.standalone},${p.settings.duration},${p.settings.speed})})()</script></head><body>${html}<script>${safe(js, "script")}</script></body></html>`;
+  const sourceOffset =
+    options?.sourceOffset ??
+    p.workflow?.scenes.find((scene) => scene.id === p.workflow?.selectedId)
+      ?.sourceOffset ??
+    0;
+  const prefix = `<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:${options?.transparent ? "transparent" : p.settings.background}}${safe(css, "style")}</style><script>(()=>{const __name=(fn)=>fn;(${typographyRuntime.toString()})(${options?.textEditing !== false && !options?.export && !options?.standalone && !p.workflow?.scenes.find((scene) => scene.id === p.workflow?.selectedId)?.locked});(${runtime.toString()})(${!!options?.export && p.settings.timing === "replay"},${!!options?.standalone},${p.settings.duration},${p.settings.speed},${sourceOffset})})()</script></head><body>${html}`;
+  const firstLine = prefix.split("\n").length + 1;
+  return `${prefix}<script>window.__fsUserLine=${firstLine}</script><script>\n${safe(js, "script")}\n//# sourceURL=framescript-user.js\n</script></body></html>`;
 }

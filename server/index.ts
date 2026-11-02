@@ -1,14 +1,23 @@
+import { WindowsCredentialStore } from "./credentials";
+import { rpcSchemas, type RpcName } from "../shared/rpc";
+import { StudioDatabase } from "./database";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
-import { promises as fs, createReadStream, createWriteStream } from "node:fs";
+import { promises as fs, createReadStream } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Worker } from "node:worker_threads";
-import { ZipArchive } from "archiver";
+import { archiveSequence } from "./archive";
 import { projectSchema, exportSchema } from "../shared/project";
 import { documentFor } from "../shared/runtime";
 import { atomicWrite, saveProject, loadProject } from "./storage";
 import { models, generate, type AIConfig } from "./ai";
 import { ChatGPTConnection } from "./chatgpt";
+import { checkService, serviceIdSchema } from "./services";
+import {
+  serviceIds,
+  type ServiceId,
+  type ServiceCheck,
+} from "../shared/services";
 import {
   storyboardSchema,
   plannerInstruction,
@@ -19,6 +28,7 @@ import {
   generateImage,
   elevenCatalog,
   elevenAudio,
+  transcribeAudio,
 } from "./media";
 
 const dataDir = path.resolve(
@@ -30,8 +40,12 @@ const port = Number(process.env.PORT || 5173),
   dev = process.env.NODE_ENV !== "production";
 type Client = {
   current?: string;
+  vault?: WindowsCredentialStore;
+  credentialError?: string;
+  remembered?: Record<string, boolean>;
   ai?: AbortController;
   worker?: Worker;
+  exportAbort?: AbortController;
   progress?: unknown;
   listeners: Set<ServerResponse>;
   key?: string;
@@ -39,8 +53,52 @@ type Client = {
   elevenKey?: string;
   mediaAbort?: AbortController;
   chatgpt: ChatGPTConnection;
+  serviceChecks?: Partial<Record<ServiceId, ServiceCheck>>;
 };
+let database: StudioDatabase;
+let workspaceVersion = randomUUID();
+let workspaceQueue: Promise<unknown> = Promise.resolve();
+const workspaceWrites = new Set([
+  "projectSave",
+  "projectRename",
+  "projectDuplicate",
+  "projectTrash",
+  "projectRestore",
+  "autosave",
+  "newSession",
+  "openRecent",
+  "save",
+  "saveAs",
+  "deleteProject",
+  "recoveryRestore",
+]);
 const clients = new Map<string, Client>();
+const initializingClients = new Map<string, Promise<Client>>();
+async function restoreClient(owner: string): Promise<Client> {
+  const vault = new WindowsCredentialStore(
+    path.join(dataDir, "credentials", owner + ".dpapi"),
+  );
+  let credentialError = "";
+  try {
+    await vault.load();
+  } catch (e) {
+    credentialError = (e as Error).message;
+  }
+  return {
+    listeners: new Set(),
+    vault,
+    credentialError,
+    remembered: {
+      openai: !!vault.get("openai"),
+      eleven: !!vault.get("eleven"),
+      gemini: !!vault.get("gemini"),
+    },
+    key: vault.get("openai"),
+    elevenKey: vault.get("eleven"),
+    geminiKey: vault.get("gemini"),
+    chatgpt: new ChatGPTConnection(dataDir, { credentials: vault }),
+  };
+}
 const downloads = new Map<
   string,
   { file: string; name: string; owner: string }
@@ -79,7 +137,7 @@ function download(file: string, name: string, owner: string) {
 async function config(c: AIConfig, client: Client): Promise<AIConfig> {
   if (
     !c ||
-    !["ollama", "openai", "chatgpt"].includes(c.provider) ||
+    !["ollama", "openai", "chatgpt", "gemini"].includes(c.provider) ||
     typeof c.model !== "string"
   )
     throw Error("Invalid provider");
@@ -91,7 +149,9 @@ async function config(c: AIConfig, client: Client): Promise<AIConfig> {
         ? await client.chatgpt.accessToken()
         : c.provider === "openai"
           ? client.key || process.env.OPENAI_API_KEY
-          : undefined,
+          : c.provider === "gemini"
+            ? client.geminiKey || process.env.GEMINI_API_KEY
+            : undefined,
   };
 }
 async function invoke(
@@ -101,6 +161,89 @@ async function invoke(
   owner: string,
 ) {
   switch (name) {
+    case "servicesStatus": {
+      const keys = {
+        openai: client.key || process.env.OPENAI_API_KEY,
+        eleven: client.elevenKey || process.env.ELEVENLABS_API_KEY,
+        gemini: client.geminiKey || process.env.GEMINI_API_KEY,
+      };
+      return serviceIds.map((id) => ({
+        id,
+        configured:
+          id === "chatgpt"
+            ? client.chatgpt.status().connected
+            : id === "ollama"
+              ? true
+              : id === "flow"
+                ? false
+                : !!keys[id],
+        source:
+          id === "chatgpt"
+            ? "account"
+            : id === "ollama"
+              ? "local"
+              : id === "flow"
+                ? "external"
+                : (
+                      id === "openai"
+                        ? client.key
+                        : id === "eleven"
+                          ? client.elevenKey
+                          : client.geminiKey
+                    )
+                  ? "session"
+                  : keys[id]
+                    ? "environment"
+                    : "none",
+        remembered:
+          id === "chatgpt"
+            ? client.chatgpt.status().remembered
+            : !!client.remembered?.[id],
+        rememberSupported: process.platform === "win32",
+        storageError: client.credentialError,
+        check: client.serviceChecks?.[id],
+      }));
+    }
+    case "serviceCheck": {
+      const id = serviceIdSchema.parse(args[0]);
+      let key: string | undefined;
+      try {
+        key =
+          id === "chatgpt"
+            ? await client.chatgpt.accessToken()
+            : id === "openai"
+              ? client.key || process.env.OPENAI_API_KEY
+              : id === "eleven"
+                ? client.elevenKey || process.env.ELEVENLABS_API_KEY
+                : id === "gemini"
+                  ? client.geminiKey || process.env.GEMINI_API_KEY
+                  : undefined;
+      } catch {
+        const result: ServiceCheck = {
+          state: "error",
+          checkedAt: new Date().toISOString(),
+          message: "Reconnect your ChatGPT account.",
+        };
+        (client.serviceChecks ??= {})[id] = result;
+        return result;
+      }
+      const result = await checkService(id, key);
+      (client.serviceChecks ??= {})[id] = result;
+      return result;
+    }
+    case "serviceRemove": {
+      const id = serviceIdSchema.parse(args[0]);
+      await client.vault?.set(id, undefined);
+      if (client.remembered) client.remembered[id] = false;
+      if (id === "chatgpt") {
+        client.ai?.abort();
+        await client.chatgpt.disconnect();
+      } else if (id === "openai") client.key = undefined;
+      else if (id === "eleven") client.elevenKey = undefined;
+      else if (id === "gemini") client.geminiKey = undefined;
+      if (client.serviceChecks) delete client.serviceChecks[id];
+      return true;
+    }
     case "mediaStatus":
       return {
         gemini: !!(client.geminiKey || process.env.GEMINI_API_KEY),
@@ -113,8 +256,17 @@ async function invoke(
         args[1].length > 1000
       )
         throw Error("Invalid media credential");
+      if (args[2] && client.credentialError)
+        throw Error(client.credentialError);
+      await client.vault?.set(
+        args[0],
+        args[2] && args[1] ? args[1] : undefined,
+      );
+      (client.remembered ??= {})[args[0]] = !!args[2] && !!args[1];
       if (args[0] === "gemini") client.geminiKey = args[1];
       else client.elevenKey = args[1];
+      if (client.serviceChecks)
+        delete client.serviceChecks[args[0] as ServiceId];
       return true;
     case "imageModels":
       return googleImageModels(
@@ -123,6 +275,11 @@ async function invoke(
     case "elevenCatalog":
       return elevenCatalog(
         client.elevenKey || process.env.ELEVENLABS_API_KEY || "",
+      );
+    case "transcribeAudio":
+      return transcribeAudio(
+        client.elevenKey || process.env.ELEVENLABS_API_KEY || "",
+        args[0],
       );
     case "cancelMedia":
       client.mediaAbort?.abort();
@@ -134,18 +291,47 @@ async function invoke(
       client.mediaAbort = controller;
       const timeout = setTimeout(() => controller.abort(), 180000);
       try {
-        return name === "generateImage"
-          ? await generateImage(
-              client.geminiKey || process.env.GEMINI_API_KEY || "",
-              args[0],
-              controller.signal,
-            )
-          : await elevenAudio(
-              client.elevenKey || process.env.ELEVENLABS_API_KEY || "",
-              args[0],
-              controller.signal,
-            );
+        const result =
+          name === "generateImage"
+            ? await generateImage(
+                client.geminiKey || process.env.GEMINI_API_KEY || "",
+                args[0],
+                controller.signal,
+              )
+            : await elevenAudio(
+                client.elevenKey || process.env.ELEVENLABS_API_KEY || "",
+                args[0],
+                controller.signal,
+              );
+        (client.serviceChecks ??= {})[
+          name === "generateImage" ? "gemini" : "eleven"
+        ] = {
+          state: "ready",
+          checkedAt: new Date().toISOString(),
+          message:
+            "Last generation completed. Refresh usage for the latest provider balance.",
+        };
+        return result;
+      } catch (error) {
+        (client.serviceChecks ??= {})[
+          name === "generateImage" ? "gemini" : "eleven"
+        ] = {
+          state: "error",
+          checkedAt: new Date().toISOString(),
+          message:
+            "The last generation did not complete. Check this connection, account access or provider limits, then retry with this service.",
+        };
+        throw error;
       } finally {
+        const check =
+          client.serviceChecks?.[
+            name === "generateImage" ? "gemini" : "eleven"
+          ];
+        if (check?.quota) {
+          delete check.quota;
+          check.quotaError =
+            "Usage may have changed. Refresh to read the latest provider balance.";
+        }
         clearTimeout(timeout);
         client.mediaAbort = undefined;
       }
@@ -153,8 +339,10 @@ async function invoke(
     case "chatgptStatus":
       return client.chatgpt.status();
     case "chatgptConnect":
-      return client.chatgpt.begin(args[0] === true);
+      if (client.serviceChecks) delete client.serviceChecks.chatgpt;
+      return client.chatgpt.begin(args[0] === true, args[1] === true);
     case "chatgptDisconnect":
+      if (client.serviceChecks) delete client.serviceChecks.chatgpt;
       client.ai?.abort();
       return client.chatgpt.disconnect();
     case "session":
@@ -163,36 +351,98 @@ async function invoke(
       return !!(client.key || process.env.OPENAI_API_KEY);
     case "credentials":
       if (typeof args[0] !== "string" || args[0].length > 1000)
-        throw Error("Invalid API key");
+        throw Error("Invalid API credential");
+      if (client.serviceChecks) delete client.serviceChecks.openai;
+      if (args[1] && client.credentialError)
+        throw Error(client.credentialError);
+      await client.vault?.set(
+        "openai",
+        args[1] && args[0] ? args[0] : undefined,
+      );
+      (client.remembered ??= {}).openai = !!args[1] && !!args[0];
       client.key = args[0];
       return true;
     case "newSession":
+      database.checkpoint("Before replacing project");
+      database.set("currentProject", null);
       client.current = undefined;
       return true;
     case "settingsGet":
-      return readJson("settings.json", {});
+      return database.get("settings") ?? {};
+    case "workspaceGet":
+      client.current = database.get("currentProject") ?? undefined;
+      return database.workspace();
     case "settingsSet": {
       const text = JSON.stringify(args[0]);
-      if (text.length > 10000) throw Error("Settings too large");
-      await atomicWrite(path.join(dataDir, "settings.json"), text);
+      if (text.length > 2_000_000) throw Error("Settings too large");
+      database.set("settings", {
+        ...(database.get("settings") ?? {}),
+        ...args[0],
+      });
       return true;
     }
+    case "workspaceEditorGet":
+      return database.get("workspaceEditor") ?? {};
     case "autosave":
-      await saveProject(path.join(dataDir, "recovery.frame"), args[0]);
+      database.saveWorkspace(args[0], args[1], client.current === database.get("currentProject") ? client.current : undefined);
       return true;
-    case "recover":
-      try {
-        return await loadProject(path.join(dataDir, "recovery.frame"));
-      } catch {
-        return null;
-      }
-    case "recents": {
-      const entries = await fs.readdir(projectsDir);
-      return entries
-        .filter((f) => f.endsWith(".frame"))
-        .sort((a, b) => b.localeCompare(a))
-        .slice(0, 30);
+    case "checkpoint":
+      return database.checkpoint(
+        String(args[0] || "Manual checkpoint"),
+        args[1],
+        args[2],
+      );
+    case "recoveryList":
+      return database.recoveryList();
+    case "recoveryRestore": {
+      const snapshot = database.recoveryProject(String(args[0]));
+      database.checkpoint("Before restoring recovery version");
+      database.saveWorkspace(snapshot.project, snapshot.editor);
+      database.set("currentProject", null);
+      client.current = undefined;
+      return snapshot;
     }
+    case "recover":
+      return database.workspace();
+    case "recents":
+      return database.recents();
+    case "projectList":
+      return database.listProjects(args[0] ?? false);
+    case "projectSave": {
+      const project = projectSchema.parse(args[0]);
+      const id =
+        args[1]?.create || !client.current
+          ? cleanName(project.name) + "-" + randomUUID() + ".frame"
+          : client.current;
+      database.putProject(id, project);
+      database.saveWorkspace(project);
+      database.set("currentProject", id);
+      client.current = id;
+      if (args[1]?.thumbnail)
+        database.set("thumbnail:" + id, args[1].thumbnail);
+      return id;
+    }
+    case "projectRename": {
+      const project = database.project(args[0]);
+      database.putProject(args[0], { ...project, name: args[1] });
+      return true;
+    }
+    case "projectDuplicate": {
+      const id = randomUUID() + ".frame";
+      database.duplicateProject(args[0], id);
+      return id;
+    }
+    case "projectTrash": {
+      database.checkpoint("Before moving project to trash");
+      database.trash(args[0]);
+      if (database.get("currentProject") === args[0])
+        database.set("currentProject", null);
+      if (client.current === args[0]) client.current = undefined;
+      return true;
+    }
+    case "projectRestore":
+      database.restoreProject(args[0]);
+      return true;
     case "openRecent": {
       const file = args[0];
       if (
@@ -201,7 +451,10 @@ async function invoke(
         !file.endsWith(".frame")
       )
         throw Error("Invalid project");
-      const p = await loadProject(path.join(projectsDir, file));
+      const p = database.project(file);
+      database.checkpoint("Before opening recent project");
+      database.saveWorkspace(p);
+      database.set("currentProject", file);
       client.current = file;
       return p;
     }
@@ -212,6 +465,9 @@ async function invoke(
         name === "save" && client.current
           ? client.current
           : cleanName(p.name) + "-" + randomUUID() + ".frame";
+      database.putProject(file, p);
+      database.saveWorkspace(p);
+      database.set("currentProject", file);
       await saveProject(path.join(projectsDir, file), p);
       client.current = file;
       return download(
@@ -222,11 +478,18 @@ async function invoke(
     }
     case "deleteProject": {
       if (!client.current) throw Error("Save or open a local project first.");
+      database.checkpoint("Before moving project to trash");
       await fs.mkdir(path.join(dataDir, "trash"), { recursive: true });
-      await fs.rename(
-        path.join(projectsDir, client.current),
-        path.join(dataDir, "trash", Date.now() + "-" + client.current),
-      );
+      await fs
+        .rename(
+          path.join(projectsDir, client.current),
+          path.join(dataDir, "trash", Date.now() + "-" + client.current),
+        )
+        .catch((error) => {
+          if (error.code !== "ENOENT") throw error;
+        });
+      database.trash(client.current);
+      database.set("currentProject", null);
       client.current = undefined;
       return true;
     }
@@ -260,9 +523,24 @@ async function invoke(
             ? { instruction: plannerInstruction, schema: storyboardSchema }
             : undefined,
         );
+        (client.serviceChecks ??= {})[serviceIdSchema.parse(args[0].provider)] =
+          {
+            state: "ready",
+            checkedAt: new Date().toISOString(),
+            message: "Last AI request completed. Model access verified.",
+          };
         return name === "plan"
           ? verifyPlan(args[1].prompt, response)
           : response;
+      } catch (error) {
+        const id = serviceIdSchema.parse(args[0].provider);
+        (client.serviceChecks ??= {})[id] = {
+          state: "error",
+          checkedAt: new Date().toISOString(),
+          message:
+            "The last AI request did not complete. Check the selected service or reconnect, then retry. Your provider selection has been kept.",
+        };
+        throw error;
       } finally {
         clearTimeout(timeout);
         client.ai = undefined;
@@ -270,14 +548,17 @@ async function invoke(
     }
     case "cancelExport":
       client.worker?.postMessage("cancel");
+      client.exportAbort?.abort();
       return true;
     case "export": {
-      if (client.worker) throw Error("Export already running");
+      if (client.exportAbort) throw Error("Export already running");
       const project = projectSchema.parse(args[0]),
         options = exportSchema.parse(args[1]);
       const id = randomUUID(),
         destination = path.join(exportsDir, id + "." + options.format);
       const ffmpeg = require("ffmpeg-static");
+      const exportAbort = new AbortController();
+      client.exportAbort = exportAbort;
       try {
         await new Promise<void>((resolve, reject) => {
           const worker = new Worker(path.join(__dirname, "export-worker.cjs"), {
@@ -305,28 +586,56 @@ async function invoke(
         if (options.format === "sequence") {
           const file = destination + ".zip";
           try {
-            await new Promise<void>((resolve, reject) => {
-              const output = createWriteStream(file),
-                archive = new ZipArchive({ zlib: { level: 1 } });
-              output.on("close", resolve);
-              output.on("error", reject);
-              archive.on("error", reject);
-              archive.pipe(output);
-              archive.directory(destination, false);
-              void archive.finalize();
-            });
+            client.progress = {
+              stage: "Packaging frames",
+              done: 0,
+              total: 1,
+              destination: file,
+            };
+            for (const listener of client.listeners)
+              listener.write(
+                "data: " + JSON.stringify(client.progress) + "\n\n",
+              );
+            await archiveSequence(destination, file, exportAbort.signal);
+            client.progress = {
+              stage: "Complete",
+              done: 1,
+              total: 1,
+              destination: file,
+            };
+            for (const listener of client.listeners)
+              listener.write(
+                "data: " + JSON.stringify(client.progress) + "\n\n",
+              );
           } finally {
             await fs.rm(destination, { recursive: true, force: true });
           }
-          return download(file, cleanName(project.name) + "-frames.zip", owner);
+          return download(
+            file,
+            cleanName(
+              (options.fileName || project.name).replace(
+                /\.(mp4|mkv|webm|gif|png|zip)$/i,
+                "",
+              ),
+            ) + "-frames.zip",
+            owner,
+          );
         }
         return download(
           destination,
-          cleanName(project.name) + "." + options.format,
+          cleanName(
+            (options.fileName || project.name).replace(
+              /\.(mp4|mkv|webm|gif|png|zip)$/i,
+              "",
+            ),
+          ) +
+            "." +
+            options.format,
           owner,
         );
       } finally {
         client.worker = undefined;
+        client.exportAbort = undefined;
       }
     }
     default:
@@ -335,6 +644,7 @@ async function invoke(
 }
 
 async function start() {
+  database = await StudioDatabase.open(dataDir);
   await fs.mkdir(projectsDir, { recursive: true });
   await fs.mkdir(exportsDir, { recursive: true });
   const vite = dev
@@ -365,17 +675,20 @@ async function start() {
         let owner = req.headers.cookie?.match(
           /(?:^|; )framescript=([a-f0-9-]{36})/,
         )?.[1];
-        if (!owner || !clients.has(owner)) {
-          owner = randomUUID();
-          clients.set(owner, {
-            listeners: new Set(),
-            chatgpt: new ChatGPTConnection(dataDir),
-          });
-          res.setHeader(
-            "Set-Cookie",
-            `framescript=${owner}; HttpOnly; SameSite=Strict; Path=/`,
-          );
+        if (!owner) owner = randomUUID();
+        if (!clients.has(owner)) {
+          if (!initializingClients.has(owner))
+            initializingClients.set(owner, restoreClient(owner));
+          try {
+            clients.set(owner, await initializingClients.get(owner)!);
+          } finally {
+            initializingClients.delete(owner);
+          }
         }
+        res.setHeader(
+          "Set-Cookie",
+          `framescript=${owner}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`,
+        );
         const client = clients.get(owner)!;
         if (url.pathname === "/api/events" && req.method === "GET") {
           res.writeHead(200, {
@@ -416,15 +729,42 @@ async function start() {
         }
         const payload = await body(req);
         if (!Array.isArray(payload.args)) throw Error("Invalid arguments");
-        json(
-          res,
-          await invoke(
-            url.pathname.slice("/api/".length),
-            payload.args,
-            client,
-            owner,
-          ),
-        );
+        const operation = url.pathname.slice("/api/".length);
+        if (!Object.hasOwn(rpcSchemas, operation) || operation === "open")
+          throw Error("Unknown operation");
+        payload.args = rpcSchemas[operation as RpcName].parse(payload.args);
+        if (workspaceWrites.has(operation) || operation === "workspaceGet") {
+          // Check and mutate in one queue so concurrent tabs cannot both pass CAS.
+          const task = workspaceQueue.then(async () => {
+            const expected = req.headers["x-workspace-version"];
+            if (
+              workspaceWrites.has(operation) &&
+              expected &&
+              expected !== workspaceVersion
+            ) {
+              json(
+                res,
+                {
+                  error:
+                    "Another tab changed this workspace. Download a recovery copy before reloading to load its latest version.",
+                },
+                409,
+              );
+              return;
+            }
+            if (workspaceWrites.has(operation)) workspaceVersion = randomUUID();
+            res.setHeader("X-Workspace-Version", workspaceVersion);
+            const result = await invoke(
+              operation,
+              payload.args,
+              client,
+              owner!,
+            );
+            json(res, result);
+          });
+          workspaceQueue = task.catch(() => {});
+          await task;
+        } else json(res, await invoke(operation, payload.args, client, owner));
         return;
       }
       if (vite) {
@@ -482,6 +822,7 @@ async function start() {
       client.mediaAbort?.abort();
       client.ai?.abort();
       client.worker?.postMessage("cancel");
+      client.exportAbort?.abort();
       for (const listener of client.listeners) listener.end();
     }
     server.close();

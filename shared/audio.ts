@@ -68,6 +68,17 @@ export function synthesizeSound(name: string) {
         0.35;
     samples[i] = Math.max(-1, Math.min(1, v));
   }
+  return {
+    name: preset.name,
+    lane: preset.lane,
+    duration: preset.duration,
+    ...encodeAudioSamples(samples, rate),
+    license:
+      "Original synthesized FrameScript preset; no external sample recording",
+  };
+}
+export function encodeAudioSamples(samples: Float32Array, rate = 22050) {
+  const n = samples.length;
   const bytes = new Uint8Array(44 + n * 2),
     view = new DataView(bytes.buffer);
   const str = (offset: number, value: string) => {
@@ -93,19 +104,14 @@ export function synthesizeSound(name: string) {
   for (let i = 0; i < bytes.length; i += 8192)
     binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
   return {
-    name: preset.name,
-    lane: preset.lane,
-    duration: preset.duration,
     data: "data:audio/wav;base64," + btoa(binary),
     peaks: waveform(samples),
-    license:
-      "Original synthesized FrameScript preset; no external sample recording",
   };
 }
-export function waveform(samples: Float32Array) {
-  return Array.from({ length: 64 }, (_, i) => {
-    const start = Math.floor((samples.length * i) / 64),
-      end = Math.floor((samples.length * (i + 1)) / 64);
+export function waveform(samples: Float32Array, bins = 64) {
+  return Array.from({ length: bins }, (_, i) => {
+    const start = Math.floor((samples.length * i) / bins),
+      end = Math.floor((samples.length * (i + 1)) / bins);
     let peak = 0;
     for (let j = start; j < end; j++)
       peak = Math.max(peak, Math.abs(samples[j]));

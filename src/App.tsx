@@ -1,12 +1,39 @@
-import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import Editor from "@monaco-editor/react";
 import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useMemo,
+  lazy,
+  Suspense,
+} from "react";
+import Editor from "./LazyEditor";
+import { PromptTemplates } from "./PromptTemplates";
+import { ClipsPanel } from "./ClipsPanel";
+import { TypographyPanel } from "./TypographyPanel";
+import { ProjectHome } from "./ProjectHome";
+import { chooseExportFile, exportToFile, supportsExportPicker } from "./bridge";
+import { ExportSettings } from "./ExportSettings";
+import {
+  imageMarkup,
+  sizeError,
+  type ImagePlacement,
+} from "../shared/media-layout";
+import {
+  FileText,
+  Home,
+  CaseSensitive,
+  Music,
+  Film,
+  Library,
+  Layers,
   ArrowDownToLine,
   ArrowLeft,
   ArrowRight,
   Check,
   ChevronDown,
   Code2,
+  ClipboardPaste,
   Columns2,
   Expand,
   FilePlus2,
@@ -36,6 +63,7 @@ import {
 import {
   combined,
   parseCombined,
+  projectSchema,
   applyAI,
   exportSchema,
   newProject,
@@ -43,26 +71,79 @@ import {
   type ExportOptions,
 } from "../shared/project";
 import { examples } from "../shared/examples";
-import { useStudio } from "./store";
+import { useStudio, useProjectState } from "./store";
+import { Timeline } from "./Timeline";
+import { PlayerTransport } from "./PlayerTransport";
+import { MediaLibrary } from "./MediaLibrary";
+import { ProjectInspector } from "./ProjectInspector";
 import { bridge } from "./bridge";
 import { Preview } from "./Preview";
 import { Field, Modal } from "./components";
 import { GenerationProgress } from "./GenerationProgress";
-import { Workflow, SceneRail } from "./Workflow";
+import { SceneRail, SceneInspector, ManualTimelines } from "./ScenePanels";
 import { AudioPlayback } from "./AudioPlayback";
 import {
   initialWorkflow,
+  activateScene,
   selectedScene,
   totalDuration,
   sceneOffset,
 } from "../shared/workflow";
 import { composeProject } from "../shared/composition";
 import { acknowledgeRecovery, recoveryAcknowledged } from "./recovery";
+import { RecoveryHistory, downloadRecoveryCopy } from "./RecoveryHistory";
+import { SceneReview } from "./SceneReview";
+const Services = lazy(() =>
+  import("./Services").then((module) => ({ default: module.Services })),
+);
+const Workflow = lazy(() =>
+  import("./Workflow").then((module) => ({ default: module.Workflow })),
+);
+
 type Tab = "html" | "css" | "js" | "all" | "split";
 export function App() {
-  const s = useStudio(),
+  const s = useProjectState(),
     p = s.project;
+  const manualMode = true;
+  const [showHome, setShowHome] = useState(
+    () => window.location.hash !== "#editor",
+  );
+  useEffect(() => {
+    const route = () => setShowHome(window.location.hash !== "#editor");
+    window.addEventListener("hashchange", route);
+    return () => window.removeEventListener("hashchange", route);
+  }, []);
+  const enterEditor = () => {
+    window.location.hash = "editor";
+    setShowHome(false);
+  };
   const [masterMode, setMasterMode] = useState(false);
+  const [productionMode, setProductionMode] = useState(true);
+  const [leftView, setLeftView] = useState("code");
+  const [libraryTool, setLibraryTool] = useState("script");
+  const [libraryToolLoaded, setLibraryToolLoaded] = useState(false);
+  const [selectedAudio, setSelectedAudio] = useState<string>();
+  const [selectedAsset, setSelectedAsset] = useState<string>();
+  const [followFrame, setFollowFrame] = useState(true);
+  const [imagePlacement, setImagePlacement] = useState<ImagePlacement>({
+    width: 1920,
+    height: 1080,
+    fit: "contain",
+  });
+  const placement = followFrame
+    ? { ...imagePlacement, width: p.settings.width, height: p.settings.height }
+    : imagePlacement;
+  const [assetsCollapsed, setAssetsCollapsed] = useState(false);
+  const [pasteDocument, setPasteDocument] = useState("");
+  const [pasteError, setPasteError] = useState("");
+  const jumpLine = useRef<{ line: number; column: number } | null>(null);
+  const [reviewAI, setReviewAI] = useState(false);
+  const [pendingAI, setPendingAI] = useState<{
+    before: Project;
+    after: Project;
+    revision: number;
+    explanation: string;
+  } | null>(null);
   const viewProject = useMemo(
     () => (masterMode ? composeProject(p) : p),
     [masterMode, p],
@@ -83,8 +164,14 @@ export function App() {
     [select, setSelect] = useState(false),
     [selection, setSelection] = useState<any>(null),
     [runtime, setRuntime] = useState<any>(null);
+  const [servicesReturn, setServicesReturn] = useState("");
+  const openServices = (back = "") => {
+    setServicesReturn(back);
+    setModal("services");
+  };
+  const [workflowTab, setWorkflowTab] = useState<string | undefined>();
   const [modal, setModal] = useState(""),
-    [rightTab, setRightTab] = useState("assistant"),
+    [rightTab, setRightTab] = useState("project"),
     [prompt, setPrompt] = useState(""),
     [provider, setProvider] = useState("chatgpt"),
     [chatgpt, setChatgpt] = useState<{
@@ -114,19 +201,40 @@ export function App() {
     [exportOptions, setExportOptions] = useState<ExportOptions | null>(null),
     [recent, setRecent] = useState<string[]>([]),
     [recovery, setRecovery] = useState<Project | null>(null),
-    [key, setKey] = useState(""),
     [hasKey, setHasKey] = useState(false);
-  const [leftWidth, setLeftWidth] = useState(360),
+  const [chooseExportLocation, setChooseExportLocation] = useState(false);
+  const [leftWidth, setLeftWidth] = useState(340),
     [rightWidth, setRightWidth] = useState(340),
     [leftHidden, setLeftHidden] = useState(false),
     [rightHidden, setRightHidden] = useState(false),
-    [timelineHeight, setTimelineHeight] = useState(204),
+    [timelineHeight, setTimelineHeight] = useState(320),
     [timelineHidden, setTimelineHidden] = useState(false),
     [fontSize, setFontSize] = useState(14),
     [light, setLight] = useState(false);
   const editorRef = useRef<any>(null),
+    workspaceRef = useRef<HTMLDivElement>(null),
     fullscreenRef = useRef<HTMLDivElement>(null),
     fileRef = useRef<HTMLInputElement>(null);
+  const [workspaceSize, setWorkspaceSize] = useState({
+    width: Math.max(980, window.innerWidth) - 12,
+    height: window.innerHeight - 66,
+  });
+  const panelBudget = Math.max(
+    0,
+    workspaceSize.width - 250 - (leftHidden ? 0 : 5) - (rightHidden ? 0 : 5),
+  );
+  const panelScale = Math.min(
+    1,
+    panelBudget /
+      Math.max(
+        1,
+        (leftHidden ? 0 : leftWidth) + (rightHidden ? 0 : rightWidth),
+      ),
+  );
+  const visibleLeftWidth = leftHidden ? 0 : Math.floor(leftWidth * panelScale);
+  const visibleRightWidth = rightHidden
+    ? 0
+    : Math.floor(rightWidth * panelScale);
   const sceneChats = useRef<Record<string, typeof chat>>({}),
     chatScene = useRef(p.workflow?.selectedId ?? "project");
   useEffect(() => {
@@ -153,6 +261,32 @@ export function App() {
     },
     [notify],
   );
+  const [storageReady, setStorageReady] = useState(false);
+  useEffect(() => {
+    const element = workspaceRef.current;
+    if (!storageReady || !element) return;
+    const observer = new ResizeObserver(([entry]) =>
+      setWorkspaceSize({
+        width: entry.contentRect.width,
+        height: entry.contentRect.height,
+      }),
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [storageReady, showHome]);
+  const [workflowLoaded, setWorkflowLoaded] = useState(false);
+  const [editorLoaded, setEditorLoaded] = useState(false);
+  useEffect(() => {
+    if (modal === "workflow") setWorkflowLoaded(true);
+  }, [modal]);
+  useEffect(() => {
+    if (storageReady && !leftHidden && leftView === "code")
+      setEditorLoaded(true);
+  }, [storageReady, leftHidden, leftView]);
+  const [storageSaveState, setStorageSaveState] = useState("saving");
+  const [storageSaveError, setStorageSaveError] = useState("");
+  const [saveAttempt, setSaveAttempt] = useState(0);
+  const autosaveGeneration = useRef(0);
   useEffect(() => {
     void act(async () => {
       const layout = await bridge.call("settingsGet");
@@ -169,13 +303,67 @@ export function App() {
         setTimelineHidden(layout.timelineHidden);
       if (layout.provider) setProvider(layout.provider);
       if (layout.model) setModel(layout.model);
+      if (
+        layout.leftView &&
+        [
+          "media",
+          "clips",
+          "typography",
+          "prompts",
+          "audio",
+          "script",
+          "scenes",
+          "components",
+          "code",
+          "voice",
+          "sound",
+          "mascot",
+        ].includes(layout.leftView)
+      ) {
+        setLeftView(layout.leftView);
+        setProductionMode(layout.leftView !== "code");
+        if (!["media", "audio", "code"].includes(layout.leftView)) {
+          setLibraryTool(layout.leftView);
+          setLibraryToolLoaded(true);
+        }
+      }
+      if (layout.layoutVersion !== 2) {
+        setLeftHidden(false);
+        setTimelineHeight(320);
+      }
+      if (
+        ["project", "assistant", "properties", "history"].includes(
+          layout.rightTab,
+        )
+      )
+        setRightTab(layout.rightTab);
+      if (typeof layout.reviewAI === "boolean") setReviewAI(layout.reviewAI);
       setRecent(await bridge.call("recents"));
-      const autosaved = await bridge.call("recover");
+      const workspace = await bridge.call("workspaceGet");
+      if (workspace) {
+        useStudio.getState().load(workspace);
+        if (workspace.workflow && !manualMode) setMasterMode(true);
+        setNotice("Workspace restored from SQLite");
+      }
+      const autosaved = workspace ? null : await bridge.call("recover");
       if (autosaved) {
         const acknowledged = await recoveryAcknowledged(autosaved);
         if (acknowledged === "restored") useStudio.getState().load(autosaved);
         else if (!acknowledged) setRecovery(autosaved);
       }
+      const editor = await bridge.call("workspaceEditorGet");
+      if (workspace && editor.sceneChats) {
+        sceneChats.current = editor.sceneChats;
+        chatScene.current = workspace.workflow?.selectedId ?? "project";
+        setChat(editor.sceneChats[chatScene.current] ?? []);
+      }
+      if (manualMode) {
+        setLeftView("code");
+        setProductionMode(false);
+        setLeftHidden(false);
+        setRightTab("project");
+      }
+      setStorageReady(true);
       const keyConfigured = await bridge.call("hasKey");
       setHasKey(keyConfigured);
       if (layout.provider === "openai" && !keyConfigured)
@@ -187,10 +375,16 @@ export function App() {
     });
   }, []);
   useEffect(() => {
+    if (!storageReady) return;
     const id = setTimeout(
       () =>
         void act(() =>
           bridge.call("settingsSet", {
+            leftView,
+            rightTab,
+            layoutVersion: 2,
+            reviewAI,
+            productionMode,
             leftWidth,
             rightWidth,
             fontSize,
@@ -207,6 +401,11 @@ export function App() {
     );
     return () => clearTimeout(id);
   }, [
+    storageReady,
+    productionMode,
+    leftView,
+    rightTab,
+    reviewAI,
     leftWidth,
     rightWidth,
     fontSize,
@@ -232,7 +431,8 @@ export function App() {
     return () => clearInterval(interval);
   }, [busy]);
   useEffect(() => {
-    if (provider !== "chatgpt") return;
+    if (provider !== "chatgpt" && modal !== "services") return;
+    if (manualMode) return;
     let alive = true,
       inFlight = false;
     const poll = async () => {
@@ -253,12 +453,17 @@ export function App() {
       alive = false;
       clearInterval(interval);
     };
-  }, [provider]);
+  }, [provider, modal]);
   useEffect(() => {
+    if (manualMode) return;
     if (provider === "chatgpt" && chatgpt.connected && !chatgpt.pending)
       refreshModels();
   }, [provider, chatgpt.connected]);
-  const connectChatGPT = async (newAccount = false) => {
+  const connectChatGPT = async (
+    newAccount = false,
+    remember = localStorage.getItem("framescript.remember-connections") !==
+      "false",
+  ) => {
     const popup = window.open("about:blank", "_blank");
     if (!popup) {
       setProviderError(
@@ -270,7 +475,7 @@ export function App() {
     setConnecting(true);
     setProviderError("");
     try {
-      const { url } = await bridge.call("chatgptConnect", newAccount);
+      const { url } = await bridge.call("chatgptConnect", newAccount, remember);
       const auth = new URL(url);
       if (auth.origin !== "https://auth.openai.com")
         throw Error("Invalid sign-in destination");
@@ -284,46 +489,49 @@ export function App() {
     }
   };
   useEffect(() => {
-    if (!s.dirty) return;
+    if (!storageReady) return;
+    const generation = ++autosaveGeneration.current;
+    setStorageSaveState("saving");
+    setStorageSaveError("");
     const id = setTimeout(
-      () => void act(() => bridge.call("autosave", p)),
-      1800,
+      () =>
+        void act(() =>
+          bridge
+            .call("autosave", p, {
+              sceneChats: { ...sceneChats.current, [chatScene.current]: chat },
+            })
+            .then(() => {
+              if (generation === autosaveGeneration.current)
+                setStorageSaveState("saved");
+            })
+            .catch((error) => {
+              if (generation === autosaveGeneration.current) {
+                setStorageSaveState("error");
+                setStorageSaveError(
+                  error instanceof Error ? error.message : String(error),
+                );
+              }
+              throw error;
+            }),
+        ),
+      300,
     );
-    return () => clearTimeout(id);
-  }, [s.revision]);
-  useEffect(() => {
-    if (!s.playing) return;
-    let id: number,
-      last = performance.now();
-    const tick = (now: number) => {
-      const state = useStudio.getState(),
-        duration = masterMode
-          ? totalDuration(state.project)
-          : state.project.settings.duration;
-      let t = state.time + ((now - last) / 1000) * state.project.settings.speed;
-      last = now;
-      if (t >= duration) {
-        if (state.project.settings.loop) t %= duration;
-        else {
-          t = duration;
-          state.setPlaying(false);
-        }
-      }
-      state.setTime(t);
-      id = requestAnimationFrame(tick);
+    return () => {
+      clearTimeout(id);
+      if (generation === autosaveGeneration.current)
+        autosaveGeneration.current++;
     };
-    id = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(id);
-  }, [s.playing, masterMode]);
+  }, [s.revision, storageReady, chat, saveAttempt]);
   const save = useCallback(
     (as = false) =>
       void act(async () => {
+        const submitted = useStudio.getState();
         const file = await bridge.call(
           as ? "saveAs" : "save",
-          useStudio.getState().project,
+          submitted.project,
         );
         if (file) {
-          useStudio.getState().saved();
+          useStudio.getState().saved(submitted.revision);
           setRecent(await bridge.call("recents"));
           setNotice("Saved · " + file);
         }
@@ -332,6 +540,35 @@ export function App() {
   );
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (showHome) return;
+      if (
+        (e.code === "Space" || e.key === " ") &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
+        const target = e.target as HTMLElement;
+        if (
+          target.closest(
+            "input, textarea, select, [contenteditable], .monaco-editor, [role=dialog]",
+          ) ||
+          document.querySelector('[role="dialog"]')
+        )
+          return;
+        e.preventDefault();
+        if (!e.repeat) {
+          const state = useStudio.getState();
+          if (
+            !state.playing &&
+            state.time >=
+              (masterMode
+                ? totalDuration(state.project)
+                : state.project.settings.duration)
+          )
+            state.setTime(0);
+          state.setPlaying(!state.playing);
+        }
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         save(e.shiftKey);
@@ -347,7 +584,7 @@ export function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [save]);
+  }, [save, masterMode, showHome]);
   useEffect(() => {
     if (tab === "all" && !parseError) setCombinedDraft(combined(p));
   }, [tab, s.revision]);
@@ -370,6 +607,53 @@ export function App() {
       setParseError((e as Error).message);
     }
   };
+  const importDocument = (text: string) => {
+    try {
+      const current = useStudio.getState();
+      if (masterMode)
+        throw Error("Switch to editing a timeline before applying code.");
+      if (selectedScene(current.project)?.locked)
+        throw Error("Unlock this timeline before applying code.");
+      const source = text
+        .trim()
+        .replace(/^```(?:html)?\s*\n/i, "")
+        .replace(/\n```\s*$/, "");
+      if (!source.trim()) throw Error("Paste an HTML document first.");
+      const parsed = parseCombined(source);
+      const validated = projectSchema.safeParse({
+        ...current.project,
+        ...parsed,
+      });
+      if (!validated.success)
+        throw Error(
+          validated.error.issues
+            .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+            .join("\n"),
+        );
+      current.change(parsed, "Paste full HTML document");
+      const result = useStudio.getState();
+      if (
+        result.project.html !== parsed.html ||
+        result.project.css !== parsed.css ||
+        result.project.js !== parsed.js
+      )
+        throw Error(
+          result.error ||
+            "The code could not be applied. Your pasted draft is preserved.",
+        );
+      setParseError("");
+      setPasteError("");
+      setModal("");
+      setTab("html");
+      setNotice(
+        "Document split into HTML, CSS and JavaScript · Undo available",
+      );
+    } catch (error) {
+      setPasteDocument(text);
+      setPasteError((error as Error).message);
+      setModal("paste-code");
+    }
+  };
   const load = (project: Project) => {
     sceneChats.current = {};
     chatScene.current = project.workflow?.selectedId ?? "project";
@@ -381,6 +665,15 @@ export function App() {
     setNotice("Project opened");
     setModal("");
   };
+  const checkpointCurrent = async (reason: string) => {
+    const state = useStudio.getState();
+    await bridge.call("autosave", state.project, {
+      sceneChats: { ...sceneChats.current, [chatScene.current]: chat },
+    });
+    await bridge.call("checkpoint", reason);
+    if (state.revision !== useStudio.getState().revision)
+      throw Error("Project changed while preparing recovery. Try again.");
+  };
   const requestLoad = (project: Project) => {
     if (
       s.dirty &&
@@ -390,6 +683,7 @@ export function App() {
     )
       return;
     void act(async () => {
+      await checkpointCurrent("Before replacing project");
       await bridge.call("newSession");
       load(project);
     });
@@ -435,7 +729,7 @@ export function App() {
       }
       if (provider === "openai" && !hasKey) {
         setProviderError(
-          "OpenAI API is not connected. Add an API key in Settings, or choose ChatGPT · account to sign in without one.",
+          "OpenAI API is not connected. Add an API key in Services, or choose ChatGPT · account to sign in without one.",
         );
         return;
       }
@@ -456,7 +750,12 @@ export function App() {
           : "No models installed. In a terminal run: ollama pull qwen2.5-coder:7b",
       );
     });
-  const ask = async (fix = false) => {
+  const [queuedSceneGeneration, setQueuedSceneGeneration] = useState<
+    string | null
+  >(null);
+  const sceneGenerationPrompt =
+    "Generate a complete visual animation for the SELECTED scene using its narration as voice-over context, its visual subject, duration and shared style. Replace HTML, CSS and JavaScript as needed to build real animated imagery, not a typography layout or placeholder. NO on-screen text, labels, headlines or captions, even if old visual direction asks for them. Keep visual content visible at time zero. Preserve every other scene and all narration/audio.";
+  const ask = async (fix = false, promptOverride?: string) => {
     if (masterMode || sceneLocked) {
       setNotice(
         masterMode
@@ -468,7 +767,7 @@ export function App() {
     if (busy) return;
     const text = fix
       ? `Fix this animation error, preserve the intended scene: ${s.error}`
-      : prompt;
+      : (promptOverride ?? prompt);
     if (provider === "chatgpt" && !chatgpt.connected) {
       setProviderError("Connect your ChatGPT account before generating.");
       return;
@@ -502,6 +801,16 @@ export function App() {
         throw Error(
           "Project changed during generation. Response was not applied; retry with the current project.",
         );
+      if (reviewAI) {
+        setPendingAI({
+          before: p,
+          after: updated,
+          revision: s.revision,
+          explanation: response.explanation,
+        });
+        setNotice("AI scene ready for review");
+        return;
+      }
       s.change(updated, "AI · " + response.explanation);
       setChat((c) => [
         ...c,
@@ -535,13 +844,17 @@ export function App() {
   const resize = (side: "left" | "right", e: React.PointerEvent) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     const start = e.clientX,
-      initial = side === "left" ? leftWidth : rightWidth;
+      initial = side === "left" ? visibleLeftWidth : visibleRightWidth;
+    const other = side === "left" ? visibleRightWidth : visibleLeftWidth;
+    const maximum = Math.min(650, Math.max(200, panelBudget - other));
+    setLeftWidth(visibleLeftWidth || leftWidth);
+    setRightWidth(visibleRightWidth || rightWidth);
     const target = e.currentTarget;
     const move = (ev: Event) => {
       const x = (ev as PointerEvent).clientX;
       const value = Math.min(
-        650,
-        Math.max(240, initial + (side === "left" ? x - start : start - x)),
+        maximum,
+        Math.max(200, initial + (side === "left" ? x - start : start - x)),
       );
       (side === "left" ? setLeftWidth : setRightWidth)(value);
     };
@@ -563,7 +876,7 @@ export function App() {
       quality: 20,
       fit: "fit",
       transparent: false,
-      time: s.time,
+      time: useStudio.getState().time,
     });
     setModal("export");
   };
@@ -578,17 +891,23 @@ export function App() {
     setExporting(true);
     setProgress(null);
     try {
-      const destination = await bridge.call(
-        "export",
+      const handle = chooseExportLocation
+        ? await chooseExportFile(
+            exportOptions.fileName || p.name,
+            exportOptions.format,
+          )
+        : undefined;
+      const destination = await exportToFile(
         viewProject,
         exportOptions,
+        handle,
       );
       if (destination) {
         setNotice("Export verified · " + destination);
         setModal("");
       }
     } catch (e) {
-      notify(e);
+      if ((e as Error).name !== "AbortError") notify(e);
     } finally {
       setExporting(false);
     }
@@ -609,6 +928,15 @@ export function App() {
       value={p[language]}
       onMount={(e) => {
         editorRef.current = e;
+        if (language === "js" && jumpLine.current) {
+          e.setPosition({
+            lineNumber: jumpLine.current.line,
+            column: jumpLine.current.column,
+          });
+          e.revealLineInCenter(jumpLine.current.line);
+          e.focus();
+          jumpLine.current = null;
+        }
       }}
       onChange={(v) => s.change({ [language]: v ?? "" })}
       options={{
@@ -626,6 +954,190 @@ export function App() {
       }}
     />
   );
+  const handleSelect = useCallback((value: any) => setSelection(value), []);
+  const handleReady = useCallback((value: any) => setRuntime(value), []);
+  const handleVisual = useCallback((value: any) => {
+    const state = useStudio.getState();
+    if (typeof value?.id !== "string" || typeof value?.styles !== "object")
+      return;
+    const doc = new DOMParser().parseFromString(
+      state.project.html,
+      "text/html",
+    );
+    const elements = Array.from(doc.querySelectorAll("[id]")).filter(
+      (el) => el.id === value.id,
+    );
+    if (elements.length !== 1) return;
+    const element = elements[0] as HTMLElement;
+    for (const [key, v] of Object.entries(value.styles)) {
+      if (
+        ["position", "left", "top", "width", "height"].includes(key) &&
+        typeof v === "string"
+      )
+        element.style.setProperty(key, v);
+    }
+    state.change({ html: doc.body.innerHTML }, "Visual drag / resize");
+  }, []);
+  useEffect(() => {
+    if (
+      queuedSceneGeneration &&
+      p.workflow?.selectedId === queuedSceneGeneration &&
+      !busy
+    ) {
+      setQueuedSceneGeneration(null);
+      void ask(false, sceneGenerationPrompt);
+    }
+  }, [queuedSceneGeneration, p.workflow?.selectedId, busy]);
+  const selectLeftView = (view: string) => {
+    setLeftView(view);
+    setProductionMode(view !== "code");
+    setLeftHidden(false);
+  };
+  const selectedText = useStudio((state) => state.selectedText);
+  useEffect(() => {
+    if (selectedText) selectLeftView("typography");
+  }, [selectedText]);
+  const openLibraryTool = (view: string) => {
+    const current = useStudio.getState().project;
+    if (!current.workflow)
+      s.change(
+        { workflow: initialWorkflow(current) },
+        "Enable production workflow",
+      );
+    selectLeftView(view);
+    setLibraryTool(view);
+    setLibraryToolLoaded(true);
+    setSelectedAudio(undefined);
+    setSelectedAsset(undefined);
+  };
+  const insertLibraryAsset = (id: string) => {
+    const current = useStudio.getState().project;
+    if (selectedScene(current)?.locked) {
+      setNotice("Unlock the selected scene before inserting media.");
+      return;
+    }
+    if (!current.assets.some((asset) => asset.id === id)) return;
+    const placementError = sizeError(placement);
+    if (placementError) {
+      setNotice(placementError);
+      return;
+    }
+    if (masterMode) changeScope(false);
+    s.change(
+      {
+        html: current.html + imageMarkup(id, current.settings, placement),
+      },
+      "Insert library asset",
+    );
+    setNotice(
+      `Image inserted · ${placement.width} × ${placement.height} · ${placement.fit}`,
+    );
+  };
+  const removeLibraryAsset = (id: string) => {
+    const current = useStudio.getState().project;
+    if (
+      [
+        current.html,
+        current.css,
+        current.js,
+        ...(current.workflow?.scenes.flatMap((scene) => [
+          scene.html,
+          scene.css,
+          scene.js,
+        ]) ?? []),
+      ].some((source) => source.includes("asset://" + id)) ||
+      current.workflow?.mascot.references.includes(id)
+    ) {
+      setNotice("Remove references to this asset before deleting it.");
+      return;
+    }
+    s.change(
+      { assets: current.assets.filter((asset) => asset.id !== id) },
+      "Delete asset",
+    );
+  };
+  const openSceneEditor = () => {
+    setLeftView("code");
+    setProductionMode(false);
+    setSelectedAudio(undefined);
+    setSelectedAsset(undefined);
+    setLeftHidden(false);
+    setRightHidden(false);
+    setRightTab("project");
+    setTab("html");
+    setParseError("");
+    setSelection(null);
+    setRun((value) => value + 1);
+    setNotice(
+      `Editing scene: ${selectedScene(useStudio.getState().project)?.title ?? "Selected scene"}`,
+    );
+  };
+  if (!storageReady)
+    return (
+      <main className="modal" role="status">
+        <h2>Opening your workspace…</h2>
+        <p>
+          {notice === "Ready" ? "Reading the local SQLite database." : notice}
+        </p>
+        <button onClick={() => window.location.reload()}>Retry</button>
+      </main>
+    );
+  if (showHome)
+    return (
+      <ProjectHome
+        onRenameCurrent={(name) => s.change({ name }, "Rename project")}
+        workspace={p}
+        onContinue={enterEditor}
+        onCreate={async (options) => {
+          await checkpointCurrent("Before creating project");
+          const current = useStudio.getState().project,
+            blank = newProject();
+          if (
+            current.name !== blank.name ||
+            current.html !== blank.html ||
+            current.css !== blank.css ||
+            current.js !== blank.js ||
+            current.audio?.length ||
+            current.assets.length
+          )
+            await bridge.call("projectSave", current, {
+              thumbnail: runtime?.thumbnail,
+            });
+          const project = {
+            ...newProject(),
+            name: options.name,
+            html: "",
+            css: "",
+            js: "window.renderFrame = (timeInSeconds) => {};",
+            settings: {
+              ...newProject().settings,
+              width: options.width,
+              height: options.height,
+              fps: options.fps,
+              duration: options.duration,
+            },
+          };
+          await bridge.call("projectSave", project, { create: true });
+          load(project);
+          selectLeftView(options.tool);
+          enterEditor();
+        }}
+        onOpen={async (id) => {
+          await checkpointCurrent("Before opening project");
+          load(await bridge.call("openRecent", id));
+          enterEditor();
+        }}
+        onImport={async () => {
+          await checkpointCurrent("Before importing project");
+          const project = await bridge.call("open");
+          if (project) {
+            await bridge.call("projectSave", project, { create: true });
+            load(project);
+            enterEditor();
+          }
+        }}
+      />
+    );
   return (
     <div
       className={"app " + (light ? "light" : "")}
@@ -635,7 +1147,36 @@ export function App() {
         void act(() => importFiles(e.dataTransfer.files));
       }}
     >
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const files = e.target.files;
+          void act(() => importFiles(files));
+          e.target.value = "";
+        }}
+      />
       <header className="toolbar">
+        <button
+          aria-label="Project home"
+          title="Save and return to project home"
+          onClick={() =>
+            void act(async () => {
+              useStudio.getState().setPlaying(false);
+              await checkpointCurrent("Return to project home");
+              await bridge.call("projectSave", useStudio.getState().project, {
+                thumbnail: runtime?.thumbnail,
+              });
+              window.location.hash = "home";
+              setShowHome(true);
+            })
+          }
+        >
+          <Home size={17} />
+        </button>
         <div className="brand">
           <span className="brand-icon">
             <Code2 size={20} />
@@ -674,6 +1215,7 @@ export function App() {
                   !confirm("Open another project and replace unsaved changes?")
                 )
                   return;
+                await checkpointCurrent("Before opening a project file");
                 const project = await bridge.call("open");
                 if (project) load(project);
               })
@@ -706,18 +1248,54 @@ export function App() {
           </button>
         </div>
         <div className="toolbar-spacer" />
+        {!manualMode && (
+          <>
+            <button
+              className="text-button"
+              onClick={() => {
+                if (!p.workflow)
+                  s.change(
+                    { workflow: initialWorkflow(p) },
+                    "Enable storyboard",
+                  );
+                setModal("workflow");
+              }}
+            >
+              Storyboard
+            </button>
+            <button className="text-button" onClick={() => openServices()}>
+              Services
+            </button>
+            <button
+              className="text-button"
+              aria-pressed={productionMode}
+              onClick={() => {
+                const next = !productionMode;
+                setProductionMode(next);
+                setLeftHidden(false);
+                setLeftView(next ? "media" : "code");
+                if (next) {
+                  if (!p.workflow)
+                    s.change(
+                      { workflow: initialWorkflow(p) },
+                      "Enable production workspace",
+                    );
+                  setTimelineHidden(false);
+                  setTimelineHeight(Math.max(timelineHeight, 300));
+                }
+              }}
+            >
+              {productionMode ? "Code workspace" : "Production workspace"}
+            </button>
+          </>
+        )}
         <button
           className="text-button"
-          onClick={() => {
-            if (!p.workflow)
-              s.change({ workflow: initialWorkflow(p) }, "Enable storyboard");
-            setModal("workflow");
-          }}
+          title="Examples"
+          aria-label="Examples"
+          onClick={() => setModal("examples")}
         >
-          Storyboard
-        </button>
-        <button className="text-button" onClick={() => setModal("examples")}>
-          Examples
+          <Library size={17} />
         </button>
         <button
           aria-label={light ? "Switch to dark theme" : "Switch to light theme"}
@@ -727,15 +1305,41 @@ export function App() {
           {light ? <Moon size={18} /> : <Sun size={18} />}
         </button>
         <button
-          title="Project and provider settings"
+          title="Project settings"
+          aria-label="Project settings"
           onClick={() => setModal("settings")}
         >
           <Settings2 size={18} />
         </button>
-        <button className="primary" onClick={openExport}>
-          <ArrowDownToLine size={16} /> Export <ChevronDown size={12} />
+        <button
+          className="primary"
+          title="Export"
+          aria-label="Export"
+          onClick={openExport}
+        >
+          <ArrowDownToLine size={16} />
         </button>
       </header>
+      {storageSaveState === "error" && (
+        <div className="recovery-banner" role="alert">
+          <span>
+            Workspace could not be saved. Keep a recovery copy before reloading.
+            {storageSaveError && (
+              <small className="save-error-reason">{storageSaveError}</small>
+            )}
+          </span>
+          <button
+            title="Retry workspace save"
+            aria-label="Retry workspace save"
+            onClick={() => setSaveAttempt((value) => value + 1)}
+          >
+            <RotateCcw size={16} />
+          </button>
+          <button onClick={downloadRecoveryCopy}>
+            Download this workspace
+          </button>
+        </div>
+      )}
       {recovery && (
         <div
           className="recovery-banner"
@@ -771,224 +1375,466 @@ export function App() {
           </button>
         </div>
       )}
+
       <div
         className="workspace"
+        ref={workspaceRef}
         style={{
-          gridTemplateColumns: `${leftHidden ? "0" : leftWidth}px ${leftHidden ? "0" : "5"}px minmax(250px,1fr) ${rightHidden ? "0" : "5"}px ${rightHidden ? "0" : rightWidth}px`,
+          gridTemplateColumns: `${visibleLeftWidth}px ${leftHidden ? "0" : "5"}px minmax(250px,1fr) ${rightHidden ? "0" : "5"}px ${visibleRightWidth}px`,
         }}
       >
         <aside
           className="code-panel"
           style={{ visibility: leftHidden ? "hidden" : "visible" }}
         >
-          <SceneRail master={masterMode} onMaster={changeScope} busy={busy} />
-          <div className="panel-heading">
-            <span>
-              <Code2 size={14} /> SOURCE CODE
-            </span>
-            <div>
-              <button
-                title="Format document"
-                onClick={() =>
-                  editorRef.current
-                    ?.getAction("editor.action.formatDocument")
-                    ?.run()
-                }
+          <nav className="library-tabs" aria-label="Editor tools">
+            {[
+              { id: "media", label: "Media", icon: Library },
+              { id: "audio", label: "Audio", icon: Music },
+              { id: "clips", label: "Clips", icon: Film },
+              { id: "typography", label: "Typography", icon: CaseSensitive },
+              { id: "script", label: "Script", icon: FileText },
+              { id: "scenes", label: "Scenes", icon: Film },
+              { id: "components", label: "Layouts", icon: Layers },
+              { id: "code", label: "Code", icon: Code2 },
+              { id: "prompts", label: "Prompts", icon: FileText },
+            ]
+              .filter(
+                ({ id }) =>
+                  !manualMode ||
+                  [
+                    "media",
+                    "audio",
+                    "code",
+                    "prompts",
+                    "clips",
+                    "typography",
+                  ].includes(id),
+              )
+              .map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  className={
+                    id === leftView ||
+                    (id === "audio" && ["voice", "sound"].includes(leftView))
+                      ? "active"
+                      : ""
+                  }
+                  aria-label={label + " panel"}
+                  title={label}
+                  onClick={() =>
+                    [
+                      "media",
+                      "audio",
+                      "code",
+                      "prompts",
+                      "clips",
+                      "typography",
+                    ].includes(id)
+                      ? selectLeftView(id)
+                      : openLibraryTool(id)
+                  }
+                >
+                  <Icon size={17} />
+                </button>
+              ))}
+          </nav>
+          {leftView === "typography" && <TypographyPanel master={masterMode} />}
+          {leftView === "clips" && (
+            <ClipsPanel
+              onSelect={() => setMasterMode(false)}
+              onEdit={() => selectLeftView("code")}
+            />
+          )}
+          {leftView === "prompts" && (
+            <PromptTemplates
+              master={masterMode}
+              onPaste={() => {
+                selectLeftView("code");
+                setPasteError("");
+                setModal("paste-code");
+              }}
+            />
+          )}
+          {(leftView === "media" || leftView === "audio") && (
+            <MediaLibrary
+              placement={placement}
+              onPlacement={setImagePlacement}
+              followFrame={followFrame}
+              onFollowFrame={(value) => {
+                if (!value) setImagePlacement(placement);
+                setFollowFrame(value);
+              }}
+              onFrameSize={(size) => {
+                settings(size);
+                setZoom(1);
+              }}
+              manual={manualMode}
+              mode={leftView}
+              master={masterMode}
+              selectedAudio={selectedAudio}
+              onSelectAudio={(id) => {
+                setSelectedAudio(id);
+                setSelectedAsset(undefined);
+                setRightTab("project");
+                setRightHidden(false);
+              }}
+              onSelectAsset={(id) => {
+                setSelectedAsset(id);
+                setSelectedAudio(undefined);
+                setRightTab("project");
+              }}
+              onImportImages={() => fileRef.current?.click()}
+              onUseAsset={insertLibraryAsset}
+              onAttach={(id) => {
+                setAttached((ids) =>
+                  ids.includes(id)
+                    ? ids.filter((value) => value !== id)
+                    : [...ids, id],
+                );
+                setRightTab("assistant");
+              }}
+              onRemoveAsset={removeLibraryAsset}
+              onTool={openLibraryTool}
+              onError={setNotice}
+            />
+          )}
+          {!manualMode &&
+            (libraryToolLoaded ||
+              !["media", "audio", "code"].includes(leftView)) && (
+              <div
+                className="library-workflow"
+                hidden={["media", "audio", "code"].includes(leftView)}
               >
-                Format
-              </button>
-              <button
-                title="Collapse code panel"
-                onClick={() => setLeftHidden(true)}
-              >
-                <Columns2 size={14} />
-              </button>
-            </div>
-          </div>
-          <div className="editor-tabs">
-            {(["html", "css", "js", "all", "split"] as Tab[]).map((t) => (
-              <button
-                key={t}
-                className={tab === t ? "active" : ""}
-                onClick={() => changeTab(t)}
-              >
-                {t === "html"
-                  ? "< >"
-                  : t === "css"
-                    ? "#"
-                    : t === "js"
-                      ? "JS"
-                      : t === "all"
-                        ? "◈"
-                        : "▥"}{" "}
-                <span>{t === "js" ? "JavaScript" : t.toUpperCase()}</span>
-              </button>
-            ))}
-          </div>
-          <div className="editor-container">
-            {tab === "all" ? (
+                <Suspense fallback={<p>Loading production tools…</p>}>
+                  <Workflow
+                    embedded
+                    open={
+                      !["media", "audio", "code"].includes(leftView) &&
+                      modal !== "workflow"
+                    }
+                    requestedTab={libraryToolLoaded ? libraryTool : leftView}
+                    onTabChange={(value) => {
+                      setLibraryTool(value);
+                      setLibraryToolLoaded(true);
+                      setLeftView(value);
+                    }}
+                    masterMode={masterMode}
+                    provider={provider}
+                    model={model}
+                    busy={busy}
+                    onClose={() => selectLeftView("media")}
+                    onEditScene={openSceneEditor}
+                    onGenerateScene={(id) => setQueuedSceneGeneration(id)}
+                    onServices={() => openServices()}
+                    onMaster={changeScope}
+                    onNotice={setNotice}
+                  />
+                </Suspense>
+              </div>
+            )}
+          <div
+            className="code-workbench"
+            hidden={leftView !== "code"}
+            onPasteCapture={(event) => {
+              const text = event.clipboardData.getData("text/plain");
+              if (
+                !masterMode &&
+                !sceneLocked &&
+                /<!doctype\s+html|<html[\s>]/i.test(text)
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                importDocument(text);
+              }
+            }}
+          >
+            {(leftView === "code" || editorLoaded) && (
               <>
-                <Editor
-                  language="html"
-                  theme={light ? "framescript-light" : "framescript-dark"}
-                  path={(p.workflow?.selectedId ?? "project") + "/all"}
-                  value={combinedDraft}
-                  onChange={(v) => updateCombined(v ?? "")}
-                  options={{
-                    fontSize,
-                    readOnly: masterMode || sceneLocked,
-                    minimap: { enabled: false },
-                    wordWrap: "on",
-                    automaticLayout: true,
-                  }}
-                />
-                {parseError && (
-                  <div className="inline-error">
-                    {parseError}
+                <div className="panel-heading">
+                  <span>
+                    <Code2 size={14} /> SOURCE CODE
+                  </span>
+                  <div>
                     <button
+                      title="Paste full HTML document"
+                      aria-label="Paste full HTML document"
+                      disabled={masterMode || sceneLocked}
                       onClick={() => {
-                        setParseError("");
-                        setCombinedDraft(combined(p));
+                        setPasteError("");
+                        setModal("paste-code");
                       }}
                     >
-                      Discard combined edits
+                      <ClipboardPaste size={16} />
+                    </button>
+                    <button
+                      title="Format document"
+                      onClick={() =>
+                        editorRef.current
+                          ?.getAction("editor.action.formatDocument")
+                          ?.run()
+                      }
+                    >
+                      <Code2 size={16} />
+                    </button>
+                    <button
+                      title="Collapse code panel"
+                      onClick={() => setLeftHidden(true)}
+                    >
+                      <Columns2 size={14} />
+                    </button>
+                  </div>
+                </div>
+                {(masterMode || sceneLocked) && (
+                  <div className="code-readonly-notice" role="status">
+                    <span>
+                      {masterMode
+                        ? "Combined preview is read-only. Select a timeline to edit its code."
+                        : "This timeline is locked. Unlock it to edit its code."}
+                    </span>
+                    <button
+                      title={
+                        masterMode
+                          ? "Edit selected timeline"
+                          : "Unlock timeline"
+                      }
+                      aria-label={
+                        masterMode
+                          ? "Edit selected timeline"
+                          : "Unlock timeline"
+                      }
+                      onClick={() => {
+                        if (masterMode) changeScope(false);
+                        else {
+                          const project = useStudio.getState().project;
+                          if (project.workflow)
+                            s.change(
+                              {
+                                workflow: {
+                                  ...project.workflow,
+                                  scenes: project.workflow.scenes.map(
+                                    (scene) =>
+                                      scene.id === project.workflow!.selectedId
+                                        ? { ...scene, locked: false }
+                                        : scene,
+                                  ),
+                                },
+                              },
+                              "Unlock scene",
+                            );
+                        }
+                      }}
+                    >
+                      <Code2 size={16} />
                     </button>
                   </div>
                 )}
+                <div className="editor-tabs">
+                  {(["html", "css", "js", "all", "split"] as Tab[]).map((t) => (
+                    <button
+                      key={t}
+                      className={tab === t ? "active" : ""}
+                      onClick={() => changeTab(t)}
+                    >
+                      {t === "html"
+                        ? "< >"
+                        : t === "css"
+                          ? "#"
+                          : t === "js"
+                            ? "JS"
+                            : t === "all"
+                              ? "◈"
+                              : "▥"}{" "}
+                      <span>{t === "js" ? "JavaScript" : t.toUpperCase()}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="editor-container">
+                  {tab === "all" ? (
+                    <>
+                      <Editor
+                        language="html"
+                        theme={light ? "framescript-light" : "framescript-dark"}
+                        path={(p.workflow?.selectedId ?? "project") + "/all"}
+                        value={combinedDraft}
+                        onChange={(v) => updateCombined(v ?? "")}
+                        options={{
+                          fontSize,
+                          readOnly: masterMode || sceneLocked,
+                          minimap: { enabled: false },
+                          wordWrap: "on",
+                          automaticLayout: true,
+                        }}
+                      />
+                      {parseError && (
+                        <div className="inline-error">
+                          {parseError}
+                          <button
+                            onClick={() => {
+                              setParseError("");
+                              setCombinedDraft(combined(p));
+                            }}
+                          >
+                            Discard combined edits
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  ) : tab === "split" ? (
+                    <div className="split-editors">
+                      {(["html", "css", "js"] as const).map((l) => (
+                        <div key={l}>
+                          <small>{l.toUpperCase()}</small>
+                          {editor(l, "calc(100% - 22px)")}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    editor(tab)
+                  )}
+                </div>
+                <div
+                  className={"assets" + (assetsCollapsed ? " collapsed" : "")}
+                >
+                  <div className="panel-heading">
+                    <button
+                      className="assets-toggle"
+                      aria-expanded={!assetsCollapsed}
+                      aria-controls="editor-assets-content"
+                      onClick={() =>
+                        setAssetsCollapsed((collapsed) => !collapsed)
+                      }
+                    >
+                      <ChevronDown
+                        size={14}
+                        style={{
+                          transform: assetsCollapsed
+                            ? "rotate(-90deg)"
+                            : undefined,
+                        }}
+                      />
+                      ASSETS <b>{p.assets.length}</b>
+                    </button>
+                    <button
+                      title="Import images"
+                      onClick={() => fileRef.current?.click()}
+                    >
+                      <Plus size={15} />
+                    </button>
+                  </div>
+
+                  <div id="editor-assets-content" hidden={assetsCollapsed}>
+                    {!p.assets.length ? (
+                      <button
+                        className="asset-drop"
+                        onClick={() => fileRef.current?.click()}
+                      >
+                        <ImagePlus size={22} />
+                        <span>
+                          Drop images here or <em>browse</em>
+                        </span>
+                        <small>PNG, JPG, SVG, WebP, GIF</small>
+                      </button>
+                    ) : (
+                      <div className="asset-list">
+                        {p.assets.map((a) => (
+                          <div className="asset" key={a.id}>
+                            <img src={a.data} />
+                            <input
+                              aria-label="Asset name"
+                              value={a.name}
+                              onChange={(e) =>
+                                s.change(
+                                  {
+                                    assets: p.assets.map((x) =>
+                                      x.id === a.id
+                                        ? { ...x, name: e.target.value }
+                                        : x,
+                                    ),
+                                  },
+                                  "Rename asset",
+                                )
+                              }
+                            />
+                            <button
+                              title="Insert image into HTML"
+                              onClick={() =>
+                                s.change(
+                                  {
+                                    html:
+                                      p.html +
+                                      `\n<img id="image-${a.id}" src="asset://${a.id}" style="width:240px">`,
+                                  },
+                                  "Insert asset",
+                                )
+                              }
+                            >
+                              <Plus size={13} />
+                            </button>
+                            {!manualMode && (
+                              <button
+                                title="Attach image to AI prompt"
+                                className={
+                                  attached.includes(a.id) ? "accent" : ""
+                                }
+                                onClick={() =>
+                                  setAttached((ids) =>
+                                    ids.includes(a.id)
+                                      ? ids.filter((i) => i !== a.id)
+                                      : [...ids, a.id],
+                                  )
+                                }
+                              >
+                                <Sparkles size={13} />
+                              </button>
+                            )}
+                            <button
+                              title="Delete unused asset"
+                              onClick={() => {
+                                if (
+                                  [
+                                    p.html,
+                                    p.css,
+                                    p.js,
+                                    ...(p.workflow?.scenes.flatMap((scene) => [
+                                      scene.html,
+                                      scene.css,
+                                      scene.js,
+                                    ]) ?? []),
+                                  ].some((x) =>
+                                    x.includes("asset://" + a.id),
+                                  ) ||
+                                  p.workflow?.mascot.references.includes(a.id)
+                                ) {
+                                  setNotice(
+                                    "Remove references to this asset before deleting it.",
+                                  );
+                                  return;
+                                }
+                                s.change(
+                                  {
+                                    assets: p.assets.filter(
+                                      (x) => x.id !== a.id,
+                                    ),
+                                  },
+                                  "Delete asset",
+                                );
+                              }}
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </>
-            ) : tab === "split" ? (
-              <div className="split-editors">
-                {(["html", "css", "js"] as const).map((l) => (
-                  <div key={l}>
-                    <small>{l.toUpperCase()}</small>
-                    {editor(l, "calc(100% - 22px)")}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              editor(tab)
-            )}
-          </div>
-          <div className="assets">
-            <div className="panel-heading">
-              <span>
-                ASSETS <b>{p.assets.length}</b>
-              </span>
-              <button
-                title="Import images"
-                onClick={() => fileRef.current?.click()}
-              >
-                <Plus size={15} />
-              </button>
-            </div>
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              accept="image/*"
-              hidden
-              onChange={(e) => {
-                void act(() => importFiles(e.target.files));
-                e.target.value = "";
-              }}
-            />
-            {!p.assets.length ? (
-              <button
-                className="asset-drop"
-                onClick={() => fileRef.current?.click()}
-              >
-                <ImagePlus size={22} />
-                <span>
-                  Drop images here or <em>browse</em>
-                </span>
-                <small>PNG, JPG, SVG, WebP, GIF</small>
-              </button>
-            ) : (
-              <div className="asset-list">
-                {p.assets.map((a) => (
-                  <div className="asset" key={a.id}>
-                    <img src={a.data} />
-                    <input
-                      aria-label="Asset name"
-                      value={a.name}
-                      onChange={(e) =>
-                        s.change(
-                          {
-                            assets: p.assets.map((x) =>
-                              x.id === a.id
-                                ? { ...x, name: e.target.value }
-                                : x,
-                            ),
-                          },
-                          "Rename asset",
-                        )
-                      }
-                    />
-                    <button
-                      title="Insert image into HTML"
-                      onClick={() =>
-                        s.change(
-                          {
-                            html:
-                              p.html +
-                              `\n<img id="image-${a.id}" src="asset://${a.id}" style="width:240px">`,
-                          },
-                          "Insert asset",
-                        )
-                      }
-                    >
-                      <Plus size={13} />
-                    </button>
-                    <button
-                      title="Attach image to AI prompt"
-                      className={attached.includes(a.id) ? "accent" : ""}
-                      onClick={() =>
-                        setAttached((ids) =>
-                          ids.includes(a.id)
-                            ? ids.filter((i) => i !== a.id)
-                            : [...ids, a.id],
-                        )
-                      }
-                    >
-                      <Sparkles size={13} />
-                    </button>
-                    <button
-                      title="Delete unused asset"
-                      onClick={() => {
-                        if (
-                          [
-                            p.html,
-                            p.css,
-                            p.js,
-                            ...(p.workflow?.scenes.flatMap((scene) => [
-                              scene.html,
-                              scene.css,
-                              scene.js,
-                            ]) ?? []),
-                          ].some((x) => x.includes("asset://" + a.id)) ||
-                          p.workflow?.mascot.references.includes(a.id)
-                        ) {
-                          setNotice(
-                            "Remove references to this asset before deleting it.",
-                          );
-                          return;
-                        }
-                        s.change(
-                          { assets: p.assets.filter((x) => x.id !== a.id) },
-                          "Delete asset",
-                        );
-                      }}
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
-                ))}
-              </div>
             )}
           </div>
         </aside>
         <div
-          className="resize-handle"
+          className="resize-handle resize-left"
           onPointerDown={(e) => resize("left", e)}
         />
         <main className="center">
@@ -1008,33 +1854,61 @@ export function App() {
             </button>
             <span className="toolbar-spacer" />
             {leftHidden && (
-              <button onClick={() => setLeftHidden(false)}>Code</button>
+              <button
+                aria-label="Show code panel"
+                title="Show code panel"
+                onClick={() => selectLeftView("code")}
+              >
+                <Code2 size={16} />
+              </button>
             )}
             <button
               className="text-button"
+              aria-label="Run preview"
+              title="Run preview"
               onClick={() => {
                 setRun((r) => r + 1);
                 s.setTime(0);
               }}
             >
-              <Play size={13} /> Run
+              <Play size={16} />
             </button>
             <select
               aria-label="Canvas aspect ratio"
-              value=""
+              value={
+                [
+                  ["16:9", 1920, 1080],
+                  ["9:16", 1080, 1920],
+                  ["1:1", 1080, 1080],
+                  ["4:3", 1440, 1080],
+                  ["21:9", 2520, 1080],
+                ].find(
+                  ([, width, height]) =>
+                    width === p.settings.width && height === p.settings.height,
+                )?.[0] ?? ""
+              }
               onChange={(e) => {
-                const [w, h] = e.target.value.split(":").map(Number);
-                if (w)
-                  settings({
-                    width: Math.round((p.settings.height * w) / h / 2) * 2,
-                  });
+                const dimensions: Record<string, [number, number]> = {
+                  "16:9": [1920, 1080],
+                  "9:16": [1080, 1920],
+                  "1:1": [1080, 1080],
+                  "4:3": [1440, 1080],
+                  "21:9": [2520, 1080],
+                };
+                const size = dimensions[e.target.value];
+                if (size) {
+                  settings({ width: size[0], height: size[1] });
+                  setZoom(1);
+                }
               }}
             >
               <option value="">
                 {p.settings.width} × {p.settings.height}
               </option>
               {["16:9", "9:16", "1:1", "4:3", "21:9"].map((r) => (
-                <option key={r}>{r}</option>
+                <option key={r} value={r}>
+                  {r}
+                </option>
               ))}
             </select>
             <button
@@ -1047,43 +1921,29 @@ export function App() {
               <button onClick={() => setRightHidden(false)}>AI</button>
             )}
           </div>
-          <div className="preview-shell" ref={fullscreenRef}>
+          <div
+            className="preview-shell"
+            ref={fullscreenRef}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              const id = e.dataTransfer.getData(
+                "application/x-framescript-asset",
+              );
+              if (id) {
+                e.preventDefault();
+                e.stopPropagation();
+                insertLibraryAsset(id);
+              }
+            }}
+          >
             <Preview
+              textEditing={!masterMode}
               projectOverride={viewProject}
               run={run}
               select={select}
-              onSelect={useCallback((value) => setSelection(value), [])}
-              onReady={useCallback((value) => setRuntime(value), [])}
-              onVisual={useCallback((value) => {
-                const state = useStudio.getState();
-                if (
-                  typeof value?.id !== "string" ||
-                  typeof value?.styles !== "object"
-                )
-                  return;
-                const doc = new DOMParser().parseFromString(
-                  state.project.html,
-                  "text/html",
-                );
-                const elements = Array.from(
-                  doc.querySelectorAll("[id]"),
-                ).filter((el) => el.id === value.id);
-                if (elements.length !== 1) return;
-                const element = elements[0] as HTMLElement;
-                for (const [key, v] of Object.entries(value.styles)) {
-                  if (
-                    ["position", "left", "top", "width", "height"].includes(
-                      key,
-                    ) &&
-                    typeof v === "string"
-                  )
-                    element.style.setProperty(key, v);
-                }
-                state.change(
-                  { html: doc.body.innerHTML },
-                  "Visual drag / resize",
-                );
-              }, [])}
+              onSelect={handleSelect}
+              onReady={handleReady}
+              onVisual={handleVisual}
               zoom={zoom}
             />
             <div className="zoom-controls">
@@ -1093,7 +1953,13 @@ export function App() {
               >
                 <ZoomOut size={14} />
               </button>
-              <button onClick={() => setZoom(1)}>Fit</button>
+              <button
+                aria-label="Fit preview"
+                title="Fit preview"
+                onClick={() => setZoom(1)}
+              >
+                <Maximize2 size={14} />
+              </button>
               <button
                 title="Zoom in"
                 onClick={() => setZoom(Math.min(4, zoom + 0.1))}
@@ -1101,271 +1967,52 @@ export function App() {
                 <ZoomIn size={14} />
               </button>
             </div>
+            <div className="fullscreen-controls">
+              <PlayerTransport masterMode={masterMode} fullscreen />
+            </div>
           </div>
+          <PlayerTransport masterMode={masterMode} />
           {s.error && (
-            <div className="preview-error">
-              <span>{s.error}</span>
-              <button onClick={() => void ask(true)}>Fix with AI</button>
+            <div className="preview-error" role="alert">
+              <span>
+                {s.errorLocation
+                  ? `JavaScript · line ${s.errorLocation.line}, column ${s.errorLocation.column}: `
+                  : "Preview error: "}
+                {s.error}
+              </span>
+              {s.errorLocation && !masterMode && (
+                <button
+                  title="Jump to error"
+                  aria-label="Jump to error"
+                  onClick={() => {
+                    const location = s.errorLocation!;
+                    jumpLine.current = location;
+                    setLeftView("code");
+                    setLeftHidden(false);
+                    setTab("js");
+                    const model = editorRef.current?.getModel();
+                    if (tab === "js" && model) {
+                      editorRef.current.setPosition({
+                        lineNumber: location.line,
+                        column: location.column,
+                      });
+                      editorRef.current.revealLineInCenter(location.line);
+                      editorRef.current.focus();
+                      jumpLine.current = null;
+                    }
+                  }}
+                >
+                  <Code2 size={16} />
+                </button>
+              )}
+              {!manualMode && (
+                <button onClick={() => void ask(true)}>Fix with AI</button>
+              )}
             </div>
           )}
-          <div
-            className="timeline-resizer"
-            onPointerDown={(e) => {
-              e.currentTarget.setPointerCapture(e.pointerId);
-              const start = e.clientY,
-                initial = timelineHeight,
-                target = e.currentTarget;
-              const move = (event: Event) => {
-                setTimelineHidden(false);
-                setTimelineHeight(
-                  Math.max(
-                    160,
-                    Math.min(
-                      450,
-                      initial + start - (event as PointerEvent).clientY,
-                    ),
-                  ),
-                );
-              };
-              const end = () => {
-                target.removeEventListener("pointermove", move);
-                target.removeEventListener("pointerup", end);
-              };
-              target.addEventListener("pointermove", move);
-              target.addEventListener("pointerup", end);
-            }}
-          />
-          <section
-            className="timeline"
-            style={{
-              height: timelineHidden ? 44 : timelineHeight,
-              overflow: "hidden",
-            }}
-          >
-            {" "}
-            <div className="timeline-top">
-              <button
-                className="section-label"
-                title="Collapse or expand timeline"
-                onClick={() => setTimelineHidden(!timelineHidden)}
-              >
-                TIMELINE {timelineHidden ? "▴" : "▾"}
-              </button>
-              <span className="timing-badge">
-                {p.settings.timing === "seek" ? "SEEK MODE" : "REPLAY EXPORT"}
-              </span>
-              <span className="toolbar-spacer" />
-              <button
-                title="Add timeline marker"
-                onClick={() =>
-                  s.change(
-                    { markers: [...p.markers, s.time].sort((a, b) => a - b) },
-                    "Add marker",
-                  )
-                }
-              >
-                <Plus size={13} /> Marker
-              </button>
-              <select
-                aria-label="Playback speed"
-                value={p.settings.speed}
-                onChange={(e) => settings({ speed: Number(e.target.value) })}
-              >
-                {[
-                  0.25,
-                  0.5,
-                  0.75,
-                  1,
-                  1.25,
-                  1.5,
-                  2,
-                  3,
-                  4,
-                  ...(![0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].includes(
-                    p.settings.speed,
-                  )
-                    ? [p.settings.speed]
-                    : []),
-                ].map((x) => (
-                  <option key={x} value={x}>
-                    {x}×
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Frame rate"
-                value={p.settings.fps}
-                onChange={(e) => settings({ fps: Number(e.target.value) })}
-              >
-                {[
-                  24,
-                  25,
-                  30,
-                  60,
-                  ...(![24, 25, 30, 60].includes(p.settings.fps)
-                    ? [p.settings.fps]
-                    : []),
-                ].map((x) => (
-                  <option key={x} value={x}>
-                    {x} fps
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="ruler">
-              {Array.from({ length: 11 }, (_, i) => (
-                <span key={i}>{((i * playbackDuration) / 10).toFixed(1)}s</span>
-              ))}
-            </div>
-            <div className="track">
-              <div
-                className={"track-clip " + (masterMode ? "master-clips" : "")}
-              >
-                {masterMode && p.workflow ? (
-                  p.workflow.scenes.map((scene) => (
-                    <div
-                      className="master-scene-clip"
-                      key={scene.id}
-                      style={{
-                        width: (scene.duration / playbackDuration) * 100 + "%",
-                      }}
-                      title={scene.title + " · " + scene.duration + "s"}
-                    >
-                      {scene.title}
-                    </div>
-                  ))
-                ) : (
-                  <>
-                    <span>
-                      <Code2 size={13} /> {selectedScene(p)?.title ?? p.name}
-                    </span>
-                    <div className="keyframe-dots">
-                      {runtime?.animations?.map((_: any, i: number) => (
-                        <i key={i} />
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-              {p.audio
-                ?.filter(
-                  (a) =>
-                    !a.muted &&
-                    (!a.sceneId ||
-                      masterMode ||
-                      a.sceneId === p.workflow?.selectedId),
-                )
-                .map((clip) => {
-                  const offset =
-                    !masterMode && p.workflow
-                      ? sceneOffset(p, p.workflow.selectedId)
-                      : 0;
-                  const start =
-                    clip.start +
-                    (clip.sceneId ? sceneOffset(p, clip.sceneId) : 0) -
-                    offset;
-                  const left = Math.max(0, start),
-                    right = Math.min(playbackDuration, start + clip.length);
-                  return right > left ? (
-                    <span
-                      key={clip.id}
-                      className={"audio-cue " + clip.lane}
-                      title={`${clip.lane}: ${clip.name}`}
-                      style={{
-                        left: (left / playbackDuration) * 100 + "%",
-                        width: ((right - left) / playbackDuration) * 100 + "%",
-                      }}
-                    />
-                  ) : null;
-                })}
-              {p.markers.map((m, i) => (
-                <button
-                  key={i}
-                  className="marker"
-                  title={`Marker ${m.toFixed(2)}s · click to remove`}
-                  style={{ left: (m / playbackDuration) * 100 + "%" }}
-                  onClick={() =>
-                    s.change(
-                      { markers: p.markers.filter((_, j) => i !== j) },
-                      "Remove marker",
-                    )
-                  }
-                />
-              ))}
-              <input
-                aria-label="Timeline position"
-                className="scrubber"
-                type="range"
-                min={0}
-                max={playbackDuration}
-                step={1 / p.settings.fps}
-                value={s.time}
-                onChange={(e) => {
-                  s.setPlaying(false);
-                  s.setTime(Number(e.target.value));
-                }}
-              />
-              <div
-                className="playhead"
-                style={{ left: (s.time / playbackDuration) * 100 + "%" }}
-              />
-            </div>
-            <div className="transport">
-              <button title="Restart" onClick={() => s.setTime(0)}>
-                <RotateCcw size={15} />
-              </button>
-              <button
-                title="Previous frame"
-                onClick={() => {
-                  s.setPlaying(false);
-                  s.setTime(Math.max(0, s.time - 1 / p.settings.fps));
-                }}
-              >
-                <ArrowLeft size={15} />
-              </button>
-              <button
-                title={s.playing ? "Pause" : "Play"}
-                className="play-button"
-                onClick={() => s.setPlaying(!s.playing)}
-              >
-                {s.playing ? <Pause size={18} /> : <Play size={18} />}
-              </button>
-              <button
-                title="Next frame"
-                onClick={() => {
-                  s.setPlaying(false);
-                  s.setTime(
-                    Math.min(playbackDuration, s.time + 1 / p.settings.fps),
-                  );
-                }}
-              >
-                <ArrowRight size={15} />
-              </button>
-              <button
-                title="Stop"
-                onClick={() => {
-                  s.setPlaying(false);
-                  s.setTime(0);
-                }}
-              >
-                <Square size={13} />
-              </button>
-              <code>
-                {s.time.toFixed(2)}{" "}
-                <span>/ {playbackDuration.toFixed(2)} s</span>
-              </code>
-              <span className="toolbar-spacer" />
-              <button
-                className={p.settings.loop ? "accent" : ""}
-                onClick={() => settings({ loop: !p.settings.loop })}
-              >
-                ↻ Loop
-              </button>
-            </div>
-          </section>
         </main>
         <div
-          className="resize-handle"
+          className="resize-handle resize-right"
           onPointerDown={(e) => resize("right", e)}
         />
         <aside
@@ -1374,16 +2021,32 @@ export function App() {
         >
           <div className="right-tabs">
             <button
-              className={rightTab === "assistant" ? "active" : ""}
-              onClick={() => setRightTab("assistant")}
+              className={rightTab === "project" ? "active" : ""}
+              aria-label="Project"
+              title="Project"
+              onClick={() => {
+                setRightTab("project");
+                setSelectedAudio(undefined);
+                setSelectedAsset(undefined);
+              }}
             >
-              <Sparkles size={14} /> Assistant
+              <Film size={16} />
             </button>
+            {!manualMode && (
+              <button
+                className={rightTab === "assistant" ? "active" : ""}
+                onClick={() => setRightTab("assistant")}
+              >
+                <Sparkles size={14} /> Assistant
+              </button>
+            )}
             <button
               className={rightTab === "properties" ? "active" : ""}
+              aria-label="Properties"
+              title="Properties"
               onClick={() => setRightTab("properties")}
             >
-              Properties
+              <Settings2 size={16} />
             </button>
             <button title="History" onClick={() => setRightTab("history")}>
               <History size={14} />
@@ -1395,7 +2058,31 @@ export function App() {
               <X size={13} />
             </button>
           </div>
-          {rightTab === "assistant" ? (
+          {rightTab === "project" ? (
+            <ProjectInspector
+              manual={manualMode}
+              audioId={selectedAudio}
+              assetId={selectedAsset}
+              onSettings={() => setModal("settings")}
+              onVoice={() => openLibraryTool("voice")}
+            >
+              {!manualMode && p.workflow && (
+                <SceneInspector
+                  onEditCode={openSceneEditor}
+                  busy={busy}
+                  onGenerate={() => {
+                    if (masterMode) {
+                      changeScope(false);
+                      setQueuedSceneGeneration(p.workflow!.selectedId);
+                    } else void ask(false, sceneGenerationPrompt);
+                  }}
+                  onOpen={(tab) => {
+                    openLibraryTool(tab);
+                  }}
+                />
+              )}
+            </ProjectInspector>
+          ) : rightTab === "assistant" ? (
             <>
               <div className="provider-row">
                 <select
@@ -1408,124 +2095,29 @@ export function App() {
                   }}
                 >
                   <option value="chatgpt">ChatGPT</option>
-                  <option value="ollama">Ollama</option>
+                  <option value="gemini">Gemini · free tier available</option>
+                  <option value="ollama">Ollama · local / free</option>
                   <option value="openai">OpenAI API</option>
                 </select>
                 <button title="Refresh models" onClick={refreshModels}>
                   <RotateCcw size={13} />
                 </button>
-                {provider === "chatgpt" && (
-                  <details
-                    className="chatgpt-connection"
-                    open={
-                      !chatgpt.connected || chatgpt.pending || !!chatgpt.error
-                    }
-                  >
-                    <summary
-                      title={
-                        chatgpt.connected
-                          ? "Connected account settings"
-                          : "Connect your ChatGPT account"
-                      }
-                    >
-                      <UserRound size={15} />
-                      <span
-                        className="connection-indicator"
-                        style={{
-                          background: chatgpt.connected
-                            ? "var(--success)"
-                            : "var(--muted)",
-                        }}
-                      />
-                      <span className="sr-only">
-                        {chatgpt.connected
-                          ? "ChatGPT connected"
-                          : chatgpt.pending
-                            ? "Signing in…"
-                            : "Connect ChatGPT"}
-                      </span>
-                    </summary>
-                    <div className="connection-details">
-                      {chatgpt.connected ? (
-                        <>
-                          <strong>
-                            Connected{" "}
-                            {chatgpt.email ? "· " + chatgpt.email : ""}
-                          </strong>
-                          <small>
-                            ChatGPT plan usage authorized. Your plan limits
-                            apply.
-                          </small>
-                          <div className="connection-actions">
-                            <a
-                              href="https://chatgpt.com/#settings/Usage"
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Manage usage
-                            </a>
-                            <button
-                              disabled={busy || connecting || chatgpt.pending}
-                              onClick={() => void connectChatGPT(true)}
-                            >
-                              Use another account
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <strong>Use your ChatGPT account</strong>
-                          <small>
-                            No API key required. Eligible plans and
-                            authorization are required.
-                          </small>
-                        </>
-                      )}
-                      {chatgpt.pending ? (
-                        <p role="status">
-                          Finish signing in in the opened tab. Waiting for
-                          authorization…
-                        </p>
-                      ) : (
-                        !chatgpt.connected && (
-                          <button
-                            className="primary"
-                            disabled={connecting || busy}
-                            onClick={() => void connectChatGPT()}
-                          >
-                            Continue with ChatGPT
-                          </button>
-                        )
-                      )}
-                      {(chatgpt.connected || chatgpt.pending) && (
-                        <button
-                          disabled={busy}
-                          onClick={() =>
-                            void act(async () => {
-                              const result =
-                                await bridge.call("chatgptDisconnect");
-                              setChatgpt(await bridge.call("chatgptStatus"));
-                              setModels([]);
-                              setModel("");
-                              setProviderError(result.warning || "");
-                            })
-                          }
-                        >
-                          {chatgpt.pending ? "Cancel sign-in" : "Sign out"}
-                        </button>
-                      )}
-                      {!chatgpt.connected && !chatgpt.pending && (
-                        <button
-                          disabled={connecting || busy}
-                          onClick={() => void connectChatGPT(true)}
-                        >
-                          Use a different account
-                        </button>
-                      )}
-                      {chatgpt.error && <p role="alert">{chatgpt.error}</p>}
-                    </div>
-                  </details>
-                )}
+                <button
+                  className="chatgpt-connection"
+                  title="Manage services"
+                  aria-label="Manage services"
+                  onClick={() => openServices()}
+                >
+                  <UserRound size={15} />
+                  <span
+                    className="connection-indicator"
+                    style={{
+                      background: chatgpt.connected
+                        ? "var(--success)"
+                        : "var(--muted)",
+                    }}
+                  />
+                </button>
                 <select
                   className="model-select"
                   aria-label="AI model"
@@ -1544,11 +2136,19 @@ export function App() {
                   )}
                 </select>
               </div>
+              {provider === "gemini" && (
+                <p>
+                  Uses your Google AI Studio key from Services. Free-tier limits
+                  depend on the model and Google project; billing-enabled
+                  projects may incur charges.{" "}
+                  <button onClick={() => openServices()}>Connect Gemini</button>
+                </p>
+              )}
               {(providerError || (provider === "openai" && !hasKey)) && (
                 <div className="provider-error" role="alert">
                   <p>
                     {providerError ||
-                      "OpenAI API is not connected. Add an API key in Settings, or choose ChatGPT · account to sign in without one."}
+                      "OpenAI API is not connected. Add an API key in Services, or choose ChatGPT · account to sign in without one."}
                   </p>
                   <button
                     disabled={
@@ -1557,7 +2157,7 @@ export function App() {
                     onClick={() =>
                       provider === "chatgpt"
                         ? void connectChatGPT()
-                        : setModal("settings")
+                        : openServices()
                     }
                   >
                     {provider === "chatgpt"
@@ -1775,37 +2375,270 @@ export function App() {
             </div>
           )}
         </aside>
+        <div
+          className="timeline-resizer"
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            const start = e.clientY,
+              initial = timelineHeight,
+              target = e.currentTarget;
+            const move = (event: Event) => {
+              setTimelineHidden(false);
+              setTimelineHeight(
+                Math.max(
+                  160,
+                  Math.min(
+                    450,
+                    initial + start - (event as PointerEvent).clientY,
+                  ),
+                ),
+              );
+            };
+            const end = () => {
+              target.removeEventListener("pointermove", move);
+              target.removeEventListener("pointerup", end);
+            };
+            target.addEventListener("pointermove", move);
+            target.addEventListener("pointerup", end);
+          }}
+        />
+        <Timeline
+          onSelectText={(sceneId, textId) => {
+            const state = useStudio.getState();
+            if (sceneId && state.project.workflow?.selectedId !== sceneId)
+              state.change(
+                activateScene(state.project, sceneId),
+                "Select text scene",
+              );
+            setMasterMode(false);
+            state.setSelectedText(textId);
+            selectLeftView("typography");
+          }}
+          selectedAudio={selectedAudio}
+          onSelectAudio={(id) => {
+            setSelectedAudio(id);
+            setSelectedAsset(undefined);
+            setRightTab("project");
+            setRightHidden(false);
+          }}
+          onSelectScene={(id) => {
+            s.change(
+              activateScene(useStudio.getState().project, id),
+              "Select scene",
+            );
+            setSelectedAudio(undefined);
+            setSelectedAsset(undefined);
+            setRightTab("project");
+          }}
+          navigation={
+            manualMode ? (
+              <ManualTimelines master={masterMode} onMaster={changeScope} />
+            ) : (
+              <SceneRail
+                manual={manualMode}
+                master={masterMode}
+                onMaster={changeScope}
+                busy={busy}
+                onEdit={() => {
+                  setSelectedAudio(undefined);
+                  setSelectedAsset(undefined);
+                  setRightTab("project");
+                }}
+              />
+            )
+          }
+          masterMode={masterMode}
+          timelineHidden={timelineHidden}
+          timelineHeight={Math.min(
+            timelineHeight,
+            Math.max(160, workspaceSize.height - 246),
+          )}
+          setTimelineHidden={setTimelineHidden}
+          runtime={runtime}
+        />
       </div>
       <footer className="status-bar">
         <span className="live-dot" />
         <span role="status">{notice}</span>
         <span className="toolbar-spacer" />
+        <span aria-label="Workspace save status">
+          {storageSaveState === "saved"
+            ? "Workspace saved locally"
+            : storageSaveState === "error"
+              ? "Workspace save failed"
+              : "Saving workspace…"}
+        </span>
         <span>LOCAL WEB APP</span>
         <span>UTF-8</span>
         <span>{p.settings.fps} FPS</span>
-        <button onClick={() => setModal("settings")}>⚙</button>
+        <button
+          aria-label="Project settings"
+          title="Project settings"
+          onClick={() => setModal("settings")}
+        >
+          <Settings2 size={15} />
+        </button>
       </footer>
-      <AudioPlayback
-        project={p}
-        time={s.time}
-        playing={s.playing}
-        master={masterMode}
-        onError={setNotice}
-      />
-      <Workflow
-        open={modal === "workflow"}
+      <AudioPlayback project={p} master={masterMode} onError={setNotice} />
+      {pendingAI && (
+        <SceneReview
+          before={pendingAI.before}
+          after={pendingAI.after}
+          explanation={pendingAI.explanation}
+          onDiscard={() => {
+            setPendingAI(null);
+            setNotice("AI changes discarded");
+          }}
+          onApply={() => {
+            if (useStudio.getState().revision !== pendingAI.revision) {
+              setNotice(
+                "Project changed since generation. Discard this proposal and generate again.",
+              );
+              return;
+            }
+            s.change(pendingAI.after, "AI · " + pendingAI.explanation);
+            setChat((messages) => [
+              ...messages,
+              {
+                role: "assistant",
+                content: pendingAI.explanation,
+                applied: true,
+              },
+            ]);
+            setPendingAI(null);
+            setNotice("AI changes applied · Undo available");
+          }}
+        />
+      )}
+      <RecoveryHistory
+        open={modal === "recovery-history"}
         onClose={() => setModal("")}
-        provider={provider}
-        model={model}
-        busy={busy}
-        onMaster={changeScope}
-        onNotice={setNotice}
+        onRestore={(project, editor) => {
+          load(project);
+          sceneChats.current = editor.sceneChats ?? {};
+          chatScene.current = project.workflow?.selectedId ?? "project";
+          setChat(sceneChats.current[chatScene.current] ?? []);
+          setNotice("Recovery version restored");
+        }}
       />
+      {modal === "services" && (
+        <Suspense fallback={<div role="status">Loading services…</div>}>
+          <Services
+            open={modal === "services"}
+            onClose={() => setModal(servicesReturn)}
+            busy={busy}
+            chatgpt={chatgpt}
+            connecting={connecting}
+            authError={providerError}
+            onConnect={async (fresh, remember) => {
+              setProvider("chatgpt");
+              await connectChatGPT(fresh, remember);
+            }}
+            onChanged={async () => {
+              setHasKey(await bridge.call("hasKey"));
+              setChatgpt(await bridge.call("chatgptStatus"));
+            }}
+          />
+        </Suspense>
+      )}
+      {(workflowLoaded || modal === "workflow") && (
+        <Suspense fallback={<div role="status">Loading workflow…</div>}>
+          <Workflow
+            masterMode={masterMode}
+            onGenerateScene={(id) => setQueuedSceneGeneration(id)}
+            requestedTab={workflowTab}
+            onEditScene={openSceneEditor}
+            onServices={() => openServices("workflow")}
+            open={modal === "workflow"}
+            onClose={() => setModal("")}
+            provider={provider}
+            model={model}
+            busy={busy}
+            onMaster={changeScope}
+            onNotice={setNotice}
+          />
+        </Suspense>
+      )}
+      <Modal
+        title="Paste full HTML document"
+        open={modal === "paste-code"}
+        onClose={() => setModal("")}
+      >
+        <p>
+          Paste a complete HTML document. Inline styles and scripts move to the
+          CSS and JavaScript tabs. This replaces the active timeline's code;
+          Undo restores it.
+        </p>
+        <textarea
+          className="paste-document"
+          aria-label="HTML document to import"
+          value={pasteDocument}
+          onChange={(event) => setPasteDocument(event.target.value)}
+          spellCheck={false}
+        />
+        {pasteError && (
+          <p className="paste-error" role="alert">
+            {pasteError}
+          </p>
+        )}
+        <div className="modal-actions">
+          <button onClick={() => setModal("")}>Cancel</button>
+          <button
+            className="primary"
+            aria-label="Apply pasted document"
+            title="Apply pasted document"
+            disabled={masterMode || sceneLocked}
+            onClick={() => importDocument(pasteDocument)}
+          >
+            <Check size={17} />
+          </button>
+        </div>
+      </Modal>
       <Modal
         title="Project & application settings"
         open={modal === "settings"}
         onClose={() => setModal("")}
       >
+        <div className="settings-section">
+          <h3>Brand kit</h3>
+          {!manualMode && (
+            <Field label="Review AI changes before applying">
+              <input
+                type="checkbox"
+                checked={reviewAI}
+                onChange={(e) => setReviewAI(e.target.checked)}
+              />
+            </Field>
+          )}
+          <p>Saved with this project.</p>
+          <div className="settings-grid">
+            {(
+              ["name", "font", "primary", "secondary", "background"] as const
+            ).map((key) => {
+              const brand = p.brand ?? {
+                name: "My brand",
+                font: "Segoe UI",
+                primary: "#67b4ff",
+                secondary: "#edf3fa",
+                background: "#101321",
+              };
+              return (
+                <Field key={key} label={`Brand ${key}`}>
+                  <input
+                    type={key === "name" || key === "font" ? "text" : "color"}
+                    value={brand[key]}
+                    onChange={(e) =>
+                      s.change(
+                        { brand: { ...brand, [key]: e.target.value } },
+                        "Edit brand kit",
+                      )
+                    }
+                  />
+                </Field>
+              );
+            })}
+          </div>
+        </div>
         <div className="settings-grid">
           <Field label="Canvas width">
             <input
@@ -1888,51 +2721,24 @@ export function App() {
           </Field>
         </div>
         <div className="settings-section">
-          <h3>Optional OpenAI API</h3>
-          <p className="muted">
-            {hasKey
-              ? "An API key is set for this server session."
-              : "No API key configured."}{" "}
-            Keys stay in Node server memory until restart. API usage is billed
-            by OpenAI.
-          </p>
-          <div className="key-row">
-            <input
-              type="password"
-              autoComplete="off"
-              aria-label="OpenAI API key"
-              placeholder="API key"
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-            />
-            <button
-              onClick={() =>
-                void act(async () => {
-                  await bridge.call("credentials", key);
-                  setKey("");
-                  setHasKey(!!key);
-                  setNotice("API key held in server memory until restart");
-                })
-              }
-            >
-              Use key
-            </button>
-            <button
-              onClick={() =>
-                void act(async () => {
-                  const list = await bridge.call("models", {
-                    provider: "openai",
-                    model: "",
-                  });
-                  setNotice(`OpenAI connected · ${list.length} models`);
-                })
-              }
-            >
-              Test
-            </button>
-          </div>
+          {!manualMode && (
+            <>
+              <h3>Services</h3>
+              <p>
+                Manage accounts, API keys, connection status and usage in one
+                place.
+              </p>
+              <button onClick={() => openServices("settings")}>
+                Manage services
+              </button>
+            </>
+          )}
         </div>
         <div className="modal-actions">
+          <button onClick={() => setModal("recovery-history")}>
+            Recovery history
+          </button>
+          <button onClick={downloadRecoveryCopy}>Download recovery copy</button>
           <button onClick={() => save(true)}>Save as / duplicate</button>
           <button
             onClick={() =>
@@ -1947,6 +2753,7 @@ export function App() {
           <button
             onClick={() =>
               void act(async () => {
+                await checkpointCurrent("Before moving project to trash");
                 if (await bridge.call("deleteProject")) {
                   load(newProject());
                   setNotice("Project moved to local trash");
@@ -1986,6 +2793,7 @@ export function App() {
                 onClick={() =>
                   void act(async () => {
                     if (s.dirty && !confirm("Replace unsaved changes?")) return;
+                    await checkpointCurrent("Before opening recent project");
                     const project = await bridge.call("openRecent", file);
                     load(project);
                   })
@@ -2006,109 +2814,48 @@ export function App() {
       >
         {exportOptions && (
           <>
-            <div className="settings-grid">
-              <Field label="Format">
-                <select
-                  disabled={exporting}
-                  value={exportOptions.format}
-                  onChange={(e) =>
-                    setExportOptions({
-                      ...exportOptions,
-                      format: e.target.value as any,
-                      transparent: false,
-                    })
-                  }
-                >
-                  {["mp4", "mkv", "webm", "gif", "sequence", "png"].map((f) => (
-                    <option key={f}>{f}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Resolution preset">
-                <select
-                  defaultValue="custom"
-                  onChange={(e) => {
-                    const h = +e.target.value;
-                    if (h)
-                      setExportOptions({
-                        ...exportOptions,
-                        height: h,
-                        width:
-                          Math.round(
-                            (h * p.settings.width) / p.settings.height / 2,
-                          ) * 2,
-                      });
-                  }}
-                >
-                  <option value="custom">Custom</option>
-                  {[720, 1080, 1440, 2160].map((h) => (
-                    <option key={h} value={h}>
-                      {h === 2160 ? "4K" : h + "p"}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              {(
-                [
-                  "width",
-                  "height",
-                  "duration",
-                  "fps",
-                  "speed",
-                  "quality",
-                ] as const
-              ).map((k) => (
-                <Field
-                  key={k}
-                  label={k === "quality" ? "Quality CRF (lower is better)" : k}
-                >
-                  <input
-                    disabled={exporting}
-                    type="number"
-                    step={k === "speed" || k === "duration" ? ".1" : "1"}
-                    value={exportOptions[k]}
-                    onChange={(e) =>
-                      setExportOptions({
-                        ...exportOptions,
-                        [k]: +e.target.value,
-                      })
-                    }
-                  />
-                </Field>
-              ))}
-              <Field label="Canvas fitting">
-                <select
-                  value={exportOptions.fit}
-                  onChange={(e) =>
-                    setExportOptions({
-                      ...exportOptions,
-                      fit: e.target.value as any,
-                    })
-                  }
-                >
-                  <option value="fit">Fit (letterbox)</option>
-                  <option value="fill">Fill / crop</option>
-                  <option value="stretch">Stretch</option>
-                </select>
-              </Field>
-              <Field label="Preserve transparency">
+            <div className="export-save-controls">
+              <label className="field">
+                <span>File name</span>
                 <input
-                  type="checkbox"
-                  disabled={
-                    !["webm", "sequence", "png"].includes(exportOptions.format)
-                  }
-                  checked={exportOptions.transparent}
-                  onChange={(e) =>
+                  aria-label="Export file name"
+                  maxLength={150}
+                  disabled={exporting}
+                  value={exportOptions.fileName ?? p.name}
+                  onChange={(event) =>
                     setExportOptions({
                       ...exportOptions,
-                      transparent: e.target.checked,
+                      fileName: event.target.value,
                     })
                   }
                 />
-              </Field>
+              </label>
+              <label className="prompt-check">
+                <input
+                  type="checkbox"
+                  aria-label="Choose where to save export"
+                  disabled={exporting || !supportsExportPicker()}
+                  checked={chooseExportLocation}
+                  onChange={(event) =>
+                    setChooseExportLocation(event.target.checked)
+                  }
+                />{" "}
+                Choose where to save
+              </label>
+              <small>
+                {supportsExportPicker()
+                  ? "Choose a folder and filename before rendering, or use your browser’s download location."
+                  : "This browser saves through Downloads. Enable “Ask where to save” in browser settings to choose a folder."}
+              </small>
             </div>
+            <ExportSettings
+              options={exportOptions}
+              frame={p.settings}
+              disabled={exporting}
+              onChange={setExportOptions}
+            />
             <p className="muted">
-              {masterMode ? "Master composition" : "Selected scene"} · Output
+              {masterMode ? "All timelines" : "Active timeline"} · Output
               duration:{" "}
               {(exportOptions.duration / exportOptions.speed).toFixed(2)} s ·{" "}
               {Math.ceil(
@@ -2126,7 +2873,12 @@ export function App() {
                   {progress.stage} · {progress.done} / {progress.total} frames ·{" "}
                   {Math.round((progress.done / progress.total) * 100)}%
                 </p>
-                <small>{progress.destination}</small>
+                <small>
+                  {exportOptions.fileName || p.name}.
+                  {exportOptions.format === "sequence"
+                    ? "zip"
+                    : exportOptions.format}
+                </small>
               </div>
             )}
             <div className="modal-actions">
@@ -2136,7 +2888,7 @@ export function App() {
                 </button>
               ) : (
                 <button className="primary" onClick={() => void startExport()}>
-                  <ArrowDownToLine size={15} /> Render & download
+                  <ArrowDownToLine size={15} /> {chooseExportLocation ? "Render & save" : "Render & download"}
                 </button>
               )}
             </div>

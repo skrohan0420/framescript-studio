@@ -1,6 +1,12 @@
 import { create } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 import { newProject, projectSchema, type Project } from "../shared/project";
 import { selectedScene, synchronizeScene } from "../shared/workflow";
+import {
+  applyGeneratedAudio,
+  audioManifestSource,
+} from "../shared/generated-audio";
+import { retainAudioSources } from "../shared/audio-library";
 type Snapshot = { project: Project; label: string };
 interface State {
   project: Project;
@@ -11,14 +17,35 @@ interface State {
   time: number;
   playing: boolean;
   error: string;
-  setError: (e: string) => void;
+  selectedText: string | null;
+  setSelectedText: (id: string | null) => void;
+  errorLocation?: { line: number; column: number };
+  setError: (e: string, location?: { line: number; column: number }) => void;
   change: (p: Partial<Project>, label?: string) => void;
   load: (p: Project) => void;
   undo: () => void;
   redo: () => void;
   setTime: (t: number) => void;
   setPlaying: (b: boolean) => void;
-  saved: () => void;
+  saved: (revision: number) => void;
+}
+const patchSchema = projectSchema.partial();
+// Compare only changed fields; do not serialize all embedded media per keystroke.
+function equal(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  const keys = Object.keys(a);
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every(
+      (key) =>
+        Object.hasOwn(b, key) &&
+        equal(
+          (a as Record<string, unknown>)[key],
+          (b as Record<string, unknown>)[key],
+        ),
+    )
+  );
 }
 export const useStudio = create<State>((set, get) => ({
   project: newProject(),
@@ -29,7 +56,9 @@ export const useStudio = create<State>((set, get) => ({
   time: 0,
   playing: false,
   error: "",
-  setError: (error) => set({ error }),
+  selectedText: null,
+  setSelectedText: (selectedText) => set({ selectedText }),
+  setError: (error, errorLocation) => set({ error, errorLocation }),
   change: (patch, label = "Code edit") => {
     const s = get();
     const sourceChange =
@@ -50,15 +79,56 @@ export const useStudio = create<State>((set, get) => ({
       });
       return;
     }
-    const candidate = projectSchema.safeParse({ ...s.project, ...patch });
+    const candidate = patchSchema.safeParse(patch);
     if (!candidate.success) {
       set({
         error: candidate.error.issues.map((issue) => issue.message).join("; "),
       });
       return;
     }
-    const project = projectSchema.parse(synchronizeScene(candidate.data));
-    if (JSON.stringify(project) === JSON.stringify(s.project)) return;
+    const changes = Object.keys(patch).filter(
+      (key) =>
+        candidate.data[key as keyof Project] !== undefined &&
+        !equal(
+          s.project[key as keyof Project],
+          candidate.data[key as keyof Project],
+        ),
+    );
+    if (!changes.length) return;
+    const changed = Object.fromEntries(
+      changes.map((key) => [key, candidate.data[key as keyof Project]]),
+    );
+    let project = synchronizeScene({ ...s.project, ...changed });
+    if (
+      patch.html !== undefined &&
+      (!patch.workflow ||
+        patch.workflow.selectedId === s.project.workflow?.selectedId)
+    ) {
+      try {
+        if (
+          audioManifestSource(project.html) !==
+          audioManifestSource(s.project.html)
+        )
+          project = applyGeneratedAudio(project);
+      } catch (error) {
+        set({ error: "Generated audio: " + (error as Error).message });
+        return;
+      }
+    }
+    if (
+      project.workflow &&
+      project.workflow.scenes.reduce((sum, scene) => sum + scene.duration, 0) >
+        600
+    ) {
+      set({ error: "Composition exceeds ten minutes" });
+      return;
+    }
+    try {
+      project = retainAudioSources(project, s.project);
+    } catch (error) {
+      set({ error: (error as Error).message });
+      return;
+    }
     set({
       project,
       past: [...s.past, { project: s.project, label }].slice(-80),
@@ -69,7 +139,8 @@ export const useStudio = create<State>((set, get) => ({
   },
   load: (p) =>
     set((s) => ({
-      project: projectSchema.parse(p),
+      project: retainAudioSources(projectSchema.parse(p)),
+      selectedText: null,
       past: [],
       future: [],
       time: 0,
@@ -103,5 +174,14 @@ export const useStudio = create<State>((set, get) => ({
   },
   setTime: (time) => set({ time }),
   setPlaying: (playing) => set({ playing }),
-  saved: () => set({ dirty: false }),
+  saved: (revision) => {
+    if (get().revision === revision) set({ dirty: false });
+  },
 }));
+
+/** Editing panels do not subscribe to the animation clock. */
+export function useProjectState() {
+  return useStudio(
+    useShallow(({ time: _time, playing: _playing, ...state }) => state),
+  );
+}

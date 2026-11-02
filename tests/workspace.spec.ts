@@ -13,7 +13,8 @@ test("recovery stays nonblocking and acknowledged snapshots do not reappear", as
   await page.route("**/api/recover", (route) =>
     route.fulfill({ json: { result: snapshot } }),
   );
-  await page.goto("/");
+  await page.goto("/#editor");
+  await page.getByRole("button", { name: "Code panel", exact: true }).click();
   const banner = page.getByRole("region", { name: "Autosave recovery" });
   await expect(banner).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -44,7 +45,8 @@ test("recovery stays nonblocking and acknowledged snapshots do not reappear", as
 test("local Node backend saves, reopens, imports assets and downloads an MP4", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/#editor");
+  await page.getByRole("button", { name: "Code panel", exact: true }).click();
   await expect(
     page.frameLocator('iframe[title="Animation preview"]').locator("#ball"),
   ).toBeVisible();
@@ -79,11 +81,14 @@ test("local Node backend saves, reopens, imports assets and downloads an MP4", a
     .first()
     .click();
   const dialog = page.getByRole("dialog", { name: "Export animation" });
+  await dialog
+    .getByLabel("Export resolution", { exact: true })
+    .selectOption("custom");
   for (const [label, value] of [
     ["width", "320"],
     ["height", "180"],
     ["duration", "0.4"],
-    ["fps", "10"],
+    ["Custom frame rate", "10"],
   ])
     await dialog.getByLabel(label, { exact: true }).fill(value);
   const [video] = await Promise.all([
@@ -99,7 +104,8 @@ test("local Node backend saves, reopens, imports assets and downloads an MP4", a
 test("workspace executes preview, timeline, combined source, gallery and inspector", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/#editor");
+  await page.getByRole("button", { name: "Code panel", exact: true }).click();
   await expect(page.getByText("LIVE PREVIEW", { exact: true })).toBeVisible();
   const preview = page.frameLocator('iframe[title="Animation preview"]');
   await expect(preview.locator("#ball")).toBeVisible();
@@ -130,7 +136,8 @@ test("workspace executes preview, timeline, combined source, gallery and inspect
 test("failed preview preserves last valid frame and visual edits update source", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/#editor");
+  await page.getByRole("button", { name: "Code panel", exact: true }).click();
   const preview = page.frameLocator('iframe[title="Animation preview"]');
   await expect(preview.locator("#ball")).toBeVisible();
   await page
@@ -160,63 +167,8 @@ test("failed preview preserves last valid frame and visual edits update source",
   );
   await expect(preview.locator("#ball")).toBeVisible();
 });
-test("AI generation and conversational revision automatically populate editors and undo", async ({
-  page,
-}) => {
-  let calls = 0;
-  await page.route("**/api/models", (route) =>
-    route.fulfill({
-      json: { result: [{ name: "mock-code-model", vision: true }] },
-    }),
-  );
-  await page.route("**/api/generate", async (route) => {
-    const { args } = route.request().postDataJSON();
-    expect(args[1].project.html).toBeTruthy();
-    calls++;
-    const result =
-      calls === 1
-        ? {
-            action: "create",
-            html: '<h1 id="ai-scene">Generated scene</h1>',
-            css: "body{display:grid;place-items:center;color:white}h1{font-size:100px}",
-            js: "",
-            explanation: "Created scene",
-          }
-        : {
-            action: "update",
-            css: "body{display:grid;place-items:center;color:rgb(255, 0, 0)}h1{font-size:100px}",
-            explanation: "Recolored scene",
-          };
-    await route.fulfill({ json: { result } });
-  });
-  await page.goto("/");
-  await page
-    .getByRole("combobox", { name: "AI provider" })
-    .selectOption("ollama");
-  await page.getByRole("button", { name: "Refresh models" }).click();
-  await page
-    .getByRole("textbox", { name: "Animation prompt" })
-    .fill("Create a title");
-  await page
-    .getByRole("button", { name: "Generate animation", exact: true })
-    .click();
-  const preview = page.frameLocator('iframe[title="Animation preview"]');
-  await expect(preview.locator("#ai-scene")).toHaveText("Generated scene");
-  await page
-    .getByRole("textbox", { name: "Animation prompt" })
-    .fill("Make it red");
-  await page
-    .getByRole("button", { name: "Generate animation", exact: true })
-    .click();
-  await expect(preview.locator("#ai-scene")).toHaveCSS(
-    "color",
-    "rgb(255, 0, 0)",
-  );
-  await page
-    .getByRole("button", { name: "Undo project change", exact: true })
-    .click();
-  await expect(preview.locator("#ai-scene")).toHaveCSS(
-    "color",
-    "rgb(255, 255, 255)",
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/workspaceGet", (r) =>
+    r.fulfill({ json: { result: null } }),
   );
 });

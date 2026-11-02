@@ -18,6 +18,7 @@ async function fixture(
     signatureBad?: boolean;
     scope?: string;
     expired?: boolean;
+    credentials?: import("../server/credentials").CredentialStore;
   } = {},
 ) {
   const dir = path.resolve("test-results/auth-" + randomUUID());
@@ -74,6 +75,7 @@ async function fixture(
     });
   });
   const connection = new ChatGPTConnection(dir, {
+    credentials: options.credentials,
     fetch: request as typeof fetch,
     verify: async (token, clientId) =>
       (
@@ -83,7 +85,7 @@ async function fixture(
         })
       ).payload,
   });
-  const start = await connection.begin();
+  const start = await connection.begin(false, !!options.credentials);
   authorization = new URL(start.url);
   const callback = (state = authorization.searchParams.get("state")!) => {
     const url = new URL(authorization.searchParams.get("redirect_uri")!);
@@ -108,6 +110,31 @@ async function fixture(
     },
   };
 }
+it("remembers OAuth credentials, persists rotated refresh tokens and removes them on sign-out", async () => {
+  const saved = new Map<string, any>();
+  const credentials = {
+    get: (key: string) => saved.get(key),
+    set: async (key: string, value: any) => {
+      if (value === undefined) saved.delete(key);
+      else saved.set(key, structuredClone(value));
+    },
+  };
+  const f = await fixture({ expired: true, credentials });
+  try {
+    expect((await f.callback()).status).toBe(200);
+    expect(saved.get("chatgpt").idToken).toBeTruthy();
+    expect(await f.connection.accessToken()).toBe("renewed-access");
+    expect(saved.get("chatgpt").refresh).toBe("renewed-refresh");
+    const restored = new ChatGPTConnection(f.dir, { credentials });
+    expect(restored.status().remembered).toBe(true);
+    expect(await restored.accessToken()).toBe("renewed-access");
+    restored.close();
+    await f.connection.disconnect();
+    expect(saved.has("chatgpt")).toBe(false);
+  } finally {
+    f.connection.close();
+  }
+});
 it("uses official PKCE flow, rejects wrong state, validates identity and keeps credentials off disk/status", async () => {
   const f = await fixture();
   try {

@@ -51,10 +51,25 @@ try {
   const media = await rpc("mediaStatus");
   assert.equal(media.gemini, true);
   assert(!JSON.stringify(media).includes("test-media-secret"));
-  assert(!JSON.stringify(await rpc("settingsGet")).includes("test-media-secret"));
+  assert(
+    !JSON.stringify(await rpc("settingsGet")).includes("test-media-secret"),
+  );
+  const services = await rpc("servicesStatus");
+  assert.equal(services.length, 6);
+  assert.equal(services.find((s: any) => s.id === "gemini").source, "session");
+  assert(!JSON.stringify(services).includes("test-media-secret"));
+  await assert.rejects(() => rpc("serviceCheck", "invalid"));
+  assert.equal((await rpc("serviceCheck", "chatgpt")).state, "error");
+  await rpc("serviceRemove", "gemini");
+  assert.notEqual(
+    (await rpc("servicesStatus")).find((s: any) => s.id === "gemini").source,
+    "session",
+  );
   await rpc("mediaCredentials", "gemini", "");
   await assert.rejects(() => rpc("mediaCredentials", "unknown", "secret"));
-  console.log("PASS media credential session/status API keeps keys out of responses");
+  console.log(
+    "PASS media credential session/status API keeps keys out of responses",
+  );
   assert.equal(
     (
       await fetch(base + "/api/settingsGet", {
@@ -99,6 +114,37 @@ try {
   console.log("PASS server-managed projects, browser download and safe reopen");
   await rpc("autosave", project);
   assert.deepEqual(await rpc("recover"), project);
+  const workspace = await fetch(base + "/api/workspaceGet", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-FrameScript": "1",
+      Cookie: cookie,
+    },
+    body: '{"args":[]}',
+  });
+  const version = workspace.headers.get("X-Workspace-Version");
+  assert(version);
+  const concurrent = await Promise.all(
+    ["Tab A", "Tab B"].map((name) =>
+      fetch(base + "/api/autosave", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-FrameScript": "1",
+          "X-Workspace-Version": version,
+          Cookie: cookie,
+        },
+        body: JSON.stringify({ args: [{ ...project, name }] }),
+      }),
+    ),
+  );
+  assert.deepEqual(
+    concurrent.map((response) => response.status).sort(),
+    [200, 409],
+  );
+  await rpc("autosave", project);
+  console.log("PASS concurrent workspace compare-and-swap rejects stale tabs");
   await rpc("settingsSet", { fontSize: 16 });
   assert.equal((await rpc("settingsGet")).fontSize, 16);
   const html = await rpc("source", project);

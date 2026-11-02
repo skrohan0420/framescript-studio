@@ -1,4 +1,23 @@
+# Browser test maintenance — November 2, 2026
+
+The active manual-editor browser suite now passes all 48 checks. Former AI/Services/storyboard UI scenarios are retained as .legacy.ts reference files outside discovery. Build/TypeScript, 99 unit tests, server checks, credential restart, all-format rendering and audio/video export integration passed. See VERIFICATION.md and tests/README.md for the current coverage and historical limitations.
+
 # Web-app conversion
+
+The studio layout now follows the library/player/contextual-inspector/full-width-timeline pattern studied in the open CapCut app. Media/Audio/Script/Scenes/Layouts/Code tabs, embedded production tools, player transport, project/audio/media inspectors, scene filmstrips, differentiated audio lanes and track-wide playhead/zoom are implemented. Build, 68 unit tests and all 26 production browser workflows passed; laptop and desktop screenshots are in test-results/studio-layout*.png. Code remains lazy-loaded and the current providers remain unchanged.
+
+
+Audio-first workflow now supports script → full narration → scenes fitted to measured audio → visuals → SFX/music → export. Added full-script narration scope, decoded-duration scene allocation, preservation of audio-controlled timing during AI visual edits, automatic per-scene take fitting, existing-visual retiming, and playhead placement for SFX. End-to-end tests use provider fixtures but exercise actual decoding and real MP4 audio/video export. Scene boundaries remain proportional estimates rather than word-aligned cuts.
+
+
+Project-review improvements added on November 1, 2026: revision-aware Save, ordered autosave with cross-tab version conflicts, a 20-checkpoint recovery history and offline recovery downloads, atomic workspace/chat persistence, bounded media caching and corruption recovery. Playback no longer rerenders editing panels per tick. Production workspace adds draggable/keyboard-accessible waveform move/trim controls; project brand kits and optional scrub-able AI comparison are available. Timeline, scene panels and editor setup are separate modules, RPC calls share typed schemas, Monaco/services/storyboard load on demand, and GitHub Actions includes separate unit/build and production browser/media jobs. Existing user edits and local account data were preserved. Restart the local Node process to load server changes.
+
+
+Remembered connections now use per-browser Windows DPAPI credential files outside SQLite/project exports. Persistent HttpOnly cookies select saved credentials after Node restarts. API keys restore automatically, OAuth refresh replaces saved token/expiry/scope records, and forgetting/sign-out removes the record. New saves/sign-ins have a Remember checkbox; session-only connections remain available. Existing memory-only connections require one final reconnect after this upgrade.
+
+SQLite persistence added through bundled sql.js (no external database server/native build tools). `studio.db` stores named projects, current workspace, layout/settings, chat context and media preferences; deduplicated binary assets live under `media/`. Existing `.frame`, recovery and settings files migrate once without modifying originals. Startup restores the workspace automatically and waits for hydration before editing; edits autosave after 300 ms with an acknowledgement in the status bar. Portable `.frame` downloads remain supported. Credentials and in-flight requests remain session-only.
+
+Central Services section added for ChatGPT, ElevenLabs, Flow handoff, Gemini, OpenAI API and Ollama. All credentials now live in one UI; workflow panels retain generation/model controls and link back to Services. Account sign-in is primary, keys secondary. Verified connection checks and last-request outcomes stay separate from credential presence. ElevenLabs subscription usage is read from its official API; unavailable balances link to provider dashboards rather than showing guessed limits. Provider selection is retained on errors, with no automatic paid fallback or generation retries.
 
 Production workflow added: portable storyboard with script-preserving local/AI planning, independent scene sources, scene strip, approval locks, reusable typography layouts, shared creative direction, hard-cut master composition, managed audio clips, original synthesized SFX/music presets, waveform decoding, narration timing fit and FFmpeg audio mixing. Optional ElevenLabs voice/SFX and Gemini reference-image adapters use session-only credentials. Mascot references, identity notes and variants stay in projects; Google Flow uses an explicit copy-prompt/open/import handoff. See README.md for usage and current limits.
 
