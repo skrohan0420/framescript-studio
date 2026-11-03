@@ -222,3 +222,11 @@ The old desktop code and installer still exist in ignored `.desktop-backup/`: `e
 Gemini can also generate scene HTML/CSS/JavaScript and suggest storyboards: add a Google AI Studio key in Services, select Gemini in the assistant, refresh models, and choose a text model (Flash models appear first). Free-tier access varies by model and Google project; billing-enabled projects can incur charges. The app does not automatically switch providers after a quota error.
 
 Browser test maintenance: `tests/*.spec.ts` targets the current manual editor. Historical AI/storyboard UI scenarios are preserved as `tests/*.legacy.ts` and are not collected by Playwright. See [tests/README.md](tests/README.md) for scope.
+
+## Animation techniques and procedural 3D
+
+Prompt builder → Animation offers 2D, 2.5D and Three.js rendering, eight combinable techniques, per-technique timing/variation/direction and shared intensity, easing and narration synchronization. Hover/focus examples appear after 500ms. Drafts persist locally; choices guide generated code and do not alter an existing scene. Typography remains opt-in.
+
+For a working example select 3D, copy the starter and use Paste code. Three.js is bundled locally by scripts/prepare-three.mjs during install, dev, build and test. Scenes referencing THREE or FrameScript3D receive the same offline library in preview, nested scenes and exported documents. No network setting or CDN is required. FrameScript3D.create({canvas,width,height,background}) returns scene, camera, renderer, render and dispose; call render() after setting absolute transforms in window.renderFrame(t). The helper uses preserved WebGL buffers and pixel ratio 1. WebGL2 support is required. Existing 2D scenes do not embed the library.
+
+This release supports procedural geometry and core Three.js. Imported GLB models, addons, rigged-character tooling, physics and interactive 3D object editing are future work. Three.js is MIT licensed; its license is retained in the generated runtime. The video exporter uses browser compositor capture for 3D rather than the Canvas 2D raw-pixel optimization.

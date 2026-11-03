@@ -3,6 +3,7 @@ import {
   promptTextListSchema,
   type PromptText,
 } from "./prompt-text";
+import { animationDirection, type AnimationDirection } from "./animation-techniques";
 export const promptTemplates = [
   {
     id: "canvas",
@@ -378,7 +379,7 @@ export const editingStyles = [
   ],
 ] as const;
 
-export type PromptDraft = {
+export type PromptDraft = AnimationDirection & {
   mascotEnabled?: boolean;
   mascotName?: string;
   mascotIdentity?: string;
@@ -601,6 +602,7 @@ Audience / intended outcome: ${draft.audience?.trim() || "Make the subject under
 Mood: ${draft.mood?.trim() || "Match the emotional tone of the narration."}
 
 VISUAL DESIGN GUIDE
+${animationDirection(draft, draft.duration)}
 Palette: ${draft.palette?.trim() || "Choose 3–5 colors with stable background, subject and accent roles."}
 Lighting: ${draft.lighting?.trim() || "Keep light direction, shadow softness and contrast coherent."}
 Recurring subject identity: ${draft.characters?.trim() || "Establish recognizable silhouettes, proportions and distinguishing details."}
@@ -682,7 +684,7 @@ FRAMESCRIPT REQUIREMENTS — FOLLOW EXACTLY
 2. Every renderFrame(t) call must draw the complete correct frame for t, independent of prior calls. Seeking backward, jumping ahead and rendering the same t twice must work. Show meaningful visuals at t=0 and clamp times outside the intended duration safely.
 3. Do not start requestAnimationFrame loops, setInterval, setTimeout, autoplay, performance.now() or Date.now() driven animation. Do not call play() automatically. Do not use unseeded Math.random() while rendering; precompute deterministic geometry or use a seeded generator.
 4. For Canvas 2D, clear/reset drawing state appropriately and draw all layers each frame. For DOM/CSS, derive transforms/styles from t, or explicitly set and pause animation.currentTime=t*1000. Avoid competing animation clocks and cumulative transforms.
-5. HTML, CSS and JavaScript must be self-contained. No external files, style.css links, script.js references, CDN imports, module scripts, fetch calls, frameworks, packages, images or fonts that need downloading. Use inline classic JavaScript and procedural visuals, CSS or inline SVG.
+5. HTML, CSS and JavaScript must be self-contained. No external files, style.css links, script.js references, CDN imports, module scripts, fetch calls, frameworks, packages, images or fonts that need downloading. Use inline classic JavaScript and procedural visuals, CSS or inline SVG.${draft.renderingMode === "3d" ? " The locally bundled window.THREE and FrameScript3D are available before your script; use these for true 3D. The explicit 3D rendering choice overrides any template suggestion to use Canvas/SVG or avoid a 3D library." : ""}
 6. The editor plays audio through managed timeline tracks. ${audioTracks.length ? "Provide the required soundtrack manifest above, but never play audio directly inside the iframe." : "Do not add audio or narration."} Do not create playback controls, replay buttons, editor panels, player chrome or debug overlays inside the output frame.
 7. html, body and the visual root must fill the frame with margin:0, padding:0 and overflow:hidden. Do not cap the animation at a smaller width or add letterboxing. Keep Canvas backing resolution aligned with the ${width}×${height} output; handle other viewport sizes gracefully.
 8. Define renderFrame at top level before the document load event. Access DOM elements after they exist. All selectors must match real HTML elements. Use valid CSS and JavaScript, no placeholders, missing functions, TODOs or pseudocode.

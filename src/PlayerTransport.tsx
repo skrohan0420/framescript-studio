@@ -118,7 +118,6 @@ export function PlayerTransport({
           </select>
         </label>
         <button
-          className={p.settings.loop ? "accent" : ""}
           title="Loop playback"
           aria-label="Loop playback"
           aria-pressed={p.settings.loop}

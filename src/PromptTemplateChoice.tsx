@@ -8,12 +8,16 @@ export function PromptTemplateChoice({
   selected,
   onSelect,
   children,
+  details: providedDetails,
+  actionLabel,
 }: {
   id: string;
   name: string;
   selected: boolean;
   onSelect: () => void;
   children: ReactNode;
+  details?: { detail: string; example: string };
+  actionLabel?: string;
 }) {
   const tooltipId = useId();
   const button = useRef<HTMLButtonElement>(null);
@@ -58,12 +62,12 @@ export function PromptTemplateChoice({
     !!position &&
     !!button.current &&
     button.current.getBoundingClientRect().top > 230;
-  const details = templateDetails[id];
+  const details = providedDetails ?? templateDetails[id];
   return (
     <>
       <button
         ref={button}
-        aria-label={`Use ${name} template`}
+        aria-label={actionLabel ?? `Use ${name} template`}
         aria-pressed={selected}
         aria-describedby={position ? tooltipId : undefined}
         onPointerEnter={(event) => {

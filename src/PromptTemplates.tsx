@@ -1,3 +1,5 @@
+import { PromptAnimation } from "./PromptAnimation";
+import { restoreTechniques } from "../shared/animation-techniques";
 import { useEffect, useRef, useState } from "react";
 import {
   Clipboard,
@@ -163,6 +165,11 @@ export function PromptTemplates({
       const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null");
       if (!saved || typeof saved !== "object") return defaults;
       const restored = { ...defaults };
+      restored.animationTechniques = restoreTechniques(
+        saved.animationTechniques,
+      );
+      if (["auto", "2d", "2.5d", "3d"].includes(saved.renderingMode))
+        restored.renderingMode = saved.renderingMode;
       for (const key of [
         "bgm",
         "sfx",
@@ -182,6 +189,9 @@ export function PromptTemplates({
         "pacingEnergy",
         "transitionPreference",
         "editingNotes",
+        "animationIntensity",
+        "animationEasing",
+        "animationSync",
         "subtitles",
         "textFont",
         "textScale",
@@ -263,6 +273,7 @@ export function PromptTemplates({
         "brief",
         "look",
         "reference",
+        "animation",
         "pacing",
         "identity",
         "mascot",
@@ -472,6 +483,7 @@ export function PromptTemplates({
           ["brief", "Brief"],
           ["look", "Visuals"],
           ["reference", "Reference look"],
+          ["animation", "Animation"],
           ["pacing", "Editing & pacing"],
           ["identity", "Identity"],
           ["mascot", "Mascot"],
@@ -494,6 +506,7 @@ export function PromptTemplates({
                 "brief",
                 "look",
                 "reference",
+                "animation",
                 "pacing",
                 "identity",
                 "mascot",
@@ -525,6 +538,8 @@ export function PromptTemplates({
               <Palette size={17} />
             ) : id === "reference" ? (
               <Sparkles size={17} />
+            ) : id === "animation" ? (
+              <Orbit size={17} />
             ) : id === "pacing" ? (
               <Timer size={17} />
             ) : id === "identity" ? (
@@ -543,6 +558,15 @@ export function PromptTemplates({
         ))}
       </div>
       <div className="prompt-form-scroll" ref={scrollRef}>
+        <div
+          className="prompt-tab-panel"
+          role="tabpanel"
+          id="prompt-panel-animation"
+          aria-labelledby="prompt-tab-animation"
+          hidden={activeSection !== "animation"}
+        >
+          <PromptAnimation draft={draft} update={update} />
+        </div>
         <div
           className="prompt-tab-panel"
           role="tabpanel"

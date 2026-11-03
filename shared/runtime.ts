@@ -1,5 +1,7 @@
 import type { Project } from "./project";
 import { typographyRuntime } from "./typography-runtime";
+import { threeSource } from "./three-source.generated";
+import { threeRuntime } from "./three-runtime";
 // This function is serialized verbatim into the unprivileged document.
 function runtime(
   replay = false,
@@ -217,6 +219,9 @@ export function documentFor(
       ?.sourceOffset ??
     0;
   const prefix = `<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:${options?.transparent ? "transparent" : p.settings.background}}${safe(css, "style")}</style><script>(()=>{const __name=(fn)=>fn;(${typographyRuntime.toString()})(${options?.textEditing !== false && !options?.export && !options?.standalone && !p.workflow?.scenes.find((scene) => scene.id === p.workflow?.selectedId)?.locked});(${runtime.toString()})(${!!options?.export && p.settings.timing === "replay"},${!!options?.standalone},${p.settings.duration},${p.settings.speed},${sourceOffset})})()</script></head><body>${html}`;
-  const firstLine = prefix.split("\n").length + 1;
-  return `${prefix}<script>window.__fsUserLine=${firstLine}</script><script>\n${safe(js, "script")}\n//# sourceURL=framescript-user.js\n</script></body></html>`;
+  const three = /\b(?:THREE|FrameScript3D)\b/.test(js)
+    ? `<script>${safe(threeSource, "script")}</script><script>(()=>{const __name=(fn)=>fn;(${threeRuntime.toString()})()})()</script>`
+    : "";
+  const firstLine = (prefix + three).split("\n").length + 1;
+  return `${prefix}${three}<script>window.__fsUserLine=${firstLine}</script><script>\n${safe(js, "script")}\n//# sourceURL=framescript-user.js\n</script></body></html>`;
 }

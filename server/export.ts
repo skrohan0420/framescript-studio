@@ -77,7 +77,8 @@ export async function renderExport(
       (tuning.rawCanvas ??
         (!tuning.capture &&
           optionsParsed.width * optionsParsed.height >= 1920 * 1080 &&
-          /<canvas\b/i.test(project.html))),
+          /<canvas\b/i.test(project.html) &&
+          !/\b(?:THREE|FrameScript3D)\b/.test(project.js))),
   };
   // Each fallback disables one path, so this loop can make at most three attempts.
   for (;;) {

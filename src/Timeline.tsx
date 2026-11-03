@@ -954,7 +954,6 @@ export const Timeline = memo(function Timeline({
           title="Snapping · hold Alt while dragging to bypass"
           aria-label="Timeline snapping"
           aria-pressed={snapping}
-          className={snapping ? "accent" : ""}
           onClick={() => {
             setSnapping((value) => !value);
             setSnapTime(null);

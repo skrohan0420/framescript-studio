@@ -3083,7 +3083,7 @@ button.audio-cut-deleted:hover { background-color: #e65d6e55; }
   .prompt-drawer .prompt-template-grid strong { font-size: 12px; }
 }
 @container (min-width: 1250px) {
-  .prompt-section-nav { grid-template-columns: repeat(9,minmax(0,1fr)); }
+  .prompt-section-nav { grid-template-columns: repeat(10,minmax(0,1fr)); }
   .direction-options { grid-template-columns: repeat(4,minmax(0,1fr)); }
   .prompt-drawer .prompt-form-scroll { padding: 24px 32px; }
 }
@@ -3120,5 +3120,17 @@ button.audio-cut-deleted:hover { background-color: #e65d6e55; }
 .transport-preview-controls button { min-width: 28px; padding: 5px; }
 .transport-preview-controls .ruler-control { display: inline-flex; gap: 4px; font-size: 10px; width: auto; padding-inline: 6px; }
 .transport-preview-controls .ruler-control[aria-pressed=true] { color: var(--accent); }
+.animation-technique-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.animation-technique-grid button { min-height: 48px; }
+.animation-config { min-width: 0; margin: 12px 0; }
+.animation-config legend { font-size: 12px; font-weight: 600; padding-inline: 6px; }
+.animation-config .field, .animation-shared .field { margin-top: 12px; }
+.animation-rendering > button { align-self: flex-start; border: 1px solid var(--subtle-border); padding: 7px 10px; }
+#prompt-panel-animation .prompt-section-caption p { margin: 0; font-size: 12px; color: var(--secondary); }
+#prompt-panel-animation .type-hint { margin-block: 0; }
+.animation-timing { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@container (max-width: 479px) {
+  .animation-technique-grid, .animation-timing { grid-template-columns: 1fr; }
+}
 .center > .transport, .fullscreen-controls .transport { height: auto; min-height: 42px; flex-wrap: wrap; row-gap: 4px; padding-block: 5px; }
 .transport > button, .transport > code, .transport > .player-speed { flex-shrink: 0; }
