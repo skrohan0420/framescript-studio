@@ -1,6 +1,47 @@
 import { test, expect } from "@playwright/test";
 import { newProject } from "../shared/project";
 import { initialWorkflow } from "../shared/workflow";
+
+test("an unavailable editor bundle leaves the preview and workspace usable", async ({
+  page,
+}) => {
+  const project = newProject();
+  project.html = '<h1 id="available">Preview remains available</h1>';
+  await page.route("**/api/workspaceGet", (r) =>
+    r.fulfill({ json: { result: project } }),
+  );
+  await page.route("**/api/settingsGet", (r) =>
+    r.fulfill({ json: { result: { leftView: "code", layoutVersion: 2 } } }),
+  );
+  await page.route("**/api/settingsSet", (r) =>
+    r.fulfill({ json: { result: true } }),
+  );
+  await page.route("**/api/autosave", (r) =>
+    r.fulfill({ json: { result: true } }),
+  );
+  await page.route("**/*CodeEditor*", (r) => r.abort("failed"));
+  await page.goto("/#editor");
+  await expect(
+    page.getByRole("button", {
+      name: "Reload workspace to retry",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Workspace error", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page
+      .frameLocator('iframe[title="Animation preview"]')
+      .locator("#available"),
+  ).toHaveText("Preview remains available");
+  await page
+    .getByRole("textbox", { name: "Project name", exact: true })
+    .fill("Still editable");
+  await expect(
+    page.getByRole("textbox", { name: "Project name", exact: true }),
+  ).toHaveValue("Still editable");
+});
 test("reload restores manual code, project name and legacy narration", async ({
   page,
 }) => {
