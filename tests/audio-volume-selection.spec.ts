@@ -25,6 +25,9 @@ test("audio volume controls fit the row and adjust individual clips; source remo
     exact: true,
   });
   await volume.fill("0.4");
+  await volume.fill("1.5");
+  await expect(page.locator(".audio-row-volume small")).toHaveText("150%");
+  await volume.fill("0.4");
   await expect(page.locator(".audio-row-volume small")).toHaveText("40%");
   const row = (await page.locator(".audio-row-label").boundingBox())!,
     slider = (await volume.boundingBox())!;
@@ -34,13 +37,13 @@ test("audio volume controls fit the row and adjust individual clips; source remo
     .click();
   await page
     .getByRole("slider", { name: "Selected clip volume", exact: true })
-    .fill("0.2");
+    .fill("1.5");
   await expect(
     page.getByRole("dialog", {
       name: "Clip volume: Success chime",
       exact: true,
     }),
-  ).toContainText("20%");
+  ).toContainText("150%");
   await page
     .getByRole("button", { name: "Close clip volume", exact: true })
     .click();

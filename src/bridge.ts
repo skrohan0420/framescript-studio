@@ -1,4 +1,6 @@
 import { projectSchema } from "../shared/project";
+import { assertProjectSize } from "../shared/project-size";
+import { retainAudioSources } from "../shared/audio-library";
 import type { RpcName, RpcArgs, RpcResults } from "../shared/rpc";
 import type { Project, ExportOptions } from "../shared/project";
 export type ExportFileHandle = {
@@ -130,7 +132,11 @@ async function request(name: string, args: any[]) {
   return data.result;
 }
 function rpc(name: string, ...args: any[]) {
-  if (!workspaceWrites.has(name) && name !== "workspaceGet")
+  if (
+    !workspaceWrites.has(name) &&
+    name !== "workspaceGet" &&
+    name !== "projectList"
+  )
     return request(name, args);
   const task = workspaceQueue.then(() => request(name, args));
   workspaceQueue = task.catch(() => {});
@@ -158,7 +164,10 @@ async function call(name: RpcName, ...args: any[]) {
             return;
           }
           if (file.size > 100_000_000) throw Error("Project exceeds 100 MB");
-          const p = projectSchema.parse(JSON.parse(await file.text()));
+          const p = retainAudioSources(
+            projectSchema.parse(JSON.parse(await file.text())),
+          );
+          assertProjectSize(p);
           await rpc("newSession");
           resolve(p);
         } catch (error) {

@@ -120,6 +120,12 @@ test("studio themes keep readable text, named icon actions and usable panels", a
       .all())
       expect(await tab.getAttribute("title")).toBeTruthy();
     await page.getByRole("tab", { name: "Typography", exact: true }).click();
+    await page
+      .getByRole("checkbox", {
+        name: "Include typography in prompt",
+        exact: true,
+      })
+      .check();
     await expect(
       page.getByRole("button", {
         name: "Replay typography preview",

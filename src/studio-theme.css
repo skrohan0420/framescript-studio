@@ -125,3 +125,12 @@ button.audio-cut-deleted { color: var(--error); border-color: var(--error); back
 @media (prefers-reduced-motion: reduce) {
   button, input, textarea, select { transition: none; }
 }
+
+/* Understated active treatment only for playback loop and timeline snapping. */
+.transport button[aria-label="Loop playback"][aria-pressed=true],
+.timeline button[aria-label="Timeline snapping"][aria-pressed=true] {
+  background: color-mix(in srgb, var(--raised) 94%, var(--accent) 6%);
+  border-color: var(--subtle-border);
+  color: color-mix(in srgb, var(--secondary) 72%, var(--accent) 28%);
+  box-shadow: none;
+}

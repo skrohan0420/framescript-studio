@@ -1,3 +1,8 @@
+import {
+  textLayerPrompt,
+  promptTextListSchema,
+  type PromptText,
+} from "./prompt-text";
 export const promptTemplates = [
   {
     id: "canvas",
@@ -35,7 +40,136 @@ export const promptTemplates = [
     brief:
       "Repair the supplied code for FrameScript. Preserve the intended visuals and behavior while fixing errors, layout, deterministic seeking and playback integration.",
   },
+  {
+    id: "data",
+    name: "Data visualization",
+    brief:
+      "Animate accurate charts and comparisons using only supplied values. Reveal data progressively; never invent statistics or axes labels. Include text only when enabled.",
+  },
+  {
+    id: "process",
+    name: "Process / flow diagram",
+    brief:
+      "Explain a sequence through connected stages, directional flow and meaningful state changes. Make cause and effect legible without requiring text.",
+  },
+  {
+    id: "product",
+    name: "Product showcase",
+    brief:
+      "Create a polished product presentation using self-contained original geometry, close-ups and purposeful feature reveals. Do not invent product claims or add unrequested branding.",
+  },
+  {
+    id: "isometric",
+    name: "Isometric scene",
+    brief:
+      "Build a coherent isometric illustration with consistent projection, scale, occlusion and staged motion using Canvas or inline SVG; no 3D library.",
+  },
+  {
+    id: "particles",
+    name: "Particles / simulation",
+    brief:
+      "Create a bounded, deterministic particle or physical-process visualization driven directly by scene time. Particles must explain the supplied idea, not act as decorative filler.",
+  },
+  {
+    id: "map",
+    name: "Map / route animation",
+    brief:
+      "Show locations, routes and spatial relationships through a self-contained stylized map. Preserve supplied geography; use schematic geometry when exact map data is unavailable rather than claiming accuracy.",
+  },
+  {
+    id: "comparison",
+    name: "Comparison / split screen",
+    brief:
+      "Compare supplied subjects through synchronized side-by-side animation with equivalent framing and timing. Preserve facts and make visual differences readable without inventing claims.",
+  },
+  {
+    id: "loop",
+    name: "Seamless loop",
+    brief:
+      "Create a seamless animation cycle whose pose, composition and motion match across the scene boundary. Derive phase from scene time; avoid abrupt resets and unrequested title cards.",
+  },
 ] as const;
+
+export const templateDetails: Record<
+  string,
+  { detail: string; example: string }
+> = {
+  canvas: {
+    detail:
+      "Procedural drawing for illustrated objects, organic motion and visual effects using Canvas 2D.",
+    example: "A planet rotates while a spacecraft moves into orbit.",
+  },
+  motion: {
+    detail:
+      "Layered HTML/CSS shapes, graphic layouts and smooth transitions for designed visual sequences.",
+    example: "Colored panels slide together to reveal a product feature.",
+  },
+  explain: {
+    detail:
+      "Diagrams and visual relationships that explain the narration step by step.",
+    example: "Show how sunlight becomes electricity inside a solar panel.",
+  },
+  type: {
+    detail:
+      "Animate exact wording with deliberate spacing, emphasis and reading time. Enable Typography and supply text separately.",
+    example: "Reveal 'ONE SMALL STEP' word by word, then hold the phrase.",
+  },
+  depth: {
+    detail:
+      "Layered perspective and parallax create a sense of depth without a 3D engine.",
+    example:
+      "Move through a forest with foreground trees moving faster than distant mountains.",
+  },
+  repair: {
+    detail:
+      "Includes the active code and asks for targeted corrections while preserving the intended scene.",
+    example:
+      "Fix a blank preview or broken seeking without redesigning the animation.",
+  },
+  data: {
+    detail:
+      "Progressively reveal supplied numerical data as charts or comparisons; no invented values.",
+    example:
+      "Animate bars from 20 to 45 to 80 units; add labels only if enabled.",
+  },
+  process: {
+    detail:
+      "Connect stages and animate flow to make a sequence or system understandable.",
+    example: "A water droplet passes through filtration, storage and delivery.",
+  },
+  product: {
+    detail:
+      "Present a product with deliberate framing, lighting and feature-focused reveals.",
+    example: "Rotate a stylized headphone model, then zoom in on its controls.",
+  },
+  isometric: {
+    detail:
+      "Build dimensional-looking illustrations with consistent angled projection and layering.",
+    example: "An isometric city assembles, then lights travel along its roads.",
+  },
+  particles: {
+    detail:
+      "Use reproducible particle movement to explain energy, forces or other processes.",
+    example: "Particles spread from a crowded chamber into an empty one.",
+  },
+  map: {
+    detail:
+      "Reveal routes and locations on a schematic or supplied map without downloading map services.",
+    example: "Draw a delivery route between three supplied cities.",
+  },
+  comparison: {
+    detail:
+      "Keep two subjects aligned in time and framing so their differences are easy to compare.",
+    example:
+      "Show an inefficient workflow on the left and an improved version on the right.",
+  },
+  loop: {
+    detail:
+      "Match the beginning and end of a repeating animation so playback has no visible jump.",
+    example:
+      "A small factory conveyor carries objects through a continuous cycle.",
+  },
+};
 
 export const artStyles = [
   ["Cinematic", "Atmospheric depth, controlled contrast and filmic lighting"],
@@ -111,6 +245,70 @@ export const referenceStyles = [
     "Digital collage essay",
     "Original procedural cutouts, torn-paper masks, diagram fragments and layered editorial compositions with a consistent material language.",
   ],
+  [
+    "Natural history illustration",
+    "Detailed procedural plants, animals and habitats with coherent anatomy, earthy palettes and layered environmental depth. Preserve supplied biological facts; simplify rather than invent unseen anatomy.",
+  ],
+  [
+    "Microscopic science",
+    "Layered translucent cells, molecular-scale shapes and controlled depth cues on a clean field. Clearly distinguish conceptual illustrations from measured scientific data.",
+  ],
+  [
+    "Space documentary",
+    "Cinematic cosmic scale, restrained glows, readable orbital paths and layered celestial geometry. Use supplied astronomical relationships; do not fabricate measurements.",
+  ],
+  [
+    "Engineering cutaway",
+    "Precise sectional geometry, consistent line weights and progressively revealed internal mechanisms. Keep assembly relationships clear; use labels only when explicitly enabled.",
+  ],
+  [
+    "Architectural model",
+    "Clean massing studies, sectional reveals, consistent projection and soft neutral lighting. Use original procedural geometry and preserve supplied dimensions and spatial relationships.",
+  ],
+  [
+    "Whiteboard explanation",
+    "Original hand-drawn-style linework on a light field, progressive drawing reveals and uncluttered diagrams. Avoid invented handwriting or labels when typography is off.",
+  ],
+  [
+    "Paper sculpture",
+    "Layered folded-paper geometry, visible edges, matte surfaces and directional contact shadows. Keep paper thickness, scale and lighting consistent across the scene.",
+  ],
+  [
+    "Watercolor storybook",
+    "Soft procedural watercolor washes, restrained paper texture and expressive original silhouettes. Keep important edges readable and avoid muddy overlapping colors.",
+  ],
+  [
+    "Cel animation",
+    "Original expressive characters, clear ink contours, limited shadow bands and readable staged poses. Keep character identity consistent and movement deterministic.",
+  ],
+  [
+    "Clay miniature",
+    "Rounded handmade-looking forms, subtle surface irregularity, matte materials and soft studio lighting. Use procedural approximations with coherent scale and contact shadows.",
+  ],
+  [
+    "Pixel-world illustration",
+    "A consistent pixel grid, limited palette, crisp edges and readable original sprites or environments. Avoid mixed pixel scales and nondeterministic texture changes.",
+  ],
+  [
+    "Vintage travel poster",
+    "Bold scenic silhouettes, limited warm inks, flat color blocking and subtle deterministic print texture. Poster composition does not authorize titles or decorative lettering.",
+  ],
+  [
+    "Comic-book diagram",
+    "Original inked contours, controlled halftone patterns, clear action silhouettes and panel-like visual organization. No speech bubbles or captions unless explicitly requested.",
+  ],
+  [
+    "Monochrome line study",
+    "Sparse precise linework, high-contrast negative space and a single optional accent. Communicate relationships through geometry and motion rather than decorative clutter.",
+  ],
+  [
+    "Digital product interface",
+    "Original modular interface-like layouts, clear control states and layered UI geometry. Use supplied information only; do not copy an existing product screen or invent metrics or text.",
+  ],
+  [
+    "Neon technical display",
+    "Dark technical surfaces, restrained luminous strokes, color-coded geometry and controlled emissive accents. Keep displays legible without flashing, fake debug text or invented telemetry.",
+  ],
 ] as const;
 
 export const editingStyles = [
@@ -181,6 +379,17 @@ export const editingStyles = [
 ] as const;
 
 export type PromptDraft = {
+  mascotEnabled?: boolean;
+  mascotName?: string;
+  mascotIdentity?: string;
+  mascotRole?: string;
+  mascotActions?: string;
+  mascotPlacement?: string;
+  mascotScale?: string;
+  mascotTiming?: string;
+  mascotNotes?: string;
+  typographyEnabled?: boolean;
+  textItems?: PromptText[];
   template: string;
   script: string;
   timedNarration?: string;
@@ -190,6 +399,11 @@ export type PromptDraft = {
   style: string;
   referenceStyle?: string;
   editingStyle?: string;
+  referenceInfluence?: string;
+  referenceNotes?: string;
+  pacingEnergy?: string;
+  transitionPreference?: string;
+  editingNotes?: string;
   subtitles?: string;
   textFont?: string;
   textScale?: string;
@@ -232,6 +446,13 @@ export function buildCodePrompt(
   height: number,
   code?: { html: string; css: string; js: string },
 ) {
+  const typographyEnabled = draft.typographyEnabled === true;
+  const items = typographyEnabled
+    ? promptTextListSchema.parse(draft.textItems ?? [])
+    : [];
+  const itemPrompt = typographyEnabled
+    ? textLayerPrompt(items, draft.duration)
+    : "";
   const template =
     promptTemplates.find((item) => item.id === draft.template) ??
     promptTemplates[0];
@@ -247,6 +468,19 @@ export function buildCodePrompt(
       "Establish foreground, midground and background with a shared perspective and stable vanishing point. Move layers at depth-appropriate rates. Keep camera travel restrained, avoid unintended clipping and perspective distortion, and maintain a readable subject silhouette throughout the move.",
     repair:
       "Inspect the supplied HTML, CSS and JavaScript together before editing. Identify broken selectors, initialization errors, timing dependencies and missing assets. Preserve working composition, timing and intended behavior. Make the smallest coherent repairs needed to satisfy the playback contract; do not replace the scene with a generic redesign.",
+    data: "Use a stable visual scale and baseline across the scene. Animate only supplied values, preserve units, and hold the final comparison long enough to read. No fabricated statistics. Labels require explicit typography enablement.",
+    process:
+      "Define stable stage positions and animate connections or objects along a clear directional path. Show dependencies and feedback loops only when supported by the brief. Preserve continuity between stages.",
+    product:
+      "Construct a recognizable product silhouette from original self-contained geometry. Use coherent materials and highlights, deliberate camera framing and feature-specific close-ups; preserve supplied proportions and facts.",
+    isometric:
+      "Use one consistent isometric projection and scale. Sort geometry for correct occlusion, align contact shadows and build the scene in readable stages. Avoid perspective drift between objects.",
+    particles:
+      "Compute particle positions from fixed seeds and absolute time, or use a reproducible bounded analytic approximation. Do not accumulate state between renderFrame calls. Keep counts bounded and represent the stated process faithfully.",
+    map: "Use supplied locations and route order. Draw a coherent schematic if exact coordinates are unavailable; never imply invented coordinates are accurate geography. Reveal paths progressively and keep markers anchored. No external map tiles.",
+    comparison:
+      "Use aligned panels, consistent scales and synchronized phases. Highlight the factual difference through visible behavior. Avoid changing the framing to exaggerate one side or inventing quantitative claims.",
+    loop: "Use periodic motion with a phase derived from scene time. Match composition and velocity across the duration boundary; do not rely on a reset frame, an ending fade or a title card to hide the seam.",
   }[template.id];
   const audioTracks = [
     ...(draft.bgm
@@ -337,10 +571,31 @@ Treat these timestamps as the timing authority. Stage visual actions, reveals, e
 
 Visual subjects and action:
 ${draft.visuals.trim() || "Choose visuals that support the narration."}
+${
+  draft.mascotEnabled === true
+    ? `
+MASCOT — EXPLICITLY REQUESTED
+Include ${draft.mascotName?.trim() || "the user's mascot"} in this scene. The user will attach the mascot reference image(s) directly to this LLM conversation alongside this prompt. Use those attachments as the visual identity authority; no image is embedded or uploaded by the FrameScript prompt builder. Do not ask for a FrameScript asset ID, image URL, base64 string or a separate upload into FrameScript. If the reference is absent from this LLM conversation, ask the user to attach it before generating the mascot; do not invent a replacement character.
+Identity to preserve: ${draft.mascotIdentity?.trim() || "Match the attached reference's face, silhouette, proportions, palette, outfit and identifying features."}
+Scene role: ${draft.mascotRole?.trim() || "Support the scene's explanation without distracting from the main subject."}
+Actions / expressions: ${draft.mascotActions?.trim() || "Use restrained, purposeful gestures that support the narration; preserve identity across poses."}
+Placement / interaction: ${draft.mascotPlacement?.trim() || "Place near the relevant subject, inside safe margins; avoid obscuring requested text or focal action."}
+Screen size / framing: ${draft.mascotScale?.trim() || "Keep a readable, consistent scale appropriate to the composition."}
+Appearance timing: ${draft.mascotTiming?.trim() || "Appear only where useful to the story, synchronized with supplied narration cues and scene duration."}
+Additional mascot direction: ${draft.mascotNotes?.trim() || "None."}
+Implement the referenced character as self-contained procedural Canvas, inline SVG or CSS artwork suited to the selected template. Recreate the reference as faithfully as this rendering approach allows; do not assume the attached image is a runtime file or return broken local/remote image links. Keep poses and movement deterministic through renderFrame(timeInSeconds). The user's attached mascot reference takes precedence over generic style presets for mascot identity. Do not add speech bubbles, names, labels or other on-screen text unless explicitly requested in the text settings below.
+`
+    : ""
+}
 Style: ${draft.style.trim() || "Clean, cinematic motion graphics with a consistent palette."}
 Reference-inspired direction: ${draft.referenceStyle?.trim() || "Use an original visual treatment suited to the brief."}
+${draft.referenceStyle?.trim() ? `Reference influence: ${draft.referenceInfluence || "Balanced"}. ${draft.referenceInfluence === "Subtle" ? "Borrow a few broad visual principles while keeping the original scene's own visual identity." : draft.referenceInfluence === "Strong" ? "Emphasize the selected shape, material and composition principles consistently, while creating original artwork." : "Balance the selected visual principles with the user's own art direction."}` : ""}
+${draft.referenceNotes?.trim() ? `Custom visual direction: ${draft.referenceNotes.trim()}. This specific direction takes precedence over generic reference suggestions; preserve supplied facts, text and mascot identity.` : ""}
 ${draft.referenceStyle?.trim() ? "Translate the selected reference into the visual principles described above using original procedural artwork. Do not add the reference channel's logo, branding, mascots, copied compositions or external footage. The supplied palette, subject identity, exact text and runtime requirements remain authoritative." : ""}
 Editing style: ${draft.editingStyle?.trim() || "Measured explainer: readable visual beats, motivated transitions and deliberate holds."}
+${draft.pacingEnergy && draft.pacingEnergy !== "Adapt to narration" ? `Pacing energy: ${draft.pacingEnergy}. Adjust beat density and breathing room without moving supplied narration cues or making actions unreadable.` : ""}
+${draft.transitionPreference && draft.transitionPreference !== "Follow selected editing style" ? `Explicit transition preference: ${draft.transitionPreference}. This overrides conflicting transition suggestions in the editing preset. Preserve object continuity and supplied narration timing.` : ""}
+${draft.editingNotes?.trim() ? `Custom editing direction: ${draft.editingNotes.trim()}. Follow this specific direction over generic preset suggestions, while preserving supplied narration timestamps and scene duration.` : ""}
 Apply the editing direction to beat lengths, cut placement, camera rhythm and transition choices. Supplied narration timestamps remain authoritative. Fit pacing to the scene duration rather than forcing a fixed cut rate; never use flashing or strobing as a shortcut to energy.
 Audience / intended outcome: ${draft.audience?.trim() || "Make the subject understandable to a general audience."}
 Mood: ${draft.mood?.trim() || "Match the emotional tone of the narration."}
@@ -359,10 +614,16 @@ Story direction: ${draft.storyStructure?.trim() || "Follow the structure of the 
 Treat story direction as staging guidance, never as spoken narration or subtitle copy. Preserve the user's script and supplied cue times; do not append these instructions to the script, invent dialogue, or reorder timed phrases to force a story structure.
 Plan a clear opening, development and resolved ending internally before writing code. Give each beat a focal subject, meaningful action and readable hold. Show concepts through objects and interactions. Use transitions that explain relationships between beats. Respect supplied timestamps over inferred pacing. Keep important subjects and text within a 10% safe margin with clear foreground/background contrast. Resolve the final pose without an abrupt cut or unfinished action.
 Camera / framing: ${draft.camera.trim() || "Intentional framing; smooth movement only when it helps the animation."}
-On-screen text: ${draft.screenText.trim() || (draft.subtitles && draft.subtitles !== "Off" ? "Subtitles only, as configured below. No additional titles or labels." : "None. Do not add titles, captions or labels.")}
+On-screen text: ${typographyEnabled ? draft.screenText.trim() || (itemPrompt ? "Only the explicitly configured text items below." : draft.subtitles && draft.subtitles !== "Off" ? "Subtitles only, as configured below. No additional titles or labels." : "None. Do not add titles, captions or labels.") : "None. Do not add any text, titles, captions, labels, counters, watermarks or placeholder copy. Narration is context only."}
+${
+  typographyEnabled &&
+  (draft.screenText.trim() ||
+    (draft.subtitles && draft.subtitles !== "Off") ||
+    itemPrompt)
+    ? `
 TYPOGRAPHY & SUBTITLES
-Exact labels / titles: ${draft.screenText.trim() || "No labels or titles requested."}
-Subtitles: ${draft.subtitles && draft.subtitles !== "Off" ? `${draft.subtitles}. This explicitly requests subtitles in addition to any exact labels above. Use only the supplied narration, preserving words and punctuation; never invent caption copy. If no narration is supplied, omit subtitles. Prefer supplied word timestamps; if only untimed narration exists, estimate readable phrase timing without claiming exact speech synchronization.` : "Off. Narration remains context only; do not turn it into captions."}
+Quick title / label text: ${draft.screenText.trim() || "No quick title requested; individual text items are specified separately below."}
+Subtitles: ${draft.subtitles && draft.subtitles !== "Off" ? `${draft.subtitles}. This explicitly requests subtitles in addition to any exact labels above. Use only the supplied narration, preserving words and punctuation; never invent caption copy. If no narration is supplied, omit subtitles. Prefer supplied word timestamps; if only untimed narration exists, estimate readable phrase timing without claiming exact speech synchronization.` : "Global captions off. Narration remains context only, except for any explicitly enabled individual caption item below."}
 Font treatment: ${draft.textFont?.trim() || "System sans-serif with a clear readable hierarchy."}
 Type scale: ${draft.textScale?.trim() || "Balanced hierarchy; size text relative to the output frame."}
 Placement: ${draft.textPlacement?.trim() || "Bottom-center subtitles and subject-adjacent labels, within safe margins."}
@@ -376,6 +637,10 @@ Font weight: ${draft.textWeight ?? 600}; alignment: ${draft.textAlign || "center
 Text fill: ${draft.textFill || "#F5F5F5"}; emphasis / active-word color: ${draft.textAccent || "#36D3DF"}; backing color when a backing treatment is selected: ${draft.textBacking || "#111827"}.
 Text entrance duration: ${draft.textAnimationDuration ?? 0.4} seconds per phrase; maximum subtitle lines: ${draft.captionLines ?? 2}. Keep the entrance brief enough to preserve reading time; if word-level animation is selected, stagger words within this entrance duration rather than repeating a long entrance for every word. Do not stretch or recolor text arbitrarily between beats. Apply exact numeric settings above in preference to general type-scale suggestions.
 Apply these typography settings only to explicitly requested text. Keep labels, titles and subtitles as separate reusable HTML elements; scope CSS to those elements so scene geometry is unaffected. Use local system-font fallbacks and no downloaded fonts. Respect the configured maximum subtitle lines, wrap at phrase boundaries, reserve their screen space, and avoid covering focal subjects. Keep text visible long enough to read; animate phrase containers rather than scattering individual letters unless the selected animation calls for it. Word highlighting requires actual word timestamps; otherwise use phrase highlighting. Never display debug timestamps or placeholder copy.
+${itemPrompt ? `INDIVIDUAL TEXT ITEMS — each item's settings override global defaults only for that item. Do not apply title/subtitle default placement or size to these items. Use installed font fallbacks. All item values must be derived deterministically from scene time.\n${itemPrompt}` : ""}
+`
+    : ""
+}
 Additional requirements: ${draft.notes.trim() || "None."}
 Background music (BGM): ${draft.bgm ? "Required as actual synthesized soundtrack data inside the generated code, not a written plan." : "Not requested."}
 Sound effects (SFX): ${draft.sfx ? "Required as actual synthesized sound cues inside the generated code, synchronized to visual actions and narration." : "Not requested."}

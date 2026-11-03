@@ -305,6 +305,19 @@ export class StudioDatabase {
     if (!row) throw Error("Project not found");
     return this.unpack(JSON.parse(String(row.payload)));
   }
+  renameProject(id: string, name: string) {
+    const project = this.project(id);
+    const workspace =
+      this.get("currentProject") === id ? this.workspace() : null;
+    this.transaction(() => {
+      this.db.run(
+        "UPDATE projects SET payload=?,updated=? WHERE id=? AND deleted=0",
+        [JSON.stringify(this.pack({ ...project, name })), Date.now(), id],
+      );
+      if (workspace)
+        this.writeValue("workspace", this.pack({ ...workspace, name }));
+    });
+  }
   recents() {
     const stmt = this.db.prepare(
       "SELECT id FROM projects WHERE deleted=0 ORDER BY updated DESC,id DESC LIMIT 30",

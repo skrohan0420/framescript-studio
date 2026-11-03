@@ -24,6 +24,8 @@ const aiRequest = z.object({
 const empty = z.tuple([]);
 export const rpcSchemas = {
   session: empty,
+  exportStorage: empty,
+  clearExportFiles: empty,
   newSession: empty,
   hasKey: empty,
   mediaStatus: empty,
@@ -135,6 +137,8 @@ export type ChatGPTStatus = {
   error?: string;
 };
 export interface RpcResults {
+  exportStorage: { files: number; bytes: number; retentionDays: number };
+  clearExportFiles: { files: number; bytes: number; retentionDays: number };
   session: boolean;
   newSession: boolean;
   hasKey: boolean;

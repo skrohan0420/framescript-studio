@@ -4,6 +4,7 @@ import {
   promptTemplates,
   referenceStyles,
   editingStyles,
+  templateDetails,
   type PromptDraft,
 } from "../shared/prompt-templates";
 const draft: PromptDraft = {
@@ -17,13 +18,55 @@ const draft: PromptDraft = {
   notes: "Keep objects consistent",
   format: "document",
 };
+it("gives every template a description, example and implemented craft direction", () => {
+  expect(promptTemplates).toHaveLength(14);
+  for (const template of promptTemplates) {
+    expect(templateDetails[template.id].detail.length).toBeGreaterThan(20);
+    expect(templateDetails[template.id].example.length).toBeGreaterThan(20);
+    const prompt = buildCodePrompt(
+      { ...draft, template: template.id },
+      1920,
+      1080,
+    );
+    expect(prompt).toContain(template.brief);
+    expect(prompt).not.toContain("undefined");
+  }
+});
+it("keeps reference strength and editorial fine tuning explicit and preserves narration priority", () => {
+  const prompt = buildCodePrompt(
+    {
+      ...draft,
+      referenceStyle: "Custom illustration",
+      referenceInfluence: "Subtle",
+      referenceNotes: "Muted copper",
+      editingStyle: "Data story",
+      pacingEnergy: "Calm / spacious",
+      transitionPreference: "Hard cuts",
+      editingNotes: "Hold the comparison",
+    },
+    1920,
+    1080,
+  );
+  for (const value of [
+    "Reference influence: Subtle",
+    "Borrow a few broad visual principles",
+    "Custom visual direction: Muted copper",
+    "Pacing energy: Calm / spacious",
+    "Explicit transition preference: Hard cuts",
+    "overrides conflicting transition suggestions",
+    "Custom editing direction: Hold the comparison",
+    "preserving supplied narration timestamps",
+  ])
+    expect(prompt).toContain(value);
+});
 it("keeps subtitles opt-in and includes typography direction when requested", () => {
   expect(buildCodePrompt(draft, 1920, 1080)).toContain(
-    "Off. Narration remains context only",
+    "None. Do not add any text",
   );
   const prompt = buildCodePrompt(
     {
       ...draft,
+      typographyEnabled: true,
       subtitles: "Word-by-word highlight",
       textFont: "Editorial serif",
       textAnimation: "Mask reveal",
@@ -43,6 +86,8 @@ it("keeps subtitles opt-in and includes typography direction when requested", ()
   const custom = buildCodePrompt(
     {
       ...draft,
+      typographyEnabled: true,
+      screenText: "Custom title",
       titleSize: 120,
       captionSize: 48,
       textFill: "#ffcc00",
@@ -115,7 +160,7 @@ it("includes the actual brief and editor playback/output contract", () => {
   expect(prompt).toContain("window.renderFrame = function(timeInSeconds)");
   expect(prompt).toContain("Do not start requestAnimationFrame");
   expect(prompt).toContain("ONE complete HTML document");
-  expect(prompt).toContain("None. Do not add titles");
+  expect(prompt).toContain("None. Do not add any text");
 });
 it("adapts directing guidance to the template, frame and available timing", () => {
   const portrait = buildCodePrompt(

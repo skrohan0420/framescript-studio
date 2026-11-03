@@ -15,6 +15,7 @@ import {
   X,
   Palette,
   Fingerprint,
+  Cat,
   SlidersHorizontal,
 } from "lucide-react";
 import { useProjectState } from "./store";
@@ -22,11 +23,13 @@ import { sceneOffset } from "../shared/workflow";
 import { transcriptSrt, voiceoverWordsForScene } from "../shared/transcript";
 import { parseNarrationInput } from "../shared/narration-input";
 import { PromptTypography } from "./PromptTypography";
+import { PromptMascot } from "./PromptMascot";
+import { PromptTemplateChoice } from "./PromptTemplateChoice";
+import { PromptDirectionStudio } from "./PromptDirectionStudio";
+import { promptTextListSchema } from "../shared/prompt-text";
 import {
   buildCodePrompt,
   artStyles,
-  referenceStyles,
-  editingStyles,
   promptTemplates,
   type PromptDraft,
 } from "../shared/prompt-templates";
@@ -151,13 +154,22 @@ export function PromptTemplates({
     notes: "",
     format: "document",
     consistency: true,
+    typographyEnabled: false,
+    mascotEnabled: false,
+    textItems: [],
   };
   const [draft, setDraft] = useState<PromptDraft>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null");
       if (!saved || typeof saved !== "object") return defaults;
       const restored = { ...defaults };
-      for (const key of ["bgm", "sfx", "consistency"] as const)
+      for (const key of [
+        "bgm",
+        "sfx",
+        "consistency",
+        "typographyEnabled",
+        "mascotEnabled",
+      ] as const)
         if (typeof saved[key] === "boolean") restored[key] = saved[key];
       for (const key of [
         "script",
@@ -165,6 +177,11 @@ export function PromptTemplates({
         "style",
         "referenceStyle",
         "editingStyle",
+        "referenceInfluence",
+        "referenceNotes",
+        "pacingEnergy",
+        "transitionPreference",
+        "editingNotes",
         "subtitles",
         "textFont",
         "textScale",
@@ -191,10 +208,20 @@ export function PromptTemplates({
         "environment",
         "motion",
         "avoid",
+        "mascotName",
+        "mascotIdentity",
+        "mascotRole",
+        "mascotActions",
+        "mascotPlacement",
+        "mascotScale",
+        "mascotTiming",
+        "mascotNotes",
       ] as const)
         if (typeof saved[key] === "string") restored[key] = saved[key];
       if (promptTemplates.some((item) => item.id === saved.template))
         restored.template = saved.template;
+      const items = promptTextListSchema.safeParse(saved.textItems);
+      if (items.success) restored.textItems = items.data;
       for (const [key, min, max] of [
         ["titleSize", 8, 600],
         ["captionSize", 8, 300],
@@ -235,7 +262,10 @@ export function PromptTemplates({
       return [
         "brief",
         "look",
+        "reference",
+        "pacing",
         "identity",
+        "mascot",
         "typography",
         "details",
         "output",
@@ -358,12 +388,18 @@ export function PromptTemplates({
       "Timed voiceover added. Cue times follow the audio’s trim and position in this scene.",
     );
   };
-  const prompt = buildCodePrompt(
-    draft,
-    project.settings.width,
-    project.settings.height,
-    includeCode ? project : undefined,
-  );
+  let prompt = "",
+    promptError = "";
+  try {
+    prompt = buildCodePrompt(
+      draft,
+      project.settings.width,
+      project.settings.height,
+      includeCode ? project : undefined,
+    );
+  } catch (error) {
+    promptError = (error as Error).message;
+  }
   const icons = {
     canvas: Orbit,
     motion: Layers,
@@ -371,6 +407,14 @@ export function PromptTemplates({
     type: Type,
     depth: Orbit,
     repair: Wrench,
+    data: SlidersHorizontal,
+    process: Layers,
+    product: Sparkles,
+    isometric: Layers,
+    particles: Sparkles,
+    map: Orbit,
+    comparison: Layers,
+    loop: RotateCcw,
   };
   const descriptions = {
     canvas: "Procedural visuals",
@@ -379,6 +423,14 @@ export function PromptTemplates({
     type: "Animated text",
     depth: "Depth & camera moves",
     repair: "Fix pasted code",
+    data: "Charts & values",
+    process: "Stages & connections",
+    product: "Features & close-ups",
+    isometric: "Angled illustrations",
+    particles: "Forces & movement",
+    map: "Locations & journeys",
+    comparison: "Side-by-side stories",
+    loop: "Continuous cycles",
   };
   return (
     <section className="prompt-templates" aria-label="Prompt templates">
@@ -418,8 +470,11 @@ export function PromptTemplates({
       >
         {[
           ["brief", "Brief"],
-          ["look", "Look & edit"],
+          ["look", "Visuals"],
+          ["reference", "Reference look"],
+          ["pacing", "Editing & pacing"],
           ["identity", "Identity"],
+          ["mascot", "Mascot"],
           ["typography", "Typography"],
           ["details", "Details"],
           ["output", "Output"],
@@ -438,7 +493,10 @@ export function PromptTemplates({
               const ids = [
                 "brief",
                 "look",
+                "reference",
+                "pacing",
                 "identity",
+                "mascot",
                 "typography",
                 "details",
                 "output",
@@ -465,8 +523,14 @@ export function PromptTemplates({
               <Clipboard size={17} />
             ) : id === "look" ? (
               <Palette size={17} />
+            ) : id === "reference" ? (
+              <Sparkles size={17} />
+            ) : id === "pacing" ? (
+              <Timer size={17} />
             ) : id === "identity" ? (
               <Fingerprint size={17} />
+            ) : id === "mascot" ? (
+              <Cat size={17} />
             ) : id === "typography" ? (
               <Type size={17} />
             ) : id === "details" ? (
@@ -474,6 +538,7 @@ export function PromptTemplates({
             ) : (
               <Code2 size={17} />
             )}
+            <span>{label}</span>
           </button>
         ))}
       </div>
@@ -501,12 +566,12 @@ export function PromptTemplates({
             {promptTemplates.map((item) => {
               const Icon = icons[item.id];
               return (
-                <button
+                <PromptTemplateChoice
                   key={item.id}
-                  title={item.name}
-                  aria-label={`Use ${item.name} template`}
-                  aria-pressed={draft.template === item.id}
-                  onClick={() => {
+                  id={item.id}
+                  name={item.name}
+                  selected={draft.template === item.id}
+                  onSelect={() => {
                     update("template", item.id);
                     if (item.id === "repair") setIncludeCode(true);
                   }}
@@ -519,7 +584,7 @@ export function PromptTemplates({
                   {draft.template === item.id && (
                     <Check size={13} className="template-selected-check" />
                   )}
-                </button>
+                </PromptTemplateChoice>
               );
             })}
           </div>
@@ -688,7 +753,7 @@ export function PromptTemplates({
           tabIndex={-1}
         >
           <div className="prompt-card-heading">
-            <strong>Look & motion</strong>
+            <strong>Visual subjects & art direction</strong>
             <span>Optional</span>
           </div>
           {(
@@ -726,42 +791,28 @@ export function PromptTemplates({
               </button>
             ))}
           </div>
-          <label className="field">
-            <span>Reference-inspired look</span>
-            <select
-              aria-label="Reference-inspired look"
-              value={draft.referenceStyle ?? ""}
-              onChange={(e) => update("referenceStyle", e.target.value)}
-            >
-              <option value="">Original / no reference</option>
-              {referenceStyles.map(([name, direction]) => (
-                <option key={name} value={`${name}: ${direction}`}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {draft.referenceStyle && (
-            <p className="prompt-preset-description">{draft.referenceStyle}</p>
-          )}
-          <label className="field">
-            <span>Editing & pacing style</span>
-            <select
-              aria-label="Editing & pacing style"
-              value={draft.editingStyle ?? ""}
-              onChange={(e) => update("editingStyle", e.target.value)}
-            >
-              <option value="">Automatic / measured explainer</option>
-              {editingStyles.map(([name, direction]) => (
-                <option key={name} value={`${name}: ${direction}`}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {draft.editingStyle && (
-            <p className="prompt-preset-description">{draft.editingStyle}</p>
-          )}
+        </div>
+        <div
+          className="prompt-form-card prompt-tab-panel"
+          role="tabpanel"
+          id="prompt-panel-reference"
+          aria-labelledby="prompt-tab-reference"
+          hidden={activeSection !== "reference"}
+        >
+          <PromptDirectionStudio
+            kind="reference"
+            draft={draft}
+            update={update}
+          />
+        </div>
+        <div
+          className="prompt-form-card prompt-tab-panel"
+          role="tabpanel"
+          id="prompt-panel-pacing"
+          aria-labelledby="prompt-tab-pacing"
+          hidden={activeSection !== "pacing"}
+        >
+          <PromptDirectionStudio kind="pacing" draft={draft} update={update} />
         </div>
         <div
           className="prompt-form-card prompt-design-guide prompt-tab-panel"
@@ -838,6 +889,15 @@ export function PromptTemplates({
               />
             </label>
           ))}
+        </div>
+        <div
+          className="prompt-form-card prompt-tab-panel"
+          role="tabpanel"
+          id="prompt-panel-mascot"
+          aria-labelledby="prompt-tab-mascot"
+          hidden={activeSection !== "mascot"}
+        >
+          <PromptMascot draft={draft} update={update} />
         </div>
         <div
           className="prompt-form-card prompt-tab-panel"
@@ -957,6 +1017,7 @@ export function PromptTemplates({
         </div>
       </div>
       <div className="prompt-actions">
+        {promptError && <p role="alert">{promptError}</p>}
         <div className="prompt-ready">
           <span className="live-dot" />
           <span>
@@ -968,6 +1029,7 @@ export function PromptTemplates({
           <button
             className="primary"
             title="Copy prompt"
+            disabled={!!promptError}
             aria-label="Copy prompt"
             onClick={async () => {
               try {

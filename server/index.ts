@@ -7,6 +7,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Worker } from "node:worker_threads";
 import { ExportQueue } from "./export-queue";
+import { ExportRetention } from "./export-retention";
 import { archiveSequence } from "./archive";
 import { projectSchema, exportSchema } from "../shared/project";
 import { documentFor } from "../shared/runtime";
@@ -60,6 +61,18 @@ type Client = {
 };
 let database: StudioDatabase;
 const exportQueue = new ExportQueue(2);
+const exportRetention = new ExportRetention(exportsDir);
+let cleanupQueue: Promise<unknown> = Promise.resolve();
+function inspectExports(clear = false) {
+  const task = cleanupQueue.then(async () => {
+    const { removed, ...summary } = await exportRetention.inspect(clear);
+    for (const [id, item] of downloads)
+      if (removed.has(item.file)) downloads.delete(id);
+    return summary;
+  });
+  cleanupQueue = task.catch(() => {});
+  return task;
+}
 let workspaceVersion = randomUUID();
 let workspaceQueue: Promise<unknown> = Promise.resolve();
 const workspaceWrites = new Set([
@@ -165,6 +178,10 @@ async function invoke(
   owner: string,
 ) {
   switch (name) {
+    case "exportStorage":
+      return inspectExports();
+    case "clearExportFiles":
+      return inspectExports(true);
     case "servicesStatus": {
       const keys = {
         openai: client.key || process.env.OPENAI_API_KEY,
@@ -433,8 +450,7 @@ async function invoke(
       return id;
     }
     case "projectRename": {
-      const project = database.project(args[0]);
-      database.putProject(args[0], { ...project, name: args[1] });
+      database.renameProject(args[0], args[1]);
       return true;
     }
     case "projectDuplicate": {
@@ -585,6 +601,8 @@ async function invoke(
         exportsDir,
         randomUUID() + "." + options.format,
       );
+      const unprotect = exportRetention.protect(destination);
+      const unprotectZip = exportRetention.protect(destination + ".zip");
       const ffmpeg = require("ffmpeg-static");
       const exportAbort = new AbortController();
       const job: {
@@ -680,6 +698,8 @@ async function invoke(
       } finally {
         jobs.delete(id);
         release?.();
+        unprotect();
+        unprotectZip();
       }
     }
     default:
@@ -691,6 +711,8 @@ async function start() {
   database = await StudioDatabase.open(dataDir);
   await fs.mkdir(projectsDir, { recursive: true });
   await fs.mkdir(exportsDir, { recursive: true });
+  await inspectExports();
+  setInterval(() => void inspectExports().catch(() => {}), 3_600_000).unref();
   const vite = dev
     ? await (
         await import("vite")
@@ -758,6 +780,8 @@ async function start() {
             json(res, "Download not found", 404);
             return;
           }
+          const releaseFile = exportRetention.protect(item.file);
+          res.on("close", releaseFile);
           res.writeHead(200, {
             "Content-Type": "application/octet-stream",
             "Content-Disposition": `attachment; filename="${item.name}"`,
@@ -778,7 +802,11 @@ async function start() {
         if (!Object.hasOwn(rpcSchemas, operation) || operation === "open")
           throw Error("Unknown operation");
         payload.args = rpcSchemas[operation as RpcName].parse(payload.args);
-        if (workspaceWrites.has(operation) || operation === "workspaceGet") {
+        if (
+          workspaceWrites.has(operation) ||
+          operation === "workspaceGet" ||
+          operation === "projectList"
+        ) {
           // Check and mutate in one queue so concurrent tabs cannot both pass CAS.
           const task = workspaceQueue.then(async () => {
             const expected = req.headers["x-workspace-version"];

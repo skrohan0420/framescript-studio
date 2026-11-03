@@ -343,6 +343,21 @@ try {
     "PASS two concurrent exports, queued third, job-tagged SSE, isolated active/queued cancellation, early cancellation and separate download",
   );
 
+  const retained = await rpc("exportStorage");
+  assert(retained.files > 0 && retained.bytes > 0);
+  assert.equal(retained.retentionDays, 7);
+  const cleared = await rpc("clearExportFiles");
+  assert.equal(cleared.files, 0);
+  assert.equal(cleared.bytes, 0);
+  const expired = await fetch(base + results[1].result.url, {
+    headers: { Cookie: cookie },
+  });
+  assert.equal(expired.status, 404);
+  assert.equal((await fs.readdir(path.join(dataDir, "exports"))).length, 0);
+  console.log(
+    "PASS completed render storage inspection, cleanup and download token invalidation",
+  );
+
   await rpc("credentials", "test-key");
   assert.equal(await rpc("hasKey"), true);
   assert(!(await fs.readdir(dataDir)).some((f) => /credential|key/.test(f)));

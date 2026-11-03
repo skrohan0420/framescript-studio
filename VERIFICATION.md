@@ -1,3 +1,97 @@
+## Persistent rulers and clean preview boundary — November 3, 2026
+
+The Rulers toggle now lives with zoom controls in the bottom playback bar, including fullscreen transport. Slimmer measuring bars retain a passive px origin cell. The browser remembers ruler visibility across reloads. When rulers are off, the editor's canvas border is removed as well, leaving a clean preview without the top/left boundary outline. These controls do not affect exported scene content.
+
+Build/TypeScript and eight production browser checks passed. Regression coverage explicitly toggles rulers off/on across reloads, checks the absent canvas border, verifies bottom-bar placement and retains fullscreen, text editing, media sizing and layout checks.
+
+## Preview ruler refinement — November 3, 2026
+
+Refined preview rulers with a shared px corner, quieter surfaces, major/minor ticks, horizontal vertical-axis labels, safer endpoint-label spacing and enough frame-fit padding for the measuring chrome. Build/TypeScript and seven production browser checks passed for preview/fullscreen controls, text editing/snapping, media sizing and studio layout. Reviewed test-results/media-dimensions.png.
+
+## Prompt drawer minimum width — November 3, 2026
+
+Raised the resize minimum from 360px to 560px, including normalization of previously saved narrower widths. Smaller screens still cap the drawer to available workspace width; compact template cards switch to two columns and wrap text there. Build/TypeScript and all three production drawer checks passed, covering old-width migration, minimum clamping, a 390px viewport, persistence, dragging, animation and responsive content.
+
+## Resizable sliding prompt drawer and compact actions — November 3, 2026
+
+Added a draggable left edge with pointer capture, keyboard resizing, width persistence, viewport bounds and double-click reset to 820px. Left/Right adjust width, Shift increases the step, and Home/End choose minimum/maximum width. The drawer enters from the right and slides out on close while remaining noninteractive during exit. Reduced-motion preferences remove visible motion.
+
+Container queries now adapt navigation and preset grids to the drawer's own width, from one card column at narrow widths to four at full desktop width. Wide layouts use larger readable detail text and centered content capped at 1440px rather than stretching every field across the screen. The footer is a compact row with duration/format on the left and normal-sized Copy/Paste buttons on the right.
+
+Build/TypeScript and all eleven focused production prompt-browser checks passed. New tests exercise real mouse dragging, keyboard resizing, close/reopen and reload persistence, viewport shrink/restore, double-click reset, entry/exit state, one/two/four-column adaptation, full-width navigation, content bounds, readable wide text, and footer/button dimensions. Screenshots visually reviewed: test-results/prompt-drawer-wide.png and test-results/prompt-drawer-narrow.png. Existing reference, pacing, tooltip, text, mascot, narration and soundtrack prompt flows remain green.
+
+## Expanded looks, compact browsing and wider prompt builder — November 3, 2026
+
+Added 16 reference looks (28 total), each with original visual direction and an example: natural history, microscopic science, space documentary, engineering cutaway, architectural model, whiteboard, paper sculpture, watercolor storybook, cel animation, clay miniature, pixel world, vintage travel poster, comic diagram, monochrome line study, digital product interface and neon technical display.
+
+Reference and pacing studios now provide category chips with counts, combined category/text filtering, result counts and filter reset. Compact two-column cards show concise descriptions; the selected-direction panel contains complete explanations and examples. Selection remains intact when filters change. Lists remain scrollable and preserve full card height. The prompt builder is widened from 540px to 820px, capped at the workspace width on smaller screens.
+
+Validation: build/TypeScript and 133 unit tests passed; all nine focused production prompt browser checks passed. Expanded checks cover all 28 references and examples, category/search combinations, preserved selection, prompt content/persistence, and card geometry plus exact drawer width/bounds at 1600, 1280 and 768 pixels. Screenshot reviewed: test-results/reference-browsing-improved.png. An initial new test targeted both visible and hidden selected-direction panels; its locator was corrected to the active tabpanel before the clean final run.
+
+## Preset-card overlap fix — November 3, 2026
+
+The unfiltered preset list allowed flexbox to shrink cards to button height inside the bounded scroll area, making their text overlap. Cards and their content now retain intrinsic height, wrap within available width, and scroll without shrinking. Earlier filtered-list checks missed this full-list condition.
+
+Build/TypeScript and five focused production browser checks passed. A geometry regression checks every unfiltered reference and pacing card at widths 1600, 1280 and 768: content stays inside its card, adjacent cards do not overlap, lists scroll, and the last option remains reachable. Reviewed screenshot: test-results/prompt-cards-fixed-reference.png. Existing selection, search, persistence, generated-prompt, narration and soundtrack checks pass.
+
+## Separate visual-reference and editorial direction studios — November 3, 2026
+
+Moved Reference-inspired look and Editing & pacing out of the combined Look & edit panel into independent labeled tabs. The previous panel is now Visuals. Navigation shows text labels with distinct section icons and retains arrow/Home/End keyboard behavior. Both new studios have searchable preset cards, clear selection state, a selected-direction summary, full explanations, concrete example treatments, default/reset choices and empty-search recovery. Preset lists have bounded scrolling so tuning controls remain reachable.
+
+Reference look adds influence strength and custom visual direction. Editing & pacing adds pacing energy, explicit transition preference and custom editorial direction. Prompt instructions preserve facts, mascot identity and narration timing; explicit transition choices override conflicting preset suggestions. User choices persist independently, existing stored preset strings remain supported, and UI examples do not become narration or scene subjects.
+
+Validation: build/TypeScript passed; all 133 unit tests in 33 files passed; seven focused production browser checks passed. New checks cover section separation, searchable preset selection, fine-tuning values in generated prompts, reload persistence, clearing a reference without clearing pacing, and empty-search recovery. Existing prompt copy, timed narration, template tooltip, mascot, typography and procedural-soundtrack flows pass. Both section screenshots were visually reviewed: test-results/prompt-reference-studio.png and test-results/prompt-pacing-studio.png. No live model calls were made.
+
+## Expanded prompt templates and delayed examples — November 3, 2026
+
+Expanded the six animation templates to fourteen with Data visualization, Process / flow diagram, Product showcase, Isometric scene, Particles / simulation, Map / route animation, Comparison / split screen and Seamless loop. Each supplies distinct generation/craft directions plus a short description and concrete example. Templates do not enable text or modify the active scene by themselves.
+
+Template hover and keyboard focus reveal a portal tooltip after 500 ms, avoiding native duplicate title tooltips and panel clipping. Leaving, blurring, selecting, scrolling or resizing dismisses it. Escape dismisses a visible tooltip without also closing the prompt builder. Screenshot reviewed: test-results/template-hover-example.png.
+
+Validation: build/TypeScript passed; all 132 unit tests in 33 files passed; six focused production browser tests passed. New coverage verifies all template metadata/craft directions, absence at 300 ms and appearance after the delay, example content, keyboard focus/dismissal, selection and generated prompt direction. Existing mascot, typography, narration and soundtrack prompt workflows remain green. No live LLM generation was performed.
+
+## Optional prompt mascot — November 3, 2026
+
+Added a dedicated Mascot prompt tab with explicit enablement, identity constraints, role, actions/expressions, placement, scale, timing and additional direction. No image uploader is required or presented: prompt instructions refer to reference images the user attaches directly to their LLM chat. If absent, the LLM should request the attachment rather than invent a character. Generated output must recreate the mascot as self-contained artwork rather than depend on inaccessible attachment URLs or files. Mascot preferences persist, are excluded while disabled, and do not enable typography. Navigation supports the added seventh tab and keyboard selection.
+
+Validation: build/TypeScript passed, all 131 unit tests in 33 files passed, and five focused production browser checks passed. Coverage includes mascot opt-in/out, no reference-upload dependency, saved settings/reload, typography independence, and existing prompt/counter/timed-narration/soundtrack flows. No live model generation or reference fidelity was tested.
+
+## Optional prompt typography and independent video text — November 3, 2026
+
+Typography is now explicitly opt-in. When disabled, legacy titles/subtitles and all saved text styles/items are omitted from the generated prompt. Merely selecting a text-oriented template does not enable text. Enabled but empty configurations also omit the typography specification. Older drafts retain their choices while leaving the new switch off.
+
+Added schema-validated, independently editable text items (maximum 30) for 15 video-text categories, including subject-following labels, annotation/callouts, counters, statistics, lower thirds, captions, timers, lists and credits, plus a Custom text option. Items carry their own content, subject, timing, position, font, colors, readability treatment, spacing, width and motion. Counter settings carry numerical endpoints, decimal precision, prefix/suffix and deterministic time-based interpolation instructions. Each item overrides shared defaults only for itself. Layout/value previews are separate from generated tracking/motion; the UI says so explicitly. Invalid required copy/subjects or scene timing produces an error and disables copying instead of crashing the prompt panel. Disabled items remain editable and persisted but are omitted from the prompt.
+
+Validation: production build/TypeScript passed; all **128 unit tests in 32 files** passed. Four focused production browser checks passed, covering generated soundtrack import, timed narration, legacy prompt editing/copy/persistence with explicit text enablement, and independent label/counter editing, validation, disable/re-enable and reload persistence. New prompt tests verify that stored text/style choices cannot leak into disabled output, empty opt-in stays text-free, per-item values are independent and every category validates. No live AI request was made; actual model compliance with styling/tracking instructions is not guaranteed by these tests.
+
+## Assessment fixes — November 3, 2026
+
+Addressed the nine findings from PROJECT_ASSESSMENT_2026-11-03.md:
+
+- Playback reconciles audio source replacements while preserving the clip identity; undo restores the correct source. Web Audio gain supports 0–200% consistently with the exported gain, and both row/clip sliders expose this range.
+- A shared serialized-size calculation prevents edits/imports above a 90 MB project budget before they can create requests over the server's 100 MB cap. Repeated timeline/library data counts separately. Rejected additions preserve state and undo history; legacy oversized database workspaces remain openable and can be reduced.
+- Current-project rename flushes the new name before the rename request. Project-list reads follow the write queue, and the database commits saved/workspace names in one transaction without discarding workspace edits.
+- Image import reveals the asset controls and selects the imported image. A session identity rejects FileReader results after project replacement.
+- Home Create/Rename dialogs use Radix focus containment and Escape handling, with explicit return focus. Create defaults to 1080p/30 fps.
+- Below 980px, the editor fits the viewport and a toolbar switch shares the side column between library and inspector. The 768×800 layout was visually reviewed; screenshot: test-results/assessment-fixed-tablet.png.
+- Completed managed render copies expire after seven days at startup/hourly. Settings can inspect retained size and clear completed copies. Active rendering/download files are protected, removed download tokens are invalidated, and user-chosen destination files are untouched.
+- README now documents current limits, responsive behavior, gain and retention, and removes the outdated claim that draggable audio editing is absent.
+
+Final validation against the completed build:
+
+- npm run build: passed TypeScript, Vite and server/worker compilation.
+- npm test: **124 passed in 31 files**.
+- FRAMESCRIPT_TEST_PRODUCTION=1 npm run test:e2e: **61 passed**, including the previously failing Home project-management and image-import-to-MP4 flows.
+- npm run test:server: passed, including actual exports, queue/cancellation, cleanup/storage inspection and download-token invalidation.
+- npm run test:integration: passed all six formats, seek timing, gallery execution and cancellation/cleanup.
+- npm run test:workflow: passed actual audible MP4/MKV/WebM mixes, speed changes, scene/assets composition and cancellation.
+- npm run test:credentials: passed encrypted credential persistence across actual server restarts and durable forgetting using fake credentials.
+- git diff --check: passed.
+
+The original stale-source audit probe is now a permanent regression test. New tests also cover 150% preview gain, size accounting/rejection, retention protection, atomic rename persistence, dialog keyboard behavior, tablet layout, delayed FileReader/project switching and delayed-autosave rename/reload. Tests use isolated data; the live workspace and private credentials were not modified. An initial new-dialog test exposed Radix's generated accessible name overriding the former label; the label was corrected before the final clean run.
+
+The existing Vite large-chunk warning remains. Broad architecture refactoring, exhaustive mobile/device validation, live paid-provider generation, and resource stress benchmarks are outside these bug fixes. Restart a running backend and refresh the browser to load the completed changes.
+
 ## Compact draggable export panel — November 2, 2026
 
 Reduced the floating panel to 320px with compact filename/action rows, a single timeline/status line and 3px progress bars. Filenames restore details; icon controls retain accessible labels/tooltips, and frame counts move to progress-bar tooltips. The header supports pointer dragging and arrow-key movement (Shift for larger steps), remembers position within the browser tab, and clamps against viewport/panel resizing. Build/TypeScript and three focused production browser checks passed, including concurrent progress, download/cancel/restore, compact dimensions, dragging and window-size bounds. Screenshot: test-results/multiple-exports.png.

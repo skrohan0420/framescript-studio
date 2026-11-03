@@ -78,9 +78,9 @@ export function ClipVolume({
                   type="range"
                   aria-label="Selected clip volume"
                   min="0"
-                  max="1"
+                  max="2"
                   step="0.01"
-                  value={Math.min(1, clip.volume)}
+                  value={clip.volume}
                   onChange={(event) => {
                     const state = useStudio.getState();
                     state.change(

@@ -9,7 +9,7 @@ import {
   textLayerSchema,
 } from "../shared/typography";
 import { selectedScene } from "../shared/workflow";
-import { Ruler, Check } from "lucide-react";
+import { Check } from "lucide-react";
 export function Preview({
   run,
   select,
@@ -19,6 +19,7 @@ export function Preview({
   zoom,
   projectOverride,
   textEditing = true,
+  rulers = true,
 }: {
   run: number;
   select: boolean;
@@ -28,6 +29,7 @@ export function Preview({
   zoom: number;
   projectOverride?: Project;
   textEditing?: boolean;
+  rulers?: boolean;
 }) {
   const storedProject = useStudio((s) => s.project);
   const selectedText = useStudio((s) => s.selectedText);
@@ -41,7 +43,6 @@ export function Preview({
     candidateRef = useRef<HTMLIFrameElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState(1);
-  const [rulers, setRulers] = useState(true);
   const [inlineText, setInlineText] = useState<string | null>(null);
   const openText = (id: string) => {
     const state = useStudio.getState();
@@ -78,8 +79,8 @@ export function Preview({
       const r = entries[0].contentRect;
       setFit(
         Math.min(
-          (r.width - 56) / project.settings.width,
-          (r.height - 56) / project.settings.height,
+          (r.width - 96) / project.settings.width,
+          (r.height - 72) / project.settings.height,
         ),
       );
     });
@@ -228,14 +229,14 @@ export function Preview({
     );
   }, [s, active]);
   const ticks = (length: number) => {
-    const rough = 70 / s,
+    const rough = 80 / s,
       magnitude = 10 ** Math.floor(Math.log10(rough));
     const step =
       ([1, 2, 5, 10].find((number) => number * magnitude >= rough) ?? 10) *
       magnitude;
     return Array.from(
-      { length: Math.floor(length / step) + 1 },
-      (_, index) => index * step,
+      { length: Math.floor(length / (step / 5)) + 1 },
+      (_, index) => ({ value: (index * step) / 5, major: index % 5 === 0 }),
     );
   };
   const frameStyle = {
@@ -245,7 +246,7 @@ export function Preview({
     transformOrigin: "top left",
   };
   return (
-    <div ref={box} className="preview-area">
+    <div ref={box} className="preview-area" data-rulers={rulers}>
       <div
         className="canvas-wrap"
         style={{
@@ -255,16 +256,24 @@ export function Preview({
       >
         {rulers && (
           <>
+            <div className="preview-ruler-corner" aria-hidden="true">
+              px
+            </div>
             <div
               className="preview-ruler preview-ruler-x"
               aria-label="Horizontal pixel ruler"
             >
-              {ticks(project.settings.width).map((value) => (
+              {ticks(project.settings.width).map(({ value, major }) => (
                 <span
                   key={value}
+                  className={major ? "major" : "minor"}
                   style={{ left: `${(value / project.settings.width) * 100}%` }}
                 >
-                  {value}
+                  {major &&
+                    (value === 0 ||
+                      value * s < project.settings.width * s - 32) && (
+                      <b>{Math.round(value)}</b>
+                    )}
                 </span>
               ))}
             </div>
@@ -272,12 +281,17 @@ export function Preview({
               className="preview-ruler preview-ruler-y"
               aria-label="Vertical pixel ruler"
             >
-              {ticks(project.settings.height).map((value) => (
+              {ticks(project.settings.height).map(({ value, major }) => (
                 <span
                   key={value}
+                  className={major ? "major" : "minor"}
                   style={{ top: `${(value / project.settings.height) * 100}%` }}
                 >
-                  {value}
+                  {major &&
+                    value > 0 &&
+                    value * s < project.settings.height * s - 16 && (
+                      <b>{Math.round(value)}</b>
+                    )}
                 </span>
               ))}
             </div>
@@ -381,15 +395,6 @@ export function Preview({
           />
         )}
       </div>
-      <button
-        className="preview-ruler-toggle"
-        aria-label="Show preview rulers"
-        aria-pressed={rulers}
-        title="Toggle pixel rulers · text snaps to center and safe margins; hold Alt to bypass"
-        onClick={() => setRulers(!rulers)}
-      >
-        <Ruler size={14} />
-      </button>
       <span className="canvas-note">
         {project.settings.width} × {project.settings.height} ·{" "}
         {project.settings.background === "transparent" ? "ALPHA" : "RGB"} ·{" "}

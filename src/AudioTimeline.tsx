@@ -214,11 +214,11 @@ export const AudioTimeline = memo(function AudioTimeline({
               <input
                 type="range"
                 min="0"
-                max="1"
+                max="2"
                 step="0.01"
                 aria-label={`${row.lane} row ${rowIndex + 1} volume`}
                 title="Adjust volume for clips in this row"
-                value={Math.min(1, row.clips[0].volume)}
+                value={row.clips[0].volume}
                 disabled={row.clips.every(
                   (clip) =>
                     p.workflow?.scenes.find(
@@ -280,7 +280,8 @@ export const AudioTimeline = memo(function AudioTimeline({
               return (
                 <div
                   key={clip.id}
-                    data-timeline-kind="audio" data-timeline-id={clip.id}
+                  data-timeline-kind="audio"
+                  data-timeline-id={clip.id}
                   className={`audio-edit-clip ${clip.lane} ${clip.muted ? "muted" : ""} ${selected === clip.id ? "selected" : ""}`}
                   style={{
                     left: (start / duration) * 100 + "%",

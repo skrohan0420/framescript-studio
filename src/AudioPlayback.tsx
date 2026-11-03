@@ -15,6 +15,11 @@ export function AudioPlayback({
   const playing = useStudio((s) => s.playing);
   const nodes = useRef(new Map<string, HTMLAudioElement>());
   const blocked = useRef(new Set<string>());
+  const sources = useRef(new Map<string, string>());
+  const audioContext = useRef<AudioContext | null>(null);
+  const gains = useRef(
+    new Map<string, { source: MediaElementAudioSourceNode; gain: GainNode }>(),
+  );
   const globalTime =
     time +
     (master
@@ -29,6 +34,11 @@ export function AudioPlayback({
         node.pause();
         node.src = "";
         nodes.current.delete(id);
+        sources.current.delete(id);
+        gains.current.get(id)?.source.disconnect();
+        gains.current.get(id)?.gain.disconnect();
+        gains.current.delete(id);
+        blocked.current.delete(id);
       }
     return undefined;
   }, [project.audio]);
@@ -51,6 +61,12 @@ export function AudioPlayback({
         node = new Audio(clip.data);
         node.preload = "auto";
         nodes.current.set(clip.id, node);
+        sources.current.set(clip.id, clip.data);
+      } else if (sources.current.get(clip.id) !== clip.data) {
+        node.pause();
+        node.src = clip.data;
+        sources.current.set(clip.id, clip.data);
+        blocked.current.delete(clip.id);
       }
       const start =
           clip.start + (clip.sceneId ? sceneOffset(project, clip.sceneId) : 0),
@@ -79,12 +95,27 @@ export function AudioPlayback({
           clip.fadeOut ? (clip.length - local) / clip.fadeOut : 1,
         ),
       );
-      node.volume = Math.min(
-        1,
+      const volume =
         clip.volume *
-          envelope *
-          (voiceActive && clip.lane === "music" ? 0.35 : 1),
-      );
+        envelope *
+        (voiceActive && clip.lane === "music" ? 0.35 : 1);
+      if (clip.volume > 1 && !gains.current.has(clip.id)) {
+        try {
+          const context = (audioContext.current ??= new AudioContext());
+          const source = context.createMediaElementSource(node);
+          const gain = context.createGain();
+          source.connect(gain);
+          gain.connect(context.destination);
+          gains.current.set(clip.id, { source, gain });
+        } catch {
+          onError("Audio amplification is unavailable in this browser.");
+        }
+      }
+      const graph = gains.current.get(clip.id);
+      node.volume = graph ? 1 : Math.min(1, volume);
+      if (graph) graph.gain.gain.value = volume;
+      if (playing && audioContext.current?.state === "suspended")
+        void audioContext.current.resume().catch(() => {});
       node.playbackRate = Math.min(
         16,
         Math.max(0.0625, project.settings.speed),
@@ -111,6 +142,14 @@ export function AudioPlayback({
         node.src = "";
       }
       nodes.current.clear();
+      sources.current.clear();
+      for (const { source, gain } of gains.current.values()) {
+        source.disconnect();
+        gain.disconnect();
+      }
+      gains.current.clear();
+      void audioContext.current?.close().catch(() => {});
+      audioContext.current = null;
     },
     [],
   );

@@ -8,6 +8,21 @@ import { newProject } from "../shared/project";
 import { initialWorkflow } from "../shared/workflow";
 import { clipFromAudio } from "../src/audio";
 import { synthesizeSound } from "../shared/audio";
+it("renames current workspace and saved project atomically without replacing workspace edits", async () => {
+  const dir = path.resolve("test-results/db-rename-" + randomUUID());
+  let db = await StudioDatabase.open(dir);
+  const p = newProject();
+  db.putProject("current.frame", p);
+  db.set("currentProject", "current.frame");
+  db.saveWorkspace({ ...p, html: "<h1>Unsaved workspace edit</h1>" });
+  db.renameProject("current.frame", "Renamed");
+  db.close();
+  db = await StudioDatabase.open(dir);
+  expect(db.project("current.frame").name).toBe("Renamed");
+  expect(db.workspace()?.name).toBe("Renamed");
+  expect(db.workspace()?.html).toContain("Unsaved workspace edit");
+  db.close();
+});
 it("retains library-only recordings after timeline deletion and database restart", async () => {
   const dir = path.resolve("test-results/db-audio-library-" + randomUUID());
   const source = clipFromAudio(synthesizeSound("Success chime"), "voice");

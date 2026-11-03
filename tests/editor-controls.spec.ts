@@ -3,10 +3,47 @@ import { newProject, type Project } from "../shared/project";
 import { textTemplates } from "../shared/typography";
 import { clipFromAudio } from "../src/audio";
 import { synthesizeSound } from "../shared/audio";
+
+test("ruler preference survives refresh and disabled rulers leave no canvas border", async ({
+  page,
+}) => {
+  await open(page, newProject());
+  const toggle = page.getByRole("button", {
+    name: "Show preview rulers",
+    exact: true,
+  });
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await toggle.click();
+  await expect(page.locator(".canvas-wrap")).toHaveCSS(
+    "border-top-width",
+    "0px",
+  );
+  await expect(page.locator(".canvas-wrap")).toHaveCSS(
+    "border-left-width",
+    "0px",
+  );
+  await page.reload();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByLabel("Horizontal pixel ruler")).toHaveCount(0);
+  await expect(page.locator(".canvas-wrap")).toHaveCSS(
+    "border-bottom-width",
+    "0px",
+  );
+  await toggle.click();
+  await page.reload();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("Horizontal pixel ruler")).toBeVisible();
+});
 test("fullscreen preview retains playback, seeking, speed and exit controls", async ({
   page,
 }) => {
   await open(page, newProject());
+  await expect(
+    page.locator(".center > .transport .transport-preview-controls"),
+  ).toBeVisible();
+  await expect(page.locator(".preview-area .preview-ruler-toggle")).toHaveCount(
+    0,
+  );
   await page
     .getByRole("button", { name: "Full screen preview", exact: true })
     .click();
@@ -94,6 +131,14 @@ test("live text editing, snapping, split and delete work from preview and timeli
   await expect(frame.locator("[data-fs-text] > span")).toHaveText(
     "From the timeline",
   );
+  await expect(page.getByLabel("Horizontal pixel ruler")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Show preview rulers", exact: true })
+    .click();
+  await expect(page.getByLabel("Horizontal pixel ruler")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Show preview rulers", exact: true })
+    .click();
   await expect(page.getByLabel("Horizontal pixel ruler")).toBeVisible();
   const overlay = frame.locator("[data-fs-text]");
   const box = (await overlay.locator("span").boundingBox())!;

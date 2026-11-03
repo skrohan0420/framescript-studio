@@ -9,6 +9,7 @@ import {
 } from "react";
 import Editor from "./LazyEditor";
 import { PromptTemplates } from "./PromptTemplates";
+import { PromptDrawer } from "./PromptDrawer";
 import { readEditorTabs, saveEditorTabs } from "./editor-tabs";
 import { ClipsPanel } from "./ClipsPanel";
 import { TypographyPanel } from "./TypographyPanel";
@@ -55,6 +56,7 @@ import {
   Plus,
   Redo2,
   RotateCcw,
+  Ruler,
   Save,
   Send,
   Settings2,
@@ -127,6 +129,21 @@ export function App() {
   const [productionMode, setProductionMode] = useState(true);
   const [leftView, setLeftView] = useState("code");
   const [promptsOpen, setPromptsOpen] = useState(false);
+  const [previewRulers, setPreviewRulers] = useState(() => {
+    try {
+      return localStorage.getItem("framescript.preview-rulers.v1") !== "false";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "framescript.preview-rulers.v1",
+        String(previewRulers),
+      );
+    } catch {}
+  }, [previewRulers]);
   const [libraryTool, setLibraryTool] = useState("script");
   const [libraryToolLoaded, setLibraryToolLoaded] = useState(false);
   const [selectedAudio, setSelectedAudio] = useState<string>();
@@ -141,6 +158,12 @@ export function App() {
     ? { ...imagePlacement, width: p.settings.width, height: p.settings.height }
     : imagePlacement;
   const [assetsCollapsed, setAssetsCollapsed] = useState(true);
+  const [compactInspector, setCompactInspector] = useState(false);
+  const [exportStorage, setExportStorage] = useState<{
+    files: number;
+    bytes: number;
+    retentionDays: number;
+  } | null>(null);
   const [pasteDocument, setPasteDocument] = useState("");
   const [pasteError, setPasteError] = useState("");
   const jumpLine = useRef<{ line: number; column: number } | null>(null);
@@ -718,6 +741,8 @@ export function App() {
   };
   const importFiles = async (files: FileList | null) => {
     if (!files) return;
+    const session = useStudio.getState().session;
+    let imported = 0;
     for (const file of Array.from(files)) {
       if (!/^image\/(png|jpeg|webp|svg\+xml|gif|avif|bmp)$/.test(file.type)) {
         notify("Unsupported image type");
@@ -734,17 +759,28 @@ export function App() {
         reader.readAsDataURL(file);
       });
       const state = useStudio.getState();
+      if (state.session !== session)
+        throw Error(
+          "Project changed during image import. Import the images again in the intended project.",
+        );
+      const id = crypto.randomUUID();
       state.change(
         {
-          assets: [
-            ...state.project.assets,
-            { id: crypto.randomUUID(), name: file.name, data },
-          ],
+          assets: [...state.project.assets, { id, name: file.name, data }],
         },
         "Import asset",
       );
+      if (!useStudio.getState().project.assets.some((asset) => asset.id === id))
+        throw Error(
+          useStudio.getState().error || "Image could not be imported.",
+        );
+      imported++;
+      setAssetsCollapsed(false);
+      setSelectedAsset(id);
+      setSelectedAudio(undefined);
+      setRightTab("project");
     }
-    setNotice("Assets imported");
+    if (imported) setNotice("Assets imported");
   };
   const refreshModels = () =>
     void act(async () => {
@@ -1133,6 +1169,36 @@ export function App() {
         }}
       />
     ) : null;
+  const previewControls = (
+    <div className="transport-preview-controls">
+      <button
+        className="ruler-control"
+        aria-label="Show preview rulers"
+        aria-pressed={previewRulers}
+        title="Show or hide pixel rulers"
+        onClick={() => setPreviewRulers((value) => !value)}
+      >
+        <Ruler size={14} />
+        <span>Rulers</span>
+      </button>
+      <button
+        title="Zoom out"
+        onClick={() => setZoom(Math.max(0.1, zoom - 0.1))}
+      >
+        <ZoomOut size={14} />
+      </button>
+      <button
+        aria-label="Fit preview"
+        title="Fit preview"
+        onClick={() => setZoom(1)}
+      >
+        <Maximize2 size={14} />
+      </button>
+      <button title="Zoom in" onClick={() => setZoom(Math.min(4, zoom + 0.1))}>
+        <ZoomIn size={14} />
+      </button>
+    </div>
+  );
   if (!storageReady)
     return (
       <main className="modal" role="status">
@@ -1148,7 +1214,10 @@ export function App() {
       <>
         <TabIdentity name={p.name} home />
         <ProjectHome
-          onRenameCurrent={(name) => s.change({ name }, "Rename project")}
+          onRenameCurrent={async (name) => {
+            useStudio.getState().change({ name }, "Rename project");
+            await bridge.call("autosave", useStudio.getState().project);
+          }}
           workspace={p}
           onContinue={enterEditor}
           onCreate={async (options) => {
@@ -1206,6 +1275,7 @@ export function App() {
   return (
     <div
       className={"app " + (light ? "light" : "")}
+      data-compact-inspector={compactInspector}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
@@ -1226,6 +1296,14 @@ export function App() {
         }}
       />
       <header className="toolbar">
+        <button
+          className="compact-inspector-toggle"
+          aria-label={compactInspector ? "Show library" : "Show inspector"}
+          title={compactInspector ? "Show library" : "Show inspector"}
+          onClick={() => setCompactInspector((value) => !value)}
+        >
+          <Settings2 size={17} />
+        </button>
         <button
           aria-label="Project home"
           title="Save and return to project home"
@@ -1455,23 +1533,17 @@ export function App() {
           gridTemplateColumns: `${visibleLeftWidth}px ${leftHidden ? "0" : "5"}px minmax(250px,1fr) ${rightHidden ? "0" : "5"}px ${visibleRightWidth}px`,
         }}
       >
-        {promptsOpen && (
-          <aside
-            id="prompt-builder-panel"
-            className="prompt-drawer"
-            aria-label="Prompt builder panel"
-          >
-            <PromptTemplates
-              master={masterMode}
-              onClose={() => setPromptsOpen(false)}
-              onPaste={() => {
-                selectLeftView("code");
-                setPasteError("");
-                setModal("paste-code");
-              }}
-            />
-          </aside>
-        )}
+        <PromptDrawer open={promptsOpen}>
+          <PromptTemplates
+            master={masterMode}
+            onClose={() => setPromptsOpen(false)}
+            onPaste={() => {
+              selectLeftView("code");
+              setPasteError("");
+              setModal("paste-code");
+            }}
+          />
+        </PromptDrawer>
         <aside
           className="code-panel"
           style={{ visibility: leftHidden ? "hidden" : "visible" }}
@@ -2035,33 +2107,20 @@ export function App() {
               onReady={handleReady}
               onVisual={handleVisual}
               zoom={zoom}
+              rulers={previewRulers}
             />
-            <div className="zoom-controls">
-              <button
-                title="Zoom out"
-                onClick={() => setZoom(Math.max(0.1, zoom - 0.1))}
-              >
-                <ZoomOut size={14} />
-              </button>
-              <button
-                aria-label="Fit preview"
-                title="Fit preview"
-                onClick={() => setZoom(1)}
-              >
-                <Maximize2 size={14} />
-              </button>
-              <button
-                title="Zoom in"
-                onClick={() => setZoom(Math.min(4, zoom + 0.1))}
-              >
-                <ZoomIn size={14} />
-              </button>
-            </div>
             <div className="fullscreen-controls">
-              <PlayerTransport masterMode={masterMode} fullscreen />
+              <PlayerTransport
+                masterMode={masterMode}
+                fullscreen
+                previewControls={previewControls}
+              />
             </div>
           </div>
-          <PlayerTransport masterMode={masterMode} />
+          <PlayerTransport
+            masterMode={masterMode}
+            previewControls={previewControls}
+          />
           {s.error && (
             <div className="preview-error" role="alert">
               <span>
@@ -2689,6 +2748,45 @@ export function App() {
         open={modal === "settings"}
         onClose={() => setModal("")}
       >
+        <div className="settings-section">
+          <h3>Rendered files</h3>
+          <p>
+            Local render copies expire after 7 days. Clearing them removes
+            completed download links; files saved to your chosen destination
+            stay intact.
+          </p>
+          <button
+            onClick={() =>
+              void act(async () =>
+                setExportStorage(await bridge.call("exportStorage")),
+              )
+            }
+          >
+            Check retained renders
+          </button>
+          {exportStorage && (
+            <p role="status">
+              {exportStorage.files} files ·{" "}
+              {(exportStorage.bytes / 1_000_000).toFixed(1)} MB retained
+            </p>
+          )}
+          <button
+            onClick={() => {
+              if (
+                confirm(
+                  "Clear completed local render copies? Their download links will stop working. Active renders and downloads will be kept.",
+                )
+              )
+                void act(async () => {
+                  setExportStorage(await bridge.call("clearExportFiles"));
+                  for (const job of exports.jobs)
+                    if (job.status === "completed") exports.dismiss(job.id);
+                });
+            }}
+          >
+            Clear completed renders
+          </button>
+        </div>
         <div className="settings-section">
           <h3>Brand kit</h3>
           {!manualMode && (

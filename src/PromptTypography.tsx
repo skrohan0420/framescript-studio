@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { RotateCcw } from "lucide-react";
 import type { PromptDraft } from "../shared/prompt-templates";
+import { PromptTextItems } from "./PromptTextItems";
 
 const animations = {
   "Subtle fade": "Text gently fades in and stays still.",
@@ -240,304 +241,334 @@ export function PromptTypography({ draft, update, width, height }: Props) {
         <strong>Typography studio</strong>
         <span>Preview your choices</span>
       </div>
-      <div className="type-preview-heading">
-        <span>
-          Sample preview · {width} × {height}
-        </span>
-        <button
-          aria-label="Replay typography preview"
-          title="Replay typography preview"
-          onClick={() => setReplay((n) => n + 1)}
-        >
-          <RotateCcw size={13} />
-        </button>
-      </div>
-      <div
-        ref={box}
-        className="type-preview"
-        style={{
-          aspectRatio: `${width}/${height}`,
-          maxWidth: height > width ? (240 * width) / height : undefined,
-        }}
-      >
-        <div
-          className="type-preview-stage"
-          data-caption-mode={draft.subtitles}
-          style={
-            {
-              width,
-              height,
-              transform: `scale(${previewWidth / width})`,
-              "--type-accent": accent,
-              "--type-entrance": `${seconds}s`,
-            } as CSSProperties
+      <label className="prompt-check">
+        <input
+          type="checkbox"
+          aria-label="Include typography in prompt"
+          checked={draft.typographyEnabled === true}
+          onChange={(event) =>
+            update("typographyEnabled", event.target.checked)
           }
-          key={`${replay}-${animation}-${draft.subtitles}-${seconds}`}
+        />
+        Include text in this video
+      </label>
+      <p className="type-control-help">
+        {draft.typographyEnabled
+          ? "Choose the text you want below. Only enabled items with your content are requested. These controls describe the prompt; generated code must implement them."
+          : "Text is off. Saved typography choices are kept here but excluded from the prompt. No titles, labels, counters or subtitles will be requested."}
+      </p>
+      {draft.typographyEnabled && (
+        <PromptTextItems
+          draft={draft}
+          update={update}
+          width={width}
+          height={height}
+        />
+      )}
+      <div hidden={!draft.typographyEnabled}>
+        <h3>Quick title, narration captions & shared defaults</h3>
+        <div className="type-preview-heading">
+          <span>
+            Sample preview · {width} × {height}
+          </span>
+          <button
+            aria-label="Replay typography preview"
+            title="Replay typography preview"
+            onClick={() => setReplay((n) => n + 1)}
+          >
+            <RotateCcw size={13} />
+          </button>
+        </div>
+        <div
+          ref={box}
+          className="type-preview"
+          style={{
+            aspectRatio: `${width}/${height}`,
+            maxWidth: height > width ? (240 * width) / height : undefined,
+          }}
         >
           <div
-            className="type-preview-orb"
-            style={{
-              width: height * 0.3,
-              height: height * 0.3,
-              left: "55%",
-              top: "25%",
-            }}
-          />
-          <div
-            style={{
-              ...place(draft.titlePlacement ?? "Center"),
-              fontSize: titleSize,
-            }}
+            className="type-preview-stage"
+            data-caption-mode={draft.subtitles}
+            style={
+              {
+                width,
+                height,
+                transform: `scale(${previewWidth / width})`,
+                "--type-accent": accent,
+                "--type-entrance": `${seconds}s`,
+              } as CSSProperties
+            }
+            key={`${replay}-${animation}-${draft.subtitles}-${seconds}`}
           >
             <div
-              style={{ ...common, ...entranceStyle }}
-              data-testid="typography-title-preview"
-            >
-              {animate(draft.screenText || "Your headline")}
-            </div>
-          </div>
-          {subtitles && (
+              className="type-preview-orb"
+              style={{
+                width: height * 0.3,
+                height: height * 0.3,
+                left: "55%",
+                top: "25%",
+              }}
+            />
             <div
               style={{
-                ...place(draft.captionPlacement ?? "Bottom center"),
-                fontSize: captionSize,
+                ...place(draft.titlePlacement ?? "Center"),
+                fontSize: titleSize,
               }}
             >
               <div
-                style={{
-                  ...common,
-                  ...entranceStyle,
-                  display: "-webkit-box",
-                  WebkitBoxOrient: "vertical",
-                  WebkitLineClamp: draft.captionLines ?? 2,
-                  overflow: "hidden",
-                }}
+                style={{ ...common, ...entranceStyle }}
+                data-testid="typography-title-preview"
               >
-                {animate(
-                  (draft.script || "A clear idea, beautifully explained.")
-                    .split(/\s+/)
-                    .slice(0, 10)
-                    .join(" "),
-                  true,
-                )}
+                {animate(draft.screenText || "Your headline")}
               </div>
             </div>
-          )}
+            {subtitles && (
+              <div
+                style={{
+                  ...place(draft.captionPlacement ?? "Bottom center"),
+                  fontSize: captionSize,
+                }}
+              >
+                <div
+                  style={{
+                    ...common,
+                    ...entranceStyle,
+                    display: "-webkit-box",
+                    WebkitBoxOrient: "vertical",
+                    WebkitLineClamp: draft.captionLines ?? 2,
+                    overflow: "hidden",
+                  }}
+                >
+                  {animate(
+                    (draft.script || "A clear idea, beautifully explained.")
+                      .split(/\s+/)
+                      .slice(0, 10)
+                      .join(" "),
+                    true,
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-      <small className="type-control-help">
-        Sample text is only a preview. Add your title or enable subtitles to
-        include text in the scene.
-      </small>
-      <div className="prompt-style-chips">
-        {["Clean explainer", "Bold headline", "Caption focus", "Editorial"].map(
-          (name) => (
+        <small className="type-control-help">
+          Sample text is only a preview. Add your title or enable subtitles to
+          include text in the scene.
+        </small>
+        <div className="prompt-style-chips">
+          {[
+            "Clean explainer",
+            "Bold headline",
+            "Caption focus",
+            "Editorial",
+          ].map((name) => (
             <button key={name} onClick={() => preset(name)}>
               {name}
             </button>
-          ),
-        )}
-      </div>
-      <details className="type-config-group" open>
-        <summary>
-          Titles & labels <small>Your exact words and position</small>
-        </summary>
-        <div className="type-config-fields">
-          <label className="field">
-            <span>Exact title / label text</span>
-            <textarea
-              aria-label="Exact on-screen text (optional)"
-              rows={2}
-              placeholder="Leave empty for no titles or labels"
-              value={draft.screenText}
-              onChange={(e) => update("screenText", e.target.value)}
-            />
-          </label>
-          <div className="type-control-grid">
-            {number("titleSize", "Title size (px)", titleSize, 8, 600)}
-            {select(
-              "titlePlacement",
-              "Title placement",
-              [
-                "Top left",
-                "Top center",
-                "Center",
-                "Bottom left",
-                "Bottom center",
-              ],
-              "Center",
-            )}
-          </div>
+          ))}
         </div>
-      </details>
-      <details className="type-config-group" open>
-        <summary>
-          Subtitles <small>From your narration</small>
-        </summary>
-        <div className="type-config-fields">
-          {select(
-            "subtitles",
-            "Subtitles",
-            [
-              "Off",
-              "Phrase subtitles",
-              "Word-by-word highlight",
-              "Karaoke highlight",
-            ],
-            "Off",
-          )}
-          <small className="type-control-help">
-            {!subtitles
-              ? "No subtitles will be generated."
-              : draft.subtitles === "Phrase subtitles"
-                ? "One readable phrase at a time, following your narration."
-                : draft.subtitles === "Word-by-word highlight"
-                  ? "The current spoken word changes to the accent color. Requires word timing; otherwise highlights phrases."
-                  : "Words keep their highlight as the phrase is spoken. Requires word timing; otherwise highlights phrases."}
-          </small>
-          {subtitles && (
-            <>
-              <div className="type-control-grid">
-                {number(
-                  "captionSize",
-                  "Subtitle size (px)",
-                  captionSize,
-                  8,
-                  300,
-                )}
-                {number(
-                  "captionLines",
-                  "Maximum lines",
-                  draft.captionLines ?? 2,
-                  1,
-                  3,
-                )}
-              </div>
+        <details className="type-config-group" open>
+          <summary>
+            Titles & labels <small>Your exact words and position</small>
+          </summary>
+          <div className="type-config-fields">
+            <label className="field">
+              <span>Exact title / label text</span>
+              <textarea
+                aria-label="Exact on-screen text (optional)"
+                rows={2}
+                placeholder="Leave empty for no titles or labels"
+                value={draft.screenText}
+                onChange={(e) => update("screenText", e.target.value)}
+              />
+            </label>
+            <div className="type-control-grid">
+              {number("titleSize", "Title size (px)", titleSize, 8, 600)}
               {select(
-                "captionPlacement",
-                "Subtitle placement",
-                ["Top center", "Center", "Bottom center"],
-                "Bottom center",
+                "titlePlacement",
+                "Title placement",
+                [
+                  "Top left",
+                  "Top center",
+                  "Center",
+                  "Bottom left",
+                  "Bottom center",
+                ],
+                "Center",
               )}
-            </>
-          )}
-        </div>
-      </details>
-      <details className="type-config-group" open>
-        <summary>
-          Appearance <small>Font, color and readability</small>
-        </summary>
-        <div className="type-config-fields">
-          {select(
-            "textFont",
-            "Font treatment",
-            Object.keys(fonts),
-            "System sans-serif",
-          )}
-          <small className="type-control-help">
-            Uses installed system fonts. Missing fonts fall back to a similar
-            local font.
-          </small>
-          <div className="type-control-grid">
-            {number(
-              "textWeight",
-              "Font weight",
-              draft.textWeight ?? 600,
-              100,
-              900,
-              100,
-            )}
+            </div>
+          </div>
+        </details>
+        <details className="type-config-group" open>
+          <summary>
+            Subtitles <small>From your narration</small>
+          </summary>
+          <div className="type-config-fields">
             {select(
-              "textAlign",
-              "Text alignment",
-              ["left", "center", "right"],
-              "center",
-            )}
-            {number(
-              "textLineHeight",
-              "Line spacing",
-              draft.textLineHeight ?? 1.2,
-              0.8,
-              2.5,
-              0.1,
-            )}
-            {number(
-              "textTracking",
-              "Letter spacing (px)",
-              draft.textTracking ?? 0,
-              -5,
-              20,
-              0.5,
-            )}
-          </div>
-          <div className="type-color-grid">
-            {(
+              "subtitles",
+              "Subtitles",
               [
-                ["textFill", "Text color", fill],
-                ["textAccent", "Highlight color", accent],
-                ["textBacking", "Backing color", backing],
-              ] as const
-            ).map(([key, label, color]) => (
-              <label key={key}>
-                <span>{label}</span>
-                <input
-                  aria-label={label}
-                  type="color"
-                  value={color}
-                  onChange={(e) => update(key, e.target.value)}
-                />
-                <small>{color}</small>
-              </label>
-            ))}
-          </div>
-          {select(
-            "textTreatment",
-            "Readability",
-            [
-              "Soft shadow",
-              "Solid backing",
-              "Translucent pill",
-              "Outline",
-              "Clean text / no effects",
-            ],
-            "Soft shadow",
-          )}
-          <label className="field">
-            <span>Extra color direction (optional)</span>
-            <input
-              aria-label="Text & highlight colors"
-              value={draft.textColor ?? ""}
-              placeholder="e.g. Use coral only on key numbers"
-              onChange={(e) => update("textColor", e.target.value)}
-            />
-          </label>
-        </div>
-      </details>
-      <details className="type-config-group" open>
-        <summary>
-          Animation <small>How text enters the frame</small>
-        </summary>
-        <div className="type-config-fields">
-          {select(
-            "textAnimation",
-            "Text animation",
-            Object.keys(animations),
-            "Subtle fade",
-          )}
-          <small className="type-control-help">
-            {animations[animation as keyof typeof animations]}
-          </small>
-          {animation !== "No animation" &&
-            number(
-              "textAnimationDuration",
-              "Entrance time (seconds)",
-              seconds,
-              0.1,
-              3,
-              0.1,
+                "Off",
+                "Phrase subtitles",
+                "Word-by-word highlight",
+                "Karaoke highlight",
+              ],
+              "Off",
             )}
-        </div>
-      </details>
+            <small className="type-control-help">
+              {!subtitles
+                ? "No subtitles will be generated."
+                : draft.subtitles === "Phrase subtitles"
+                  ? "One readable phrase at a time, following your narration."
+                  : draft.subtitles === "Word-by-word highlight"
+                    ? "The current spoken word changes to the accent color. Requires word timing; otherwise highlights phrases."
+                    : "Words keep their highlight as the phrase is spoken. Requires word timing; otherwise highlights phrases."}
+            </small>
+            {subtitles && (
+              <>
+                <div className="type-control-grid">
+                  {number(
+                    "captionSize",
+                    "Subtitle size (px)",
+                    captionSize,
+                    8,
+                    300,
+                  )}
+                  {number(
+                    "captionLines",
+                    "Maximum lines",
+                    draft.captionLines ?? 2,
+                    1,
+                    3,
+                  )}
+                </div>
+                {select(
+                  "captionPlacement",
+                  "Subtitle placement",
+                  ["Top center", "Center", "Bottom center"],
+                  "Bottom center",
+                )}
+              </>
+            )}
+          </div>
+        </details>
+        <details className="type-config-group" open>
+          <summary>
+            Appearance <small>Font, color and readability</small>
+          </summary>
+          <div className="type-config-fields">
+            {select(
+              "textFont",
+              "Font treatment",
+              Object.keys(fonts),
+              "System sans-serif",
+            )}
+            <small className="type-control-help">
+              Uses installed system fonts. Missing fonts fall back to a similar
+              local font.
+            </small>
+            <div className="type-control-grid">
+              {number(
+                "textWeight",
+                "Font weight",
+                draft.textWeight ?? 600,
+                100,
+                900,
+                100,
+              )}
+              {select(
+                "textAlign",
+                "Text alignment",
+                ["left", "center", "right"],
+                "center",
+              )}
+              {number(
+                "textLineHeight",
+                "Line spacing",
+                draft.textLineHeight ?? 1.2,
+                0.8,
+                2.5,
+                0.1,
+              )}
+              {number(
+                "textTracking",
+                "Letter spacing (px)",
+                draft.textTracking ?? 0,
+                -5,
+                20,
+                0.5,
+              )}
+            </div>
+            <div className="type-color-grid">
+              {(
+                [
+                  ["textFill", "Text color", fill],
+                  ["textAccent", "Highlight color", accent],
+                  ["textBacking", "Backing color", backing],
+                ] as const
+              ).map(([key, label, color]) => (
+                <label key={key}>
+                  <span>{label}</span>
+                  <input
+                    aria-label={label}
+                    type="color"
+                    value={color}
+                    onChange={(e) => update(key, e.target.value)}
+                  />
+                  <small>{color}</small>
+                </label>
+              ))}
+            </div>
+            {select(
+              "textTreatment",
+              "Readability",
+              [
+                "Soft shadow",
+                "Solid backing",
+                "Translucent pill",
+                "Outline",
+                "Clean text / no effects",
+              ],
+              "Soft shadow",
+            )}
+            <label className="field">
+              <span>Extra color direction (optional)</span>
+              <input
+                aria-label="Text & highlight colors"
+                value={draft.textColor ?? ""}
+                placeholder="e.g. Use coral only on key numbers"
+                onChange={(e) => update("textColor", e.target.value)}
+              />
+            </label>
+          </div>
+        </details>
+        <details className="type-config-group" open>
+          <summary>
+            Animation <small>How text enters the frame</small>
+          </summary>
+          <div className="type-config-fields">
+            {select(
+              "textAnimation",
+              "Text animation",
+              Object.keys(animations),
+              "Subtle fade",
+            )}
+            <small className="type-control-help">
+              {animations[animation as keyof typeof animations]}
+            </small>
+            {animation !== "No animation" &&
+              number(
+                "textAnimationDuration",
+                "Entrance time (seconds)",
+                seconds,
+                0.1,
+                3,
+                0.1,
+              )}
+          </div>
+        </details>
+      </div>
     </>
   );
 }

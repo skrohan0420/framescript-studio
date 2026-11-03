@@ -7,6 +7,11 @@ import {
   audioManifestSource,
 } from "../shared/generated-audio";
 import { retainAudioSources } from "../shared/audio-library";
+import {
+  assertProjectSize,
+  projectBytes,
+  MAX_PROJECT_BYTES,
+} from "../shared/project-size";
 type Snapshot = { project: Project; label: string };
 interface State {
   project: Project;
@@ -14,6 +19,7 @@ interface State {
   future: Snapshot[];
   dirty: boolean;
   revision: number;
+  session: number;
   time: number;
   playing: boolean;
   error: string;
@@ -53,6 +59,7 @@ export const useStudio = create<State>((set, get) => ({
   future: [],
   dirty: false,
   revision: 0,
+  session: 0,
   time: 0,
   playing: false,
   error: "",
@@ -125,6 +132,11 @@ export const useStudio = create<State>((set, get) => ({
     }
     try {
       project = retainAudioSources(project, s.project);
+      if (
+        projectBytes(project) > MAX_PROJECT_BYTES &&
+        projectBytes(project) >= projectBytes(s.project)
+      )
+        assertProjectSize(project);
     } catch (error) {
       set({ error: (error as Error).message });
       return;
@@ -137,9 +149,10 @@ export const useStudio = create<State>((set, get) => ({
       revision: s.revision + 1,
     });
   },
-  load: (p) =>
+  load: (p) => {
+    const project = retainAudioSources(projectSchema.parse(p));
     set((s) => ({
-      project: retainAudioSources(projectSchema.parse(p)),
+      project,
       selectedText: null,
       past: [],
       future: [],
@@ -147,7 +160,9 @@ export const useStudio = create<State>((set, get) => ({
       playing: false,
       dirty: false,
       revision: s.revision + 1,
-    })),
+      session: s.session + 1,
+    }));
+  },
   undo: () => {
     const s = get(),
       last = s.past.at(-1);

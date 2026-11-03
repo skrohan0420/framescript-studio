@@ -10,12 +10,15 @@ import {
 } from "lucide-react";
 import { useStudio } from "./store";
 import { totalDuration } from "../shared/workflow";
+import type { ReactNode } from "react";
 export function PlayerTransport({
   masterMode,
   fullscreen = false,
+  previewControls,
 }: {
   masterMode: boolean;
   fullscreen?: boolean;
+  previewControls?: ReactNode;
 }) {
   const s = useStudio(),
     p = s.project;
@@ -81,6 +84,7 @@ export function PlayerTransport({
           {s.time.toFixed(2)} <span>/ {playbackDuration.toFixed(2)} s</span>
         </code>
         <span className="toolbar-spacer" />
+        {previewControls}
         <label className="player-speed">
           <Gauge size={15} aria-hidden="true" />
           <select

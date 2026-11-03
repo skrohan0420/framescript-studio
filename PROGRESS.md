@@ -1,3 +1,7 @@
+# Assessment fixes — November 3, 2026
+
+Fixed the assessed audio-source/gain, save-size, rename ordering, image-import visibility/context, dialog keyboard, compact-layout and completed-export retention problems. Project additions/imports now have a 90 MB serialized budget; completed local render copies expire after seven days and can be inspected/cleared in Settings. Build, 124 unit tests, all 61 production browser tests, HTTP/server checks, credential restart, all-format rendering and audio/video integration passed. See VERIFICATION.md for evidence and limits. Restart the running backend and refresh the browser to load the changes.
+
 # Concurrent timeline exports — November 2, 2026
 
 Multiple timeline exports now run as separate jobs, with two render slots and a FIFO queue. The minimized floating box lists per-clip progress, timeline, status, cancellation and completed downloads. Each export keeps its submitted snapshot and settings. Build/TypeScript, 104 unit tests, all 52 production browser checks and real concurrent HTTP export/cancellation checks passed. See VERIFICATION.md and README.md. Backend restarted after a saved-database backup; refresh the app to load the new flow.

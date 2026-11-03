@@ -228,15 +228,14 @@ test("prompt templates build, copy and preserve a brief without an AI connection
   const tabs = panel.getByRole("tablist", { name: "Prompt sections" });
   const select = async (name: string) =>
     tabs.getByRole("tab", { name, exact: true }).click();
-  await select("Look & edit");
+  await select("Visuals");
   await expect(panel.getByLabel("Prompt script", { exact: true })).toBeHidden();
   await expect(panel.getByRole("tabpanel")).toHaveCount(1);
-  await panel
-    .getByLabel("Reference-inspired look", { exact: true })
-    .selectOption({ label: "Kurzgesagt-inspired" });
-  await panel
-    .getByLabel("Editing & pacing style", { exact: true })
-    .selectOption({ label: "Match-cut montage" });
+  await select("Reference look");
+  await panel.getByRole("radio", { name: /^Kurzgesagt-inspired/ }).click();
+  await select("Editing & pacing");
+  await panel.getByRole("radio", { name: /^Match-cut montage/ }).click();
+  await select("Visuals");
   await panel
     .getByLabel("Visual style", { exact: true })
     .fill("Ink blue and warm gold");
@@ -245,6 +244,9 @@ test("prompt templates build, copy and preserve a brief without an AI connection
     .getByLabel("Character / subject identity", { exact: true })
     .fill("A small robot with one blue eye");
   await select("Typography");
+  await panel
+    .getByLabel("Include typography in prompt", { exact: true })
+    .check();
   await panel
     .getByLabel("Exact on-screen text (optional)", { exact: true })
     .fill("THE MILKY WAY");
@@ -362,12 +364,12 @@ test("prompt templates build, copy and preserve a brief without an AI connection
   await expect(panel.getByLabel("Generated prompt")).toContainText(
     "EXISTING CODE TO REPAIR",
   );
-  await select("Look & edit");
+  await select("Visuals");
   await tabs
-    .getByRole("tab", { name: "Look & edit", exact: true })
+    .getByRole("tab", { name: "Visuals", exact: true })
     .press("ArrowRight");
   await expect(
-    tabs.getByRole("tab", { name: "Identity", exact: true }),
+    tabs.getByRole("tab", { name: "Reference look", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   const footer = (await panel.locator(".prompt-actions").boundingBox())!;
   const body = (await panel.locator(".prompt-form-scroll").boundingBox())!;

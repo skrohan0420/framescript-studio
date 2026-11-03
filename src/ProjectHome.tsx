@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   Code2,
   Home,
@@ -43,7 +44,7 @@ export function ProjectHome({
   onCreate: (options: HomeProjectOptions) => Promise<void>;
   onOpen: (id: string) => Promise<void>;
   onImport: () => Promise<void>;
-  onRenameCurrent?: (name: string) => void;
+  onRenameCurrent?: (name: string) => Promise<void>;
 }) {
   const [section, setSection] = useState("home"),
     [projects, setProjects] = useState<ProjectSummary[]>([]),
@@ -55,11 +56,12 @@ export function ProjectHome({
     [error, setError] = useState("");
   const [create, setCreate] = useState(false),
     [name, setName] = useState("Untitled project"),
-    [format, setFormat] = useState("3840x2160"),
-    [fps, setFps] = useState(60),
+    [format, setFormat] = useState("1920x1080"),
+    [fps, setFps] = useState(30),
     [tool, setTool] = useState("code");
   const [rename, setRename] = useState<ProjectSummary | null>(null),
     [renameValue, setRenameValue] = useState("");
+  const returnFocus = useRef<HTMLElement | null>(null);
   const refresh = async () => {
     setLoading(true);
     try {
@@ -92,6 +94,7 @@ export function ProjectHome({
       sort === "name" ? a.name.localeCompare(b.name) : b.updated - a.updated,
     );
   const openCreate = (view = "code") => {
+    returnFocus.current = document.activeElement as HTMLElement;
     setTool(view);
     setCreate(true);
   };
@@ -368,6 +371,8 @@ export function ProjectHome({
                           aria-label={`Rename ${project.name}`}
                           title="Rename"
                           onClick={() => {
+                            returnFocus.current =
+                              document.activeElement as HTMLElement;
                             setRename(project);
                             setRenameValue(project.name);
                           }}
@@ -408,127 +413,162 @@ export function ProjectHome({
         </section>
       </main>
       {create && (
-        <div className="home-modal-backdrop">
-          <form
-            className="home-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Create project"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const [width, height] = format.split("x").map(Number);
-              void act(async () => {
-                await onCreate({
-                  name: name.trim() || "Untitled project",
-                  width,
-                  height,
-                  fps,
-                  duration: 10,
-                  tool,
-                });
-                setCreate(false);
-              });
-            }}
-          >
-            <div>
-              <h2>A fresh start.</h2>
-              <button
-                type="button"
-                aria-label="Close create project"
-                onClick={() => setCreate(false)}
+        <Dialog.Root open={create} onOpenChange={setCreate}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="home-modal-backdrop">
+              <Dialog.Content
+                asChild
+                aria-labelledby={undefined}
+                onCloseAutoFocus={(event) => {
+                  event.preventDefault();
+                  returnFocus.current?.focus();
+                }}
               >
-                <X size={18} />
-              </button>
-            </div>
-            <p>Set up your canvas. You can change these later.</p>
-            <label className="field">
-              <span>Project name</span>
-              <input
-                autoFocus
-                aria-label="New project name"
-                maxLength={200}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </label>
-            <label className="field">
-              <span>Canvas</span>
-              <select
-                aria-label="New project canvas"
-                value={format}
-                onChange={(event) => setFormat(event.target.value)}
-              >
-                <option value="3840x2160">4K · Landscape · 16:9</option>
-                <option value="1920x1080">1080p · Landscape · 16:9</option>
-                <option value="2160x3840">4K · Portrait · 9:16</option>
-                <option value="1080x1920">1080p · Portrait · 9:16</option>
-                <option value="1080x1080">Square · 1:1</option>
-              </select>
-            </label>
-            <div>
-              <label className="field">
-                <span>Frame rate</span>
-                <select
-                  aria-label="New project frame rate"
-                  value={fps}
-                  onChange={(event) => setFps(Number(event.target.value))}
+                <form
+                  className="home-modal"
+                  aria-label="Create project"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const [width, height] = format.split("x").map(Number);
+                    void act(async () => {
+                      await onCreate({
+                        name: name.trim() || "Untitled project",
+                        width,
+                        height,
+                        fps,
+                        duration: 10,
+                        tool,
+                      });
+                      setCreate(false);
+                    });
+                  }}
                 >
-                  <option value={24}>24 fps</option>
-                  <option value={30}>30 fps</option>
-                  <option value={60}>60 fps</option>
-                </select>
-              </label>
-            </div>
-            <button
-              className="primary home-modal-submit"
-              disabled={busy}
-              type="submit"
-            >
-              <Plus size={16} /> Create project
-            </button>
-          </form>
-        </div>
+                  <div>
+                    <Dialog.Title asChild>
+                      <h2>A fresh start.</h2>
+                    </Dialog.Title>
+                    <button
+                      type="button"
+                      aria-label="Close create project"
+                      onClick={() => setCreate(false)}
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <Dialog.Description asChild>
+                    <p>Set up your canvas. You can change these later.</p>
+                  </Dialog.Description>
+                  <label className="field">
+                    <span>Project name</span>
+                    <input
+                      autoFocus
+                      aria-label="New project name"
+                      maxLength={200}
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Canvas</span>
+                    <select
+                      aria-label="New project canvas"
+                      value={format}
+                      onChange={(event) => setFormat(event.target.value)}
+                    >
+                      <option value="3840x2160">4K · Landscape · 16:9</option>
+                      <option value="1920x1080">
+                        1080p · Landscape · 16:9
+                      </option>
+                      <option value="2160x3840">4K · Portrait · 9:16</option>
+                      <option value="1080x1920">1080p · Portrait · 9:16</option>
+                      <option value="1080x1080">Square · 1:1</option>
+                    </select>
+                  </label>
+                  <div>
+                    <label className="field">
+                      <span>Frame rate</span>
+                      <select
+                        aria-label="New project frame rate"
+                        value={fps}
+                        onChange={(event) => setFps(Number(event.target.value))}
+                      >
+                        <option value={24}>24 fps</option>
+                        <option value={30}>30 fps</option>
+                        <option value={60}>60 fps</option>
+                      </select>
+                    </label>
+                  </div>
+                  <button
+                    className="primary home-modal-submit"
+                    disabled={busy}
+                    type="submit"
+                  >
+                    <Plus size={16} /> Create project
+                  </button>
+                </form>
+              </Dialog.Content>
+            </Dialog.Overlay>
+          </Dialog.Portal>
+        </Dialog.Root>
       )}
       {rename && (
-        <div className="home-modal-backdrop">
-          <form
-            className="home-modal"
-            role="dialog"
-            aria-label="Rename project"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void act(async () => {
-                await bridge.call(
-                  "projectRename",
-                  rename.id,
-                  renameValue.trim(),
-                );
-                if (rename.current) onRenameCurrent?.(renameValue.trim());
-                setRename(null);
-              });
-            }}
-          >
-            <h2>Rename project</h2>
-            <input
-              autoFocus
-              aria-label="Project title"
-              maxLength={200}
-              value={renameValue}
-              onChange={(event) => setRenameValue(event.target.value)}
-            />
-            <div className="modal-actions">
-              <button type="button" onClick={() => setRename(null)}>
-                Cancel
-              </button>
-              <button
-                className="primary"
-                disabled={!renameValue.trim() || busy}
+        <Dialog.Root
+          open={!!rename}
+          onOpenChange={(open) => !open && setRename(null)}
+        >
+          <Dialog.Portal>
+            <Dialog.Overlay className="home-modal-backdrop">
+              <Dialog.Content
+                asChild
+                aria-describedby={undefined}
+                onCloseAutoFocus={(event) => {
+                  event.preventDefault();
+                  returnFocus.current?.focus();
+                }}
               >
-                Save name
-              </button>
-            </div>
-          </form>
-        </div>
+                <form
+                  className="home-modal"
+                  aria-label="Rename project"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void act(async () => {
+                      if (rename.current)
+                        await onRenameCurrent?.(renameValue.trim());
+                      await bridge.call(
+                        "projectRename",
+                        rename.id,
+                        renameValue.trim(),
+                      );
+                      setRename(null);
+                    });
+                  }}
+                >
+                  <Dialog.Title asChild>
+                    <h2>Rename project</h2>
+                  </Dialog.Title>
+                  <input
+                    autoFocus
+                    aria-label="Project title"
+                    maxLength={200}
+                    value={renameValue}
+                    onChange={(event) => setRenameValue(event.target.value)}
+                  />
+                  <div className="modal-actions">
+                    <button type="button" onClick={() => setRename(null)}>
+                      Cancel
+                    </button>
+                    <button
+                      className="primary"
+                      disabled={!renameValue.trim() || busy}
+                    >
+                      Save name
+                    </button>
+                  </div>
+                </form>
+              </Dialog.Content>
+            </Dialog.Overlay>
+          </Dialog.Portal>
+        </Dialog.Root>
       )}
     </div>
   );
