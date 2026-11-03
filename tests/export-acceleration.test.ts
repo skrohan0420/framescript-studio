@@ -22,7 +22,10 @@ const options: ExportOptions = {
 };
 const root = path.resolve("test-results");
 it("uses faster capture only for lossy opaque video and honors lossless selection", () => {
-  expect(plan.captureFormat({ ...options, format: "mp4" })).toBe("jpeg");
+  expect(plan.captureFormat({ ...options, format: "mp4" })).toBe("png");
+  expect(
+    plan.captureFormat({ ...options, format: "mp4", captureMode: "fast" }),
+  ).toBe("jpeg");
   expect(
     plan.captureFormat({ ...options, format: "mp4", captureMode: "lossless" }),
   ).toBe("png");
@@ -97,6 +100,33 @@ it("caps concurrency and preserves sequential replay, networking and snapshots",
   expect(plan.renderWorkerCount(project, { ...options, format: "png" })).toBe(
     1,
   );
+});
+it("selects direct Three.js capture only with explicit hardware graphics and limits 4K GPU readback contention", () => {
+  const project = newProject();
+  const video = {
+    ...options,
+    format: "mp4" as const,
+    width: 3840,
+    height: 2160,
+  };
+  project.html = '<div><canvas width="3840" height="2160"></canvas></div>';
+  project.js = "FrameScript3D.create({});";
+  expect(plan.graphicsBackend(project, video, "win32")).toBe("angle");
+  expect(
+    plan.graphicsBackend(project, { ...video, graphics: "browser" }, "win32"),
+  ).toBe("auto");
+  expect(plan.graphicsBackend(project, video, "linux")).toBe("auto");
+  expect(plan.preferDirectCanvas(project, video)).toBe(false);
+  expect(plan.preferDirectCanvas(project, video, "software")).toBe(false);
+  expect(plan.preferDirectCanvas(project, video, "angle")).toBe(true);
+  expect(
+    plan.renderWorkerCount(project, video, { rawCanvas: true, gpu: "angle" }),
+  ).toBe(1);
+  project.js = 'document.querySelector("canvas").getContext("2d")';
+  expect(plan.graphicsBackend(project, video, "win32")).toBe("auto");
+  expect(plan.preferDirectCanvas(project, video)).toBe(true);
+  project.html = "<div>HTML scene</div>";
+  expect(plan.preferDirectCanvas(project, video, "angle")).toBe(false);
 });
 it("fast parallel PNG capture matches serial pixels, timing and frame order exactly", async () => {
   const dir = await folder(),

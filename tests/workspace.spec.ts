@@ -81,8 +81,12 @@ test("local Node backend saves, reopens, imports assets and downloads an MP4", a
     .first()
     .click();
   const dialog = page.getByRole("dialog", { name: "Export animation" });
+  await dialog.locator(".export-advanced > summary").click();
   await dialog
     .getByLabel("Export resolution", { exact: true })
+    .selectOption("custom");
+  await dialog
+    .getByLabel("Export frame rate", { exact: true })
     .selectOption("custom");
   for (const [label, value] of [
     ["width", "320"],

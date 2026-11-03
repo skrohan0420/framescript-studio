@@ -50,7 +50,10 @@ it("direct 4K pixels equal browser PNG pixels at multiple timestamps; network st
   const raw = await rawCanvasTransport(width, height);
   const browser = await chromium.launch();
   try {
-    const page = await browser.newPage({ viewport: { width, height } });
+    const page = await browser.newPage({
+      viewport: { width, height },
+      ignoreHTTPSErrors: true,
+    });
     const session = await page.context().newCDPSession(page);
     await isolateRawCanvas(session, raw.urlPrefix);
     await page.setContent(
@@ -60,6 +63,15 @@ it("direct 4K pixels equal browser PNG pixels at multiple timestamps; network st
       }),
     );
     await page.evaluate(() => document.fonts.ready);
+    // Streaming must not allocate a Blob for each raw frame: that exhausted
+    // Chromium's Blob quota during long 4K/60 exports.
+    await page.evaluate(() => {
+      (window as any).Blob = class {
+        constructor() {
+          throw Error("Raw capture must not create a Blob");
+        }
+      };
+    });
     for (const t of [0, 1 / 60, 59 / 60]) {
       await page.evaluate((t) => (window as any).__fsSeek(t), t);
       const actual = await raw.capture(page);
@@ -91,11 +103,96 @@ it("direct 4K pixels equal browser PNG pixels at multiple timestamps; network st
   }
 }, 60000);
 
+it("reads preserved WebGL through neutral wrappers and restores GL state", async () => {
+  const width = 161,
+    height = 91;
+  const raw = await rawCanvasTransport(width, height);
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({
+      viewport: { width, height },
+      ignoreHTTPSErrors: true,
+    });
+    const session = await page.context().newCDPSession(page);
+    await isolateRawCanvas(session, raw.urlPrefix);
+    const p = fixture(width, height);
+    p.html = `<div style="width:100%;height:100%"><canvas width="${width}" height="${height}"></canvas></div>`;
+    p.js = `const gl=document.querySelector('canvas').getContext('webgl2',{preserveDrawingBuffer:true});window.renderFrame=t=>{gl.disable(gl.SCISSOR_TEST);gl.clearColor(.1,.2,.3,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.enable(gl.SCISSOR_TEST);gl.scissor(0,0,70,25);gl.clearColor(t,.7,.2,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.disable(gl.SCISSOR_TEST);gl.pixelStorei(gl.PACK_ALIGNMENT,8)};`;
+    p.js += `window.__readbackFB=gl.createFramebuffer();gl.bindFramebuffer(gl.READ_FRAMEBUFFER,window.__readbackFB);`;
+    await page.setContent(
+      documentFor(p, { export: true, exportTransportOrigin: raw.origin }),
+    );
+    for (const time of [0, 0.5, 1]) {
+      await page.evaluate((t) => (window as any).__fsSeek(t), time);
+      const actual = await raw.capture(page);
+      const png = await session.send("Page.captureScreenshot", {
+        format: "png",
+        optimizeForSpeed: true,
+      });
+      expect(
+        actual.equals(
+          decode(
+            ["-f", "image2pipe", "-vcodec", "png", "-i", "pipe:0"],
+            Buffer.from(png.data, "base64"),
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        await page.evaluate(() =>
+          document
+            .querySelector("canvas")!
+            .getContext("webgl2")!
+            .getParameter(WebGL2RenderingContext.PACK_ALIGNMENT),
+        ),
+      ).toBe(8);
+      expect(
+        await page.evaluate(() => {
+          const gl = document.querySelector("canvas")!.getContext("webgl2")!;
+          return (
+            gl.getParameter(gl.READ_FRAMEBUFFER_BINDING) ===
+            (window as any).__readbackFB
+          );
+        }),
+      ).toBe(true);
+    }
+    for (const change of [
+      "document.querySelector('div').style.filter='blur(1px)'",
+      "document.querySelector('div').style.opacity='.8'",
+      "document.querySelector('div').style.width='80px'",
+      "document.querySelector('div').append('Visible text')",
+      "document.querySelector('div').insertAdjacentHTML('beforeend','<span>Overlay</span>')",
+      "document.querySelector('canvas').getContext('webgl2').pixelStorei(WebGL2RenderingContext.PACK_ROW_LENGTH,200)",
+    ]) {
+      await page.setContent(
+        documentFor(p, { export: true, exportTransportOrigin: raw.origin }),
+      );
+      await page.evaluate((code) => (0, eval)(code), change);
+      await expect(raw.capture(page), change).rejects.toBeInstanceOf(
+        RawCanvasUnsupported,
+      );
+    }
+    p.js = p.js.replace(
+      "preserveDrawingBuffer:true",
+      "preserveDrawingBuffer:false",
+    );
+    await page.setContent(
+      documentFor(p, { export: true, exportTransportOrigin: raw.origin }),
+    );
+    await expect(raw.capture(page)).rejects.toBeInstanceOf(
+      RawCanvasUnsupported,
+    );
+  } finally {
+    await browser.close();
+    await raw.close();
+  }
+}, 30000);
+
 it("rejects overlays, CSS effects, translucent pixels, scaling and extra canvases", async () => {
   const raw = await rawCanvasTransport(160, 90),
     browser = await chromium.launch();
   try {
     const page = await browser.newPage({
+      ignoreHTTPSErrors: true,
       viewport: { width: 160, height: 90 },
     });
     for (const change of [
@@ -196,7 +293,7 @@ it("preserves encoded frame order, restarts for a late overlay, and cleans cance
           if (p.stage === "Rendering" && p.done === 2) controller.abort();
         },
         undefined,
-        { rawCanvas: true },
+        { rawCanvas: true, rawStreaming: true },
       ),
     ).rejects.toThrow("cancelled");
     expect(

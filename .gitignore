@@ -11,3 +11,4 @@ playwright-report/
 
 # Offline scene runtime generated from the pinned Three.js dependency
 shared/three-source.generated.ts
+server/webcodecs-source.generated.ts

@@ -1,8 +1,10 @@
 import { useCallback, useState } from "react";
 import { bridge, exportToFile, type ExportFileHandle } from "./bridge";
 import type { Project, ExportOptions } from "../shared/project";
+import type { RenderMetrics } from "../server/export-plan";
 
 export type ExportJob = {
+  diagnostics?: RenderMetrics;
   id: string;
   name: string;
   timeline: string;
@@ -28,7 +30,13 @@ export function useExports() {
           ? all.find((j) => j.status === "running")?.id
           : undefined);
       return all.map((job) =>
-        job.id === id && job.status === "running" ? { ...job, progress } : job,
+        job.id === id && (job.status === "running" || progress.diagnostics)
+          ? {
+              ...job,
+              progress,
+              diagnostics: progress.diagnostics ?? job.diagnostics,
+            }
+          : job,
       );
     });
   }, []);

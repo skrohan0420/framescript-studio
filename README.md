@@ -230,3 +230,13 @@ Prompt builder → Animation offers 2D, 2.5D and Three.js rendering, eight combi
 For a working example select 3D, copy the starter and use Paste code. Three.js is bundled locally by scripts/prepare-three.mjs during install, dev, build and test. Scenes referencing THREE or FrameScript3D receive the same offline library in preview, nested scenes and exported documents. No network setting or CDN is required. FrameScript3D.create({canvas,width,height,background}) returns scene, camera, renderer, render and dispose; call render() after setting absolute transforms in window.renderFrame(t). The helper uses preserved WebGL buffers and pixel ratio 1. WebGL2 support is required. Existing 2D scenes do not embed the library.
 
 This release supports procedural geometry and core Three.js. Imported GLB models, addons, rigged-character tooling, physics and interactive 3D object editing are future work. Three.js is MIT licensed; its license is retained in the generated runtime. The video exporter uses browser compositor capture for 3D rather than the Canvas 2D raw-pixel optimization.
+
+## Export performance and diagnostics
+
+Long direct-canvas exports now use bounded HTTP/2 streaming to avoid Chromium Blob-quota failures and costly full PNG restarts. Short compatible clips retain the existing fast path. Resolution, FPS, effects and antialiasing are preserved.
+
+Export → Advanced offers **Reuse rendered frames** for deterministic offline projects and **Hardware graphics · Windows** for explicit GPU rendering. Caching reuses unchanged completed files exactly and can reuse frames from unchanged built-in scenes; the first cache fill may be slower. Cache budgets total 2 GiB per workspace, with seven-day expiry. Frame caching uses lossless PNG/direct capture even if Faster mode was selected. Completed jobs expose phase timings, encoder/GPU, cache hits and fallback reasons under **Render details** in the export dock.
+
+WebCodecs/Mediabunny and worker-sampling prototypes remain developer-only because the measured quality/speed gates did not justify enabling them automatically. Mediabunny's MPL-2.0 license notices are retained in its generated browser bundle; the package source/version is available through the lockfile and upstream package.
+
+See [4K/60 benchmark results and reproduction](EXPORT_BENCHMARK_4K60_2026-11-03.md) for measured wins, rejected experiments, limitations and source-frame checks.

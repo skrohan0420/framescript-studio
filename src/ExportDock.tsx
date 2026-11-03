@@ -255,6 +255,49 @@ export function ExportDock({
                 }
               />
               {job.error && <p role="alert">{job.error}</p>}
+              {job.diagnostics && (
+                <details className="export-diagnostics">
+                  <summary>Render details</summary>
+                  <p>
+                    {job.diagnostics.path} · {job.diagnostics.encoder} ·{" "}
+                    {job.diagnostics.workers} workers
+                  </p>
+                  <p>
+                    {job.diagnostics.wallMs
+                      ? `${(job.diagnostics.wallMs / 1000).toFixed(1)} seconds · `
+                      : ""}
+                    {job.diagnostics.cacheHits ?? 0} cached frames
+                  </p>
+                  <p>{job.diagnostics.gpu}</p>
+                  <p>{job.diagnostics.bottleneck}</p>
+                  {job.diagnostics.captureFallback && (
+                    <p>Capture fallback: {job.diagnostics.captureFallback}</p>
+                  )}
+                  {job.diagnostics.graphicsFallback && (
+                    <p>Graphics compatibility mode was used.</p>
+                  )}
+                  <dl className="export-phase-times">
+                    {(
+                      [
+                        ["Startup", job.diagnostics.startupMs],
+                        ["Scene drawing*", job.diagnostics.seekMs],
+                        ["Capture / transfer*", job.diagnostics.captureMs],
+                        ["Encoder drain", job.diagnostics.encoderDrainMs],
+                        ["Verification", job.diagnostics.verificationMs],
+                      ] as const
+                    ).map(([label, time]) => (
+                      <div key={label}>
+                        <dt>{label}</dt>
+                        <dd>{((time ?? 0) / 1000).toFixed(2)}s</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <small>
+                    * Worker totals overlap; they do not add up to export
+                    duration.
+                  </small>
+                </details>
+              )}
             </article>
           );
         })}

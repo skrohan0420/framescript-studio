@@ -136,6 +136,21 @@ export function App() {
       return true;
     }
   });
+  const [previewQuality, setPreviewQuality] = useState<
+    "auto" | "1080" | "full"
+  >(() => {
+    try {
+      const saved = localStorage.getItem("framescript.preview-quality.v1");
+      return saved === "1080" || saved === "full" ? saved : "auto";
+    } catch {
+      return "auto";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("framescript.preview-quality.v1", previewQuality);
+    } catch {}
+  }, [previewQuality]);
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -942,7 +957,10 @@ export function App() {
       fps: p.settings.fps,
       duration: playbackDuration,
       speed: p.settings.speed,
-      quality: 20,
+      quality: 18,
+      captureMode: "lossless",
+      graphics: "auto",
+      acceleration: "auto",
       fit: "fit",
       transparent: false,
       time: useStudio.getState().time,
@@ -2036,6 +2054,20 @@ export function App() {
               <Play size={16} />
             </button>
             <select
+              aria-label="Preview quality"
+              title="3D preview quality only. Auto matches the panel up to 1080p; export resolution and FPS are unchanged. HTML and 2D canvases keep their original coordinates."
+              value={previewQuality}
+              onChange={(event) =>
+                setPreviewQuality(
+                  event.target.value as "auto" | "1080" | "full",
+                )
+              }
+            >
+              <option value="auto">Preview · Auto</option>
+              <option value="1080">Preview · 1080p</option>
+              <option value="full">Preview · Full</option>
+            </select>
+            <select
               aria-label="Canvas aspect ratio"
               value={
                 [
@@ -2099,6 +2131,8 @@ export function App() {
             }}
           >
             <Preview
+              quality={previewQuality}
+              compositionProject={masterMode ? p : undefined}
               textEditing={!masterMode}
               projectOverride={viewProject}
               run={run}
@@ -2991,7 +3025,10 @@ export function App() {
                   }
                 />
               </label>
-              <label className="prompt-check">
+              <label
+                className="prompt-check"
+                title="Choose a folder before rendering, or leave unchecked to use Downloads."
+              >
                 <input
                   type="checkbox"
                   aria-label="Choose where to save export"
@@ -3005,11 +3042,6 @@ export function App() {
                 />{" "}
                 Choose where to save
               </label>
-              <small>
-                {supportsExportPicker()
-                  ? "Choose a folder and filename before rendering, or use your browser’s download location."
-                  : "This browser saves through Downloads. Enable “Ask where to save” in browser settings to choose a folder."}
-              </small>
             </div>
             <ExportSettings
               options={exportOptions}
@@ -3025,9 +3057,10 @@ export function App() {
                 (exportOptions.duration / exportOptions.speed) *
                   exportOptions.fps,
               )}{" "}
-              frames. Single PNG uses the current timeline position. H.264
-              MP4/MKV cannot preserve transparency. Audio is mixed into MP4, MKV
-              and WebM; GIF and PNG outputs are silent.
+              frames ·{" "}
+              {["mp4", "mkv", "webm"].includes(exportOptions.format)
+                ? "Audio included"
+                : "Silent output"}
             </p>
             {exportError && (
               <p

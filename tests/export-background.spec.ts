@@ -5,7 +5,26 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/events", (r) =>
     r.fulfill({
       contentType: "text/event-stream",
-      body: 'data: {"stage":"Rendering","done":167,"total":684,"destination":"test.mp4"}\n\n',
+      body:
+        "data: " +
+        JSON.stringify({
+          stage: "Rendering",
+          done: 167,
+          total: 684,
+          destination: "test.mp4",
+          diagnostics: {
+            path: "browser",
+            encoder: "h264_qsv",
+            workers: 2,
+            wallMs: 1200,
+            cacheHits: 10,
+            gpu: "Test GPU",
+            bottleneck: "Frame capture / transfer",
+            seekMs: 100,
+            captureMs: 200,
+          },
+        }) +
+        "\n\n",
     }),
   );
   await page.route("**/api/workspaceGet", (r) =>
@@ -68,12 +87,18 @@ test("minimizing keeps export running, preserves its settings and leaves editing
   await expect(dock).toContainText("Background film.mp4");
   await expect(dock.getByRole("progressbar")).toBeVisible();
   await expect(dock).toContainText("24%");
-  await dock.getByRole("button", { name: "Dismiss exports panel", exact: true }).click();
+  await dock
+    .getByRole("button", { name: "Dismiss exports panel", exact: true })
+    .click();
   await expect(dock.getByRole("progressbar")).toBeHidden();
   expect(cancelled).toBe(0);
-  await dock.getByRole("button", { name: "Expand exports panel", exact: true }).click();
+  await dock
+    .getByRole("button", { name: "Expand exports panel", exact: true })
+    .click();
   await expect(dock.getByRole("progressbar")).toBeVisible();
-  await expect(dock.getByRole("button", { name: "Cancel all exports", exact: true })).toBeVisible();
+  await expect(
+    dock.getByRole("button", { name: "Cancel all exports", exact: true }),
+  ).toBeVisible();
   await expect(dock.getByRole("progressbar")).toHaveAttribute(
     "title",
     "167/684 frames",
@@ -104,7 +129,12 @@ test("minimizing keeps export running, preserves its settings and leaves editing
   await expect(settings).toBeVisible();
   await settings.getByRole("button", { name: "Close", exact: true }).click();
   await expect(dock).toContainText("Complete");
-  await dock.getByRole("button", { name: "Dismiss exports panel", exact: true }).click();
+  await dock.getByText("Render details", { exact: true }).click();
+  await expect(dock).toContainText("10 cached frames");
+  await expect(dock).toContainText("Test GPU");
+  await dock
+    .getByRole("button", { name: "Dismiss exports panel", exact: true })
+    .click();
   await expect(dock).toHaveCount(0);
 });
 

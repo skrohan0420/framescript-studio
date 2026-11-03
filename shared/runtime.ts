@@ -2,6 +2,7 @@ import type { Project } from "./project";
 import { typographyRuntime } from "./typography-runtime";
 import { threeSource } from "./three-source.generated";
 import { threeRuntime } from "./three-runtime";
+import { directCanvas } from "./direct-canvas";
 // This function is serialized verbatim into the unprivileged document.
 function runtime(
   replay = false,
@@ -159,7 +160,22 @@ function runtime(
     if (!replay) w.__fsSeek(0);
     if (!failed)
       send("ready", {
-        thumbnail: (() => { try { const source = document.querySelector("canvas"); if (!source?.width || !source.height) return undefined; const image = document.createElement("canvas"); image.width = 384; image.height = 216; const context = image.getContext("2d")!; context.fillStyle = getComputedStyle(document.body).backgroundColor; context.fillRect(0, 0, 384, 216); context.drawImage(source, 0, 0, 384, 216); return image.toDataURL("image/jpeg", .7); } catch { return undefined; } })(),
+        thumbnail: (() => {
+          try {
+            const source = document.querySelector("canvas");
+            if (!source?.width || !source.height) return undefined;
+            const image = document.createElement("canvas");
+            image.width = 384;
+            image.height = 216;
+            const context = image.getContext("2d")!;
+            context.fillStyle = getComputedStyle(document.body).backgroundColor;
+            context.fillRect(0, 0, 384, 216);
+            context.drawImage(source, 0, 0, 384, 216);
+            return image.toDataURL("image/jpeg", 0.7);
+          } catch {
+            return undefined;
+          }
+        })(),
         typography: w.__fsCaptureText?.() ?? [],
         animations: document.getAnimations().map((a) => ({
           name: (a as CSSAnimation).animationName ?? "Web animation",
@@ -207,7 +223,7 @@ export function documentFor(
   const remote = p.settings.network ? " https: http:" : "";
   const transport =
     options?.export &&
-    /^http:\/\/127\.0\.0\.1:\d+$/.test(options.exportTransportOrigin ?? "")
+    /^https?:\/\/127\.0\.0\.1:\d+$/.test(options.exportTransportOrigin ?? "")
       ? ` ${options.exportTransportOrigin}`
       : "";
   const csp = `default-src 'none'; frame-src about:; script-src 'unsafe-inline'${remote}; style-src 'unsafe-inline'${remote}; img-src data: blob:${remote}; font-src data:${remote}; media-src data:; connect-src${remote + transport || " 'none'"}; base-uri 'none'; form-action 'none';`;
@@ -222,6 +238,7 @@ export function documentFor(
   const three = /\b(?:THREE|FrameScript3D)\b/.test(js)
     ? `<script>${safe(threeSource, "script")}</script><script>(()=>{const __name=(fn)=>fn;(${threeRuntime.toString()})()})()</script>`
     : "";
-  const firstLine = (prefix + three).split("\n").length + 1;
-  return `${prefix}${three}<script>window.__fsUserLine=${firstLine}</script><script>\n${safe(js, "script")}\n//# sourceURL=framescript-user.js\n</script></body></html>`;
+  const captureHelper = `<script>(()=>{const __name=(fn)=>fn;window.__fsDirectCanvas=(${directCanvas.toString()})})()</script>`;
+  const firstLine = (prefix + three + captureHelper).split("\n").length + 1;
+  return `${prefix}${three}${captureHelper}<script>window.__fsUserLine=${firstLine}</script><script>\n${safe(js, "script")}\n//# sourceURL=framescript-user.js\n</script></body></html>`;
 }

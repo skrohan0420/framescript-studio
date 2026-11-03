@@ -627,7 +627,7 @@ async function invoke(
         release = await exportQueue.acquire(exportAbort.signal);
         await new Promise<void>((resolve, reject) => {
           const worker = new Worker(path.join(__dirname, "export-worker.cjs"), {
-            workerData: { project, options, destination, ffmpeg },
+            workerData: { project, options, destination, ffmpeg, cacheDirectory: path.join(dataDir, "render-cache", owner!) },
           });
           job.worker = worker;
           if (exportAbort.signal.aborted) worker.postMessage("cancel");

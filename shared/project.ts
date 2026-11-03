@@ -153,11 +153,20 @@ export function parseCombined(
   if (doc.head.querySelector(":not(meta):not(title):not(style):not(script)"))
     throw Error("Unsupported head content. Separate editors are unchanged.");
   const css = styles.map((s) => s.textContent ?? "").join("\n");
-  const audioScripts = scripts.filter((script) => script.id === "framescript-audio" && script.type === "application/json");
-  if (audioScripts.length > 1) throw Error("Use only one framescript-audio manifest.");
-  const js = scripts.filter((script) => !audioScripts.includes(script)).map((s) => s.textContent ?? "").join("\n");
+  const audioScripts = scripts.filter(
+    (script) =>
+      script.id === "framescript-audio" && script.type === "application/json",
+  );
+  if (audioScripts.length > 1)
+    throw Error("Use only one framescript-audio manifest.");
+  const js = scripts
+    .filter((script) => !audioScripts.includes(script))
+    .map((s) => s.textContent ?? "")
+    .join("\n");
   styles.forEach((s) => s.remove());
-  scripts.filter((script) => !audioScripts.includes(script)).forEach((s) => s.remove());
+  scripts
+    .filter((script) => !audioScripts.includes(script))
+    .forEach((s) => s.remove());
   audioScripts.forEach((script) => doc.body.append(script));
   return { html: doc.body.innerHTML.trim(), css, js };
 }
@@ -197,6 +206,8 @@ export function applyAI(p: Project, value: unknown): Project {
 }
 export const exportSchema = z
   .object({
+    reuseFrames: z.boolean().optional(),
+    graphics: z.enum(["auto", "hardware", "browser"]).optional(),
     acceleration: z.enum(["auto", "software"]).optional(),
     captureMode: z.enum(["fast", "lossless"]).optional(),
     fileName: z.string().trim().min(1).max(150).optional(),

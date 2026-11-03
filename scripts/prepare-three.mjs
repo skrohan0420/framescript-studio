@@ -1,5 +1,6 @@
 import { build } from "esbuild";
 import { writeFile } from "node:fs/promises";
+await import("./prepare-media.mjs");
 
 // Bundle once as a string so preview, nested scenes and exported HTML share the
 // exact same offline runtime. No origin privileges or CDN access are required.

@@ -12,6 +12,7 @@ renderExport(
   controller.signal,
   (progress) => parentPort!.postMessage({ type: "progress", progress }),
   workerData.executablePath,
+  { cacheDirectory: workerData.cacheDirectory },
 )
   .then((destination) =>
     parentPort!.postMessage({ type: "complete", destination }),

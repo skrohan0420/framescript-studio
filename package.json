@@ -20,7 +20,11 @@
     "pretest": "node scripts/prepare-three.mjs",
     "pretest:e2e": "node scripts/prepare-three.mjs",
     "pretest:integration": "node scripts/prepare-three.mjs",
-    "pretest:workflow": "node scripts/prepare-three.mjs"
+    "pretest:workflow": "node scripts/prepare-three.mjs",
+    "benchmark:export": "tsx scripts/benchmark-export-matrix.ts",
+    "prebenchmark:export": "node scripts/prepare-three.mjs",
+    "benchmark:reuse": "tsx scripts/benchmark-export-reuse.ts",
+    "prebenchmark:reuse": "node scripts/prepare-three.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -30,10 +34,12 @@
     "ffmpeg-static": "^5.2.0",
     "jose": "^6.2.14",
     "lucide-react": "^0.468.0",
+    "mediabunny": "^1.65.0",
     "monaco-editor": "^0.52.2",
     "playwright": "^1.64.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "selfsigned": "^5.5.0",
     "sql.js": "^1.15.2",
     "three": "^0.187.0",
     "zod": "^4.6.7",

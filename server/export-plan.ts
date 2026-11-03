@@ -8,10 +8,36 @@ export type RenderTuning = {
   encoder?: "software";
   softwarePreset?: "medium" | "fast";
   rawCanvas?: boolean;
+  rawStreaming?: boolean;
+  webCodecs?: boolean;
+  cacheDirectory?: string;
+  cacheFrames?: boolean;
+  cacheWholeExport?: boolean;
+  gpu?: "auto" | "angle" | "software";
+  autoTune?: boolean;
+  failOnFallback?: boolean;
   onMetrics?: (metrics: RenderMetrics) => void;
 };
 export type RenderMetrics = {
-  encoder: VideoEncoder;
+  wallMs?: number;
+  startupMs?: number;
+  audioMs?: number;
+  gpu?: string;
+  browser?: string;
+  cacheHits?: number;
+  cacheMisses?: number;
+  cacheMs?: number;
+  cacheBypassed?: string;
+  path?: "browser" | "direct-canvas" | "webcodecs" | "cached-video";
+  webCodecsFallback?: string;
+  captureFallback?: string;
+  captureRetries?: number;
+  graphicsFallback?: string;
+  transport?:
+    "http-blob" | "http2-stream" | "screenshot" | "file-copy" | "webcodecs";
+  bottleneck?: string;
+  tuningMs?: number;
+  encoder: VideoEncoder | "webcodecs-avc";
   workers: number;
   capture: "png" | "jpeg" | "rgba";
   frames: number;
@@ -25,13 +51,25 @@ export type RenderMetrics = {
   verificationMs: number;
 };
 const encoders = new Map<string, VideoEncoder>();
+export function graphicsBackend(
+  project: Project,
+  options: ExportOptions,
+  platform: NodeJS.Platform = process.platform,
+): RenderTuning["gpu"] {
+  return platform === "win32" &&
+    (options.graphics === "hardware" ||
+      ((options.graphics ?? "auto") === "auto" &&
+        /\b(?:THREE|FrameScript3D)\b/.test(project.js + project.html)))
+    ? "angle"
+    : "auto";
+}
 export function captureFormat(
   options: ExportOptions,
   tuning: RenderTuning = {},
 ): "jpeg" | "png" {
   const requested =
     tuning.capture === "jpeg" ||
-    (!tuning.capture && options.captureMode !== "lossless");
+    (!tuning.capture && options.captureMode === "fast");
   return requested &&
     !options.transparent &&
     options.quality !== 0 &&
@@ -60,7 +98,18 @@ export function renderWorkerCount(
     return 1;
   const cpuLimit = Math.max(1, Math.floor(availableParallelism() / 3));
   const memoryLimit = Math.max(1, Math.floor(freemem() / 1024 ** 3));
-  const cap = options.width * options.height >= 3840 * 2160 ? 2 : 3;
+  const largeFrame = options.width * options.height >= 3840 * 2160;
+  // Integrated-GPU readback contends for shared memory across pages. The 4K/60
+  // Timeline 2 trials found no repeatable gain from two direct WebGL workers.
+  const cap =
+    largeFrame &&
+    tuning.rawCanvas &&
+    tuning.gpu === "angle" &&
+    /\b(?:THREE|FrameScript3D)\b/.test(project.js)
+      ? 1
+      : largeFrame
+        ? 2
+        : 3;
   return Math.max(
     1,
     Math.min(
@@ -69,6 +118,17 @@ export function renderWorkerCount(
       cpuLimit,
       memoryLimit,
     ),
+  );
+}
+export function preferDirectCanvas(
+  project: Project,
+  options: ExportOptions,
+  gpu?: RenderTuning["gpu"],
+) {
+  return (
+    options.width * options.height >= 1920 * 1080 &&
+    /<canvas\b/i.test(project.html) &&
+    (!/\b(?:THREE|FrameScript3D)\b/.test(project.js) || gpu === "angle")
   );
 }
 export function videoEncoderArgs(

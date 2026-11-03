@@ -1,21 +1,44 @@
-import { createServer } from "node:http";
+import {
+  createSecureServer,
+  type ServerHttp2Session,
+  type Http2SecureServer,
+  type Http2ServerRequest,
+  type Http2ServerResponse,
+} from "node:http2";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+  type Server,
+} from "node:http";
+import { loopbackTls } from "./loopback-tls";
 import type { Page, CDPSession } from "playwright";
 
 export class RawCanvasUnsupported extends Error {}
 
 export async function isolateRawCanvas(session: CDPSession, urlPrefix: string) {
   // Native URL filtering avoids Fetch interception serializing entire pixel uploads.
-  await session.send("Network.enable");
+  // Raw uploads must never be mirrored into DevTools request-body buffers.
+  await session.send("Network.enable", {
+    maxPostDataSize: 1,
+    maxTotalBufferSize: 1024 * 1024,
+    maxResourceBufferSize: 64 * 1024,
+  });
   await session.send("Network.setBlockedURLs", {
     urlPatterns: [{ urlPattern: urlPrefix + "*", block: false }],
     urls: ["http://*", "https://*", "file://*", "ftp://*", "ws://*", "wss://*"],
   });
 }
 
-/** Binary loopback transport. Only an opaque, unscaled, undecorated 2D canvas
+/** Binary loopback transport. Only an opaque, unscaled, undecorated canvas
  * can bypass the browser compositor. Validate again after every frame seek.
  */
-export async function rawCanvasTransport(width: number, height: number) {
+export async function rawCanvasTransport(
+  width: number,
+  height: number,
+  options: { streaming?: boolean } = {},
+) {
+  const streaming = options.streaming ?? true;
   const bytes = width * height * 4;
   const token = crypto.randomUUID();
   let next = 0;
@@ -23,11 +46,25 @@ export async function rawCanvasTransport(width: number, height: number) {
     string,
     { resolve: (buffer: Buffer) => void; reject: (error: Error) => void }
   >();
-  const server = createServer((request, response) => {
+  const sessions = new Set<ServerHttp2Session>();
+  const receive = (
+    request: IncomingMessage | Http2ServerRequest,
+    response: ServerResponse | Http2ServerResponse,
+  ) => {
     const key = request.url ?? "";
     const receiver = pending.get(key);
+    if (request.method === "OPTIONS" && receiver) {
+      response.statusCode = 204;
+      response.setHeader("Access-Control-Allow-Origin", "null");
+      response.setHeader("Access-Control-Allow-Methods", "POST");
+      response.setHeader("Access-Control-Allow-Headers", "content-type");
+      response.setHeader("Access-Control-Max-Age", "86400");
+      response.end();
+      return;
+    }
     if (request.method !== "POST" || !receiver) {
-      response.writeHead(404).end();
+      response.statusCode = 404;
+      response.end();
       return;
     }
     // A key can accept only one upload, including while it is in flight.
@@ -49,13 +86,34 @@ export async function rawCanvasTransport(width: number, height: number) {
       pending.delete(receiverKey);
       if (length !== bytes) {
         receiver.reject(Error("Incomplete raw frame"));
-        response.writeHead(400).end();
+        response.statusCode = 400;
+        response.end();
       } else {
         receiver.resolve(Buffer.concat(chunks, bytes));
         response.end("ok");
       }
     });
-  });
+  };
+  const server = streaming
+    ? createSecureServer(
+        {
+          ...(await loopbackTls()),
+          settings: {
+            initialWindowSize: 32 * 1024 * 1024,
+            maxFrameSize: 1024 * 1024,
+          },
+          maxSessionMemory: 128,
+        },
+        receive,
+      )
+    : createServer(receive);
+  if (streaming)
+    (server as Http2SecureServer).on("session", (session) => {
+      session.setLocalWindowSize(128 * 1024 * 1024);
+      sessions.add(session);
+      session.on("error", () => {});
+      session.once("close", () => sessions.delete(session));
+    });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
@@ -63,7 +121,7 @@ export async function rawCanvasTransport(width: number, height: number) {
   const address = server.address();
   if (!address || typeof address === "string")
     throw Error("Missing raw transport address");
-  const origin = `http://127.0.0.1:${address.port}`;
+  const origin = `${streaming ? "https" : "http"}://127.0.0.1:${address.port}`;
   return {
     origin,
     urlPrefix: `${origin}/${token}/`,
@@ -84,132 +142,102 @@ export async function rawCanvasTransport(width: number, height: number) {
       try {
         const transfer = page
           .evaluate(
-            async ({ url, width, height }) => {
-              const canvas = document.querySelector("canvas");
-              if (
-                !canvas ||
-                canvas.width !== width ||
-                canvas.height !== height ||
-                canvas.parentElement !== document.body ||
-                innerWidth !== width ||
-                innerHeight !== height
-              )
-                return false;
-              const allowed = new Set([
-                "HTML",
-                "HEAD",
-                "BODY",
-                "META",
-                "STYLE",
-                "SCRIPT",
-                "TITLE",
-                "CANVAS",
-              ]);
-              for (const element of document.querySelectorAll("*")) {
-                if (
-                  !allowed.has(element.tagName) ||
-                  element.shadowRoot ||
-                  (element.tagName === "CANVAS" && element !== canvas)
-                )
-                  return false;
-              }
-              if (
-                [...document.body.childNodes].some(
-                  (node) =>
-                    node.nodeType === Node.TEXT_NODE &&
-                    node.textContent?.trim(),
-                )
-              )
-                return false;
-              for (const element of [
-                document.documentElement,
-                document.body,
-                canvas,
-              ]) {
-                const style = getComputedStyle(element);
-                for (const [property, expected] of Object.entries({
-                  opacity: "1",
-                  visibility: "visible",
-                  filter: "none",
-                  "backdrop-filter": "none",
-                  "mix-blend-mode": "normal",
-                  "clip-path": "none",
-                  "mask-image": "none",
-                  "-webkit-mask-box-image-source": "none",
-                  "offset-path": "none",
-                  content: "normal",
-                  clip: "auto",
-                  "box-shadow": "none",
-                  "border-top-width": "0px",
-                  "border-right-width": "0px",
-                  "border-bottom-width": "0px",
-                  "border-left-width": "0px",
-                  "border-top-left-radius": "0px",
-                  "border-top-right-radius": "0px",
-                  "border-bottom-left-radius": "0px",
-                  "border-bottom-right-radius": "0px",
-                  "outline-style": "none",
-                  "padding-top": "0px",
-                  "padding-left": "0px",
-                  "padding-right": "0px",
-                  "padding-bottom": "0px",
-                  perspective: "none",
-                  translate: "none",
-                  rotate: "none",
-                  scale: "none",
-                  zoom: "1",
-                  "-webkit-box-reflect": "none",
-                  "content-visibility": "visible",
-                }))
-                  if (style.getPropertyValue(property) !== expected)
-                    return `${element.tagName} ${property}: ${style.getPropertyValue(property)}`;
-                if (
-                  style.transform !== "none" &&
-                  style.transform !== "matrix(1, 0, 0, 1, 0, 0)"
-                )
-                  return false;
-                for (const pseudo of ["::before", "::after"]) {
-                  const content = getComputedStyle(element, pseudo).content;
-                  if (content !== "none" && content !== "normal") return false;
-                }
-              }
-              const rect = canvas.getBoundingClientRect();
-              if (
-                rect.x !== 0 ||
-                rect.y !== 0 ||
-                rect.width !== width ||
-                rect.height !== height
-              )
-                return false;
-              for (const element of [document.documentElement, document.body]) {
-                const rootRect = element.getBoundingClientRect();
-                if (
-                  rootRect.x !== 0 ||
-                  rootRect.y !== 0 ||
-                  rootRect.width !== width ||
-                  rootRect.height !== height
-                )
-                  return false;
-              }
+            async ({ url, width, height, streaming }) => {
+              const canvas = (window as any).__fsDirectCanvas(width, height);
+              if (!(canvas instanceof HTMLCanvasElement)) return canvas;
               const context = canvas.getContext("2d");
-              if (!context) return false;
-              const attributes = context.getContextAttributes();
-              if (
-                attributes.colorSpace !== "srgb" ||
-                (attributes as { colorType?: string }).colorType !== "unorm8"
-              )
-                return false;
-              const image = context.getImageData(0, 0, width, height);
-              for (let i = 3; i < image.data.length; i += 4)
-                if (image.data[i] !== 255) return false;
+              let pixels: Uint8Array | Uint8ClampedArray;
+              if (!context) {
+                const gl =
+                  canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+                // Non-preserved WebGL buffers can be cleared between tasks.
+                if (!gl?.getContextAttributes()?.preserveDrawingBuffer)
+                  return false;
+                if (gl.drawingBufferColorSpace !== "srgb" || gl.isContextLost())
+                  return false;
+                if (
+                  gl instanceof WebGL2RenderingContext &&
+                  (gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING) ||
+                    gl.getParameter(gl.PACK_ROW_LENGTH) !== 0 ||
+                    gl.getParameter(gl.PACK_SKIP_PIXELS) !== 0 ||
+                    gl.getParameter(gl.PACK_SKIP_ROWS) !== 0)
+                )
+                  return false;
+                pixels = new Uint8Array(width * height * 4);
+                const target =
+                  gl instanceof WebGL2RenderingContext
+                    ? gl.READ_FRAMEBUFFER
+                    : gl.FRAMEBUFFER;
+                const binding = gl.getParameter(
+                  gl instanceof WebGL2RenderingContext
+                    ? gl.READ_FRAMEBUFFER_BINDING
+                    : gl.FRAMEBUFFER_BINDING,
+                );
+                gl.bindFramebuffer(target, null);
+                const alignment = gl.getParameter(gl.PACK_ALIGNMENT);
+                try {
+                  gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
+                  if (
+                    gl instanceof WebGL2RenderingContext &&
+                    gl.getParameter(gl.READ_BUFFER) !== gl.BACK
+                  )
+                    return false;
+                  gl.readPixels(
+                    0,
+                    0,
+                    width,
+                    height,
+                    gl.RGBA,
+                    gl.UNSIGNED_BYTE,
+                    pixels,
+                  );
+                } finally {
+                  gl.pixelStorei(gl.PACK_ALIGNMENT, alignment);
+                  gl.bindFramebuffer(target, binding);
+                }
+                // WebGL's origin is bottom-left; FFmpeg expects top-down rows.
+                const stride = width * 4,
+                  row = new Uint8Array(stride);
+                for (let y = 0; y < Math.floor(height / 2); y++) {
+                  const top = y * stride,
+                    bottom = (height - y - 1) * stride;
+                  row.set(pixels.subarray(top, top + stride));
+                  pixels.copyWithin(top, bottom, bottom + stride);
+                  pixels.set(row, bottom);
+                }
+              } else {
+                const attributes = context.getContextAttributes();
+                if (
+                  attributes.colorSpace !== "srgb" ||
+                  (attributes as { colorType?: string }).colorType !== "unorm8"
+                )
+                  return false;
+                pixels = context.getImageData(0, 0, width, height).data;
+              }
+              for (let i = 3; i < pixels.length; i += 4)
+                if (pixels[i] !== 255)
+                  return "Translucent pixel at " + i + ": " + pixels[i];
               const response = await fetch(url, {
                 method: "POST",
-                body: new Blob([image.data.buffer]),
-              });
+                // BufferSource avoids Chromium's Blob storage quota on long
+                // 4K exports (one RGBA frame alone is ~33 MB).
+                body: streaming
+                  ? new ReadableStream({
+                      start(controller) {
+                        controller.enqueue(new Uint8Array(pixels.buffer));
+                        controller.close();
+                      },
+                    })
+                  : new Blob([pixels.buffer as ArrayBuffer]),
+                ...(streaming ? { duplex: "half" } : {}),
+              } as RequestInit);
               if (!response.ok) throw Error("Raw frame transfer failed");
+              // Drain the response so Chromium can release the upload body and
+              // reuse the connection during long high-resolution exports.
+              await response.arrayBuffer();
               return true;
             },
-            { url: origin + key, width, height },
+            { url: origin + key, width, height, streaming },
           )
           .then((supported) => {
             if (supported !== true)
@@ -229,9 +257,9 @@ export async function rawCanvasTransport(width: number, height: number) {
       for (const receiver of pending.values())
         receiver.reject(Error("Raw transport closed"));
       pending.clear();
-      server.closeAllConnections();
+      for (const session of sessions) session.destroy();
+      if (!streaming) (server as Server).closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };
 }
-

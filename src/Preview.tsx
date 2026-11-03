@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { documentFor } from "../shared/runtime";
+import {
+  previewDocument,
+  previewScale,
+  type PreviewQuality,
+} from "./preview-document";
 import { useStudio } from "./store";
 import type { Project } from "../shared/project";
 import { saveTextTemplates } from "./typography-library";
@@ -20,6 +24,8 @@ export function Preview({
   projectOverride,
   textEditing = true,
   rulers = true,
+  quality = "auto",
+  compositionProject,
 }: {
   run: number;
   select: boolean;
@@ -30,15 +36,19 @@ export function Preview({
   projectOverride?: Project;
   textEditing?: boolean;
   rulers?: boolean;
+  quality?: PreviewQuality;
+  compositionProject?: Project;
 }) {
   const storedProject = useStudio((s) => s.project);
   const selectedText = useStudio((s) => s.selectedText);
   const textGesture = useRef<{ id: string; revision: number } | null>(null);
   const setError = useStudio((s) => s.setError);
   const project = projectOverride ?? storedProject;
-  const [active, setActive] = useState("");
-  const [candidate, setCandidate] = useState("");
-  const [candidateKey, setCandidateKey] = useState(0);
+  const [active, setActive] = useState<number | null>(null);
+  const [candidate, setCandidate] = useState<number | null>(null);
+  const [frames, setFrames] = useState<{ id: number; source: string }[]>([]);
+  const nextFrame = useRef(0);
+  const activeId = useRef<number | null>(null);
   const activeRef = useRef<HTMLIFrameElement>(null),
     candidateRef = useRef<HTMLIFrameElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -62,17 +72,38 @@ export function Preview({
     return () => window.removeEventListener("framescript-edit-text", edit);
   }, []);
   const timeRef = useRef(useStudio.getState().time);
+  const seekBusy = useRef(false);
+  const sentTime = useRef<number | null>(null);
+  const sendSeek = () => {
+    if (!activeRef.current || seekBusy.current || document.hidden) return;
+    seekBusy.current = true;
+    sentTime.current = timeRef.current;
+    activeRef.current.contentWindow?.postMessage(
+      { framescript: true, type: "seek", value: timeRef.current },
+      "*",
+    );
+  };
   useEffect(
     () =>
       useStudio.subscribe((state, previous) => {
         if (state.time === previous.time) return;
         timeRef.current = state.time;
-        activeRef.current?.contentWindow?.postMessage(
-          { framescript: true, type: "seek", value: state.time },
-          "*",
-        );
+        sendSeek();
       }),
     [],
+  );
+  useEffect(() => {
+    const resume = () => {
+      if (!document.hidden) sendSeek();
+    };
+    document.addEventListener("visibilitychange", resume);
+    return () => document.removeEventListener("visibilitychange", resume);
+  }, []);
+  const resolutionScale = previewScale(
+    quality,
+    project.settings.height,
+    project.settings.height * Math.max(0.01, fit * zoom),
+    window.devicePixelRatio || 1,
   );
   useEffect(() => {
     const observer = new ResizeObserver((entries) => {
@@ -90,8 +121,18 @@ export function Preview({
   useEffect(() => {
     const id = setTimeout(() => {
       setError("");
-      setCandidate(documentFor(project, { textEditing }));
-      setCandidateKey((k) => k + 1);
+      const id = ++nextFrame.current;
+      const source = previewDocument(
+        project,
+        resolutionScale,
+        textEditing,
+        compositionProject,
+      );
+      setFrames((previous) => [
+        ...previous.filter((frame) => frame.id === activeId.current),
+        { id, source },
+      ]);
+      setCandidate(id);
     }, 500);
     return () => clearTimeout(id);
   }, [
@@ -102,6 +143,8 @@ export function Preview({
     project.settings,
     project.assets,
     textEditing,
+    resolutionScale,
+    compositionProject,
   ]);
   useEffect(() => {
     const handler = (e: MessageEvent) => {
@@ -109,6 +152,10 @@ export function Preview({
       const pending = e.source === candidateRef.current?.contentWindow;
       const visible = e.source === activeRef.current?.contentWindow;
       if (!pending && !visible) return;
+      if (visible && e.data.type === "preview-seek-done") {
+        seekBusy.current = false;
+        if (sentTime.current !== timeRef.current) sendSeek();
+      }
       if (visible && textEditing && e.data.type === "text-open")
         openText(e.data.value?.id);
       if (visible && textEditing && e.data.type === "text-key") {
@@ -182,13 +229,22 @@ export function Preview({
             ? { line: error.line, column: error.column || 1 }
             : undefined,
         );
-        if (pending) setCandidate("");
+        if (pending) {
+          setFrames((previous) =>
+            previous.filter((frame) => frame.id !== candidate),
+          );
+          setCandidate(null);
+        }
       }
       if (e.data.type === "ready" && pending) {
         if (Array.isArray(e.data.value?.typography))
           saveTextTemplates(e.data.value.typography);
+        activeId.current = candidate;
         setActive(candidate);
-        setCandidate("");
+        setFrames((previous) =>
+          previous.filter((frame) => frame.id === candidate),
+        );
+        setCandidate(null);
         onReady(e.data.value);
       }
       if (e.data.type === "selection" && visible) onSelect(e.data.value);
@@ -204,10 +260,9 @@ export function Preview({
     );
   }, [selectedText, active]);
   useEffect(() => {
-    activeRef.current?.contentWindow?.postMessage(
-      { framescript: true, type: "seek", value: timeRef.current },
-      "*",
-    );
+    seekBusy.current = false;
+    sentTime.current = null;
+    sendSeek();
   }, [active]);
   useEffect(() => {
     activeRef.current?.contentWindow?.postMessage(
@@ -354,46 +409,22 @@ export function Preview({
             </button>
           </div>
         )}
-        <iframe
-          title="Animation preview"
-          ref={activeRef}
-          sandbox="allow-scripts"
-          srcDoc={active}
-          style={frameStyle}
-          onLoad={() => {
-            activeRef.current?.contentWindow?.postMessage(
-              { framescript: true, type: "editor-scale", value: s },
-              "*",
-            );
-            activeRef.current?.contentWindow?.postMessage(
-              {
-                framescript: true,
-                type: "select-text",
-                value: useStudio.getState().selectedText,
-              },
-              "*",
-            );
-            activeRef.current?.contentWindow?.postMessage(
-              { framescript: true, type: "seek", value: timeRef.current },
-              "*",
-            );
-            activeRef.current?.contentWindow?.postMessage(
-              { framescript: true, type: "select", value: select },
-              "*",
-            );
-          }}
-        />
-        {candidate && (
+        {frames.map((frame) => (
           <iframe
-            key={candidateKey}
-            title="Validating animation"
-            className="candidate"
-            ref={candidateRef}
+            key={frame.id}
+            title={
+              frame.id === active ? "Animation preview" : "Validating animation"
+            }
+            className={frame.id === active ? undefined : "candidate"}
+            ref={(node) => {
+              if (frame.id === active) activeRef.current = node;
+              if (frame.id === candidate) candidateRef.current = node;
+            }}
             sandbox="allow-scripts"
-            srcDoc={candidate}
+            srcDoc={frame.source}
             style={frameStyle}
           />
-        )}
+        ))}
       </div>
       <span className="canvas-note">
         {project.settings.width} × {project.settings.height} ·{" "}

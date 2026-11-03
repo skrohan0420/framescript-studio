@@ -132,6 +132,7 @@ export function animationDirection(
           : "";
   if (!renderer && !selections.length) return "";
   return `${renderer}
+RENDER EFFICIENCY: Initialize geometry, materials, textures and static paths once outside renderFrame. For repeated 3D objects sharing geometry/material, use THREE.InstancedMesh where appearance and ordering permit. Cache unchanged 2D backgrounds at full output resolution; invalidate them when their inputs change. Update transforms instead of rebuilding objects. Keep the requested antialiasing, effects, texture resolution and detail; do not use lower resolution or fewer frames as a performance shortcut.
 ${
   selections.length
     ? `SELECTED ANIMATION TECHNIQUES
