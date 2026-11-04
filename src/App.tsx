@@ -92,6 +92,7 @@ import {
 } from "../shared/project";
 import { useStudio, useProjectState } from "./store";
 import { Timeline, type TimelineActions } from "./Timeline";
+import { StructuredEditPanel } from "./StructuredEditPanel";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import {
   formatShortcut,
@@ -152,6 +153,7 @@ export function App() {
     {},
   );
   const timelineActions = useRef<TimelineActions>(null);
+  const [structuredEditClip, setStructuredEditClip] = useState<string>();
   const shortcutHandler = useRef<
     (event: KeyboardEvent, capture: boolean) => void
   >(() => {});
@@ -3631,6 +3633,7 @@ export function App() {
         />
         <Timeline
           actionsRef={timelineActions}
+          onStructuredEdit={setStructuredEditClip}
           splitHint={shortcutTitle("split")}
           onSelectText={(sceneId, textId) => {
             const state = useStudio.getState();
@@ -3816,6 +3819,15 @@ export function App() {
             onNotice={setNotice}
           />
         </Suspense>
+      )}
+      {structuredEditClip && (
+        <StructuredEditPanel
+          key={s.session + ":" + structuredEditClip}
+          clipId={structuredEditClip}
+          project={p}
+          appliedProject={executionProject}
+          onClose={() => setStructuredEditClip(undefined)}
+        />
       )}
       <Modal
         title="Paste full HTML document"

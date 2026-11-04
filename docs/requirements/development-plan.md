@@ -54,7 +54,7 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 
 - **Stage 0 — Done.** Baseline, reusable entry points and test prerequisites recorded below.
 - **Stage 1 — Done.** The versioned Edit fixture, candidate validator and sample ZIP are verified. Stage 2 can wire the outgoing workflow into the editor.
-- **Stage 2 — Planned.** Depends on Stage 1's outgoing contract and fixture.
+- **Stage 2 — In verification.** The outgoing editor workflow and saved request are implemented. A fresh AI chat still needs to try the ZIP and prompt together.
 - **Stage 3 — Planned.** Depends on the expected result and saved task contract.
 - **Stage 4 — Planned.** Depends on the full round trip and a working test environment.
 - **Stage 5 — Planned.** Depends on evidence from the first Edit milestone.
@@ -76,6 +76,13 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - `node node_modules/vitest/vitest.mjs run tests/structured-edit.test.ts` passed all 10 tests. Coverage includes stale response and current scene revisions, wrong request and scene, edits to the label or another keyframe, invalid or unrequested values, and attempts to change timing. TypeScript passed with `node node_modules/typescript/bin/tsc --noEmit`.
 - `node node_modules/tsx/dist/cli.mjs scripts/build-structured-edit-fixture.ts` generated the ZIP, copied prompt, saved request and expected result and candidate under `test-results/structured-edit-fixture`. Used host Chromium to render the baseline PNG. Verified that the ZIP contained exactly the listed payload files plus its manifest and that all payload SHA-256 hashes matched.
 - Next action is Stage 2. Reuse the fixture to wire the editor entry point and freeze a real task snapshot. Production capture, persistent request storage, result review and the live AI round trip remain later-stage checks.
+
+### Stage 2 verification evidence
+
+- **4 November 2026.** Implemented on `codex/structured-ai-edit` from `d2bf3a5`. Import the generated [Fireworks Galaxy fixture](first-edit-milestone.md#outgoing-handoff), select its visual clip and open **Edit / Update** in the timeline. This milestone supports the original untrimmed structured clip at normal speed. The panel shows the source revision, required frame and ZIP contents.
+- **Download ZIP** captures the keyframe with FrameScript's PNG renderer using the same built-in scene projection as the preview. The ZIP, copied prompt and locally saved request are built from the same inputs. The saved request includes the clip and scope, source scene, manifest and prompt. Changes to the requested value require a fresh ZIP before Copy prompt is available.
+- TypeScript and all 156 Vitest tests passed. The Stage 2 Playwright test verified the clip entry point, download, clipboard contents, prompt invalidation and request lookup after reload with the local server. The generated sample ZIP contained all six declared payloads with matching SHA-256 hashes.
+- Outstanding handoff check. In a fresh AI chat, attach `test-results/structured-edit-fixture/fireworks-glow-edit.zip` and paste `copied-prompt.txt` from the same directory. Check that the AI can inspect the PNG and returns the requested keyframe patch. Compare the result with `expected-result.json` and record the outcome. Stage 3 handles editor-side result intake and review.
 
 ### Progress report template
 

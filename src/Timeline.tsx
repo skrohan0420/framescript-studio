@@ -61,6 +61,7 @@ export const Timeline = memo(function Timeline({
   onSelectText,
   actionsRef,
   splitHint,
+  onStructuredEdit,
 }: {
   masterMode: boolean;
   timelineHidden: boolean;
@@ -74,6 +75,7 @@ export const Timeline = memo(function Timeline({
   onSelectText?: (sceneId: string | undefined, textId: string) => void;
   actionsRef?: Ref<TimelineActions>;
   splitHint?: string;
+  onStructuredEdit?: (id: string) => void;
 }) {
   const playing = useStudio((state) => state.playing);
   const s = useProjectState(),
@@ -932,6 +934,15 @@ export const Timeline = memo(function Timeline({
           {p.settings.timing === "seek" ? "SEEK MODE" : "REPLAY EXPORT"}
         </span>
         <span className="toolbar-spacer" />
+        {selection?.kind === "scene" &&
+          onStructuredEdit &&
+          p.workflow?.scenes.some(
+            (scene) => scene.id === selection.id && scene.structuredEdit,
+          ) && (
+            <button onClick={() => onStructuredEdit(selection.id)}>
+              Edit / Update
+            </button>
+          )}
         <button
           title={splitHint ?? "Split at playhead"}
           aria-label="Split at playhead"

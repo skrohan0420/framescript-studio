@@ -16,6 +16,7 @@ import { Worker } from "node:worker_threads";
 import { ExportQueue } from "./export-queue";
 import { ExportRetention } from "./export-retention";
 import { archiveSequence } from "./archive";
+import { writeStructuredEditPackage } from "./structured-edit-package";
 import { projectSchema, exportSchema } from "../shared/project";
 import { documentFor } from "../shared/runtime";
 import { atomicWrite, saveProject, loadProject } from "./storage";
@@ -186,6 +187,31 @@ async function invoke(
   owner: string,
 ) {
   switch (name) {
+    case "structuredEditPackage": {
+      const requestId = randomUUID();
+      const destination = path.join(exportsDir, requestId + ".zip");
+      const saved = await writeStructuredEditPackage(
+        args[0],
+        requestId,
+        args[1],
+        destination,
+        path.join(dataDir, "structured-edit", owner, requestId + ".json"),
+        args[2],
+      );
+      return {
+        ...saved,
+        ...download(
+          destination,
+          "framescript-edit-" + requestId + ".zip",
+          owner,
+        ),
+      };
+    }
+    case "structuredEditRequest":
+      return readJson(
+        path.join("structured-edit", owner, args[0] + ".json"),
+        null,
+      );
     case "exportStorage":
       return inspectExports();
     case "clearExportFiles":

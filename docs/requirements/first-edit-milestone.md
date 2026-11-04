@@ -8,7 +8,7 @@ Use one Fireworks Galaxy scene with a Canvas star, a native text label and one e
 
 ## Outgoing handoff
 
-Regenerate the [Stage 1 fixture](../../tests/fixtures/structured-edit/round-trip.json) with `node node_modules/tsx/dist/cli.mjs scripts/build-structured-edit-fixture.ts` from the repository root with Playwright Chromium available. The [generator](../../scripts/build-structured-edit-fixture.ts) writes the sample ZIP, copied prompt, saved request, expected patch and review candidate under `test-results/structured-edit-fixture`. The capture uses a standalone fixture renderer. The editor capture integration belongs to Stage 2.
+Regenerate the [fixture](../../tests/fixtures/structured-edit/round-trip.json) with `node node_modules/tsx/dist/cli.mjs scripts/build-structured-edit-fixture.ts` from the repository root with Playwright Chromium available. The [generator](../../scripts/build-structured-edit-fixture.ts) writes the sample ZIP, copied prompt, saved request, expected patch, review candidate and importable `fireworks-galaxy.frame` under `test-results/structured-edit-fixture`. To try the editor workflow, open that .frame file, select the visual clip and use **Edit / Update** in the timeline. Both paths use FrameScript's PNG renderer for the packaged keyframe.
 
 Open **Edit / Update** from the clip. Capture the preview at 3.2 seconds and package it with the source scene at revision 14. Include `TASK.md`, `OUTPUT_CONTRACT.md`, `manifest.json`, the scene and its declared module and asset dependencies, the preview frame and the patch schema. Generate the short copied prompt and `TASK.md` from the same task. The creator attaches the ZIP and pastes the prompt into a fresh AI session.
 

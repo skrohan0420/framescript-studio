@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { transcriptWordSchema } from "./transcript";
+import { editSceneSchema } from "./structured-edit";
 export const settingsSchema = z.object({
   width: z.number().int().min(64).max(7680),
   height: z.number().int().min(64).max(4320),
@@ -19,6 +20,7 @@ export const assetSchema = z.object({
   mascot: z.string().optional(),
 });
 export const sceneSchema = z.object({
+  structuredEdit: editSceneSchema.optional(),
   sourceOffset: z.number().min(0).max(600).optional(),
   id: z.string(),
   title: z.string().min(1).max(200),

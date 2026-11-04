@@ -3,6 +3,7 @@ import type { TranscriptWord } from "./transcript";
 import { projectSchema, exportSchema, aiSchema, type Project } from "./project";
 import { storyboardSchema } from "./workflow";
 import { serviceIds, type ServiceStatus, type ServiceCheck } from "./services";
+import { editSceneSchema, editRequestSchema } from "./structured-edit";
 
 const config = z.object({ provider: z.string(), model: z.string() });
 const chat = z.object({
@@ -31,6 +32,12 @@ export type TerminalState = {
   exitCode: number | null;
 };
 export const rpcSchemas = {
+  structuredEditPackage: z.tuple([
+    editSceneSchema,
+    z.number().min(0).max(1),
+    z.string().min(1).max(128),
+  ]),
+  structuredEditRequest: z.tuple([z.string().uuid()]),
   session: empty,
   terminalRun: z.tuple([z.string().uuid(), z.string().trim().min(1).max(3000)]),
   terminalPoll: z.tuple([z.string().uuid()]),
@@ -153,6 +160,20 @@ export type ChatGPTStatus = {
   error?: string;
 };
 export interface RpcResults {
+  structuredEditPackage: {
+    requestId: string;
+    prompt: string;
+    name: string;
+    url: string;
+  };
+  structuredEditRequest: {
+    clipId: string;
+    scope: "clip";
+    request: z.infer<typeof editRequestSchema>;
+    scene: z.infer<typeof editSceneSchema>;
+    prompt: string;
+    manifest: unknown;
+  } | null;
   exportStorage: { files: number; bytes: number; retentionDays: number };
   clearExportFiles: { files: number; bytes: number; retentionDays: number };
   session: boolean;

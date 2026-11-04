@@ -17,9 +17,9 @@ export const editSceneSchema = z
     sceneId: id,
     revision,
     title: z.string().min(1),
-    width: z.number().int().positive(),
-    height: z.number().int().positive(),
-    fps: z.number().int().positive(),
+    width: z.number().int().min(64).max(7680),
+    height: z.number().int().min(64).max(4320),
+    fps: z.number().int().min(1).max(120),
     durationFrames: z.number().int().positive(),
     star: z.strictObject({
       id,
@@ -33,7 +33,9 @@ export const editSceneSchema = z
   .refine(
     (scene) =>
       scene.star.id !== scene.label.id &&
-      scene.star.keyframe.frame < scene.durationFrames,
+      scene.star.keyframe.frame < scene.durationFrames &&
+      scene.durationFrames / scene.fps >= 0.1 &&
+      scene.durationFrames / scene.fps <= 600,
     "Node IDs must differ and the keyframe must fall within the scene",
   );
 
