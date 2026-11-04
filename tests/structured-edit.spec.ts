@@ -1,17 +1,21 @@
 import { test, expect } from "@playwright/test";
 import { structuredEditFixtureProject } from "./fixtures/structured-edit/project";
 import type { Page } from "@playwright/test";
+import { readFile, writeFile } from "node:fs/promises";
 
 async function openFixture(page: Page) {
   const project = structuredEditFixtureProject();
   const scene = project.workflow!.scenes[0].structuredEdit!;
-  await page.goto("/#editor");
-  const setup = await page.request.post("/api/projectSave", {
-    headers: { "X-FrameScript": "1" },
-    data: { args: [project, { create: true }] },
+  await page.goto("/");
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    page.getByRole("button", { name: "Open .frame file" }).click(),
+  ]);
+  await chooser.setFiles({
+    name: "fireworks-galaxy.frame",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(project)),
   });
-  expect(setup.ok()).toBe(true);
-  await page.reload();
   await expect(
     page
       .frameLocator('iframe[title="Animation preview"]')
@@ -27,7 +31,7 @@ async function openFixture(page: Page) {
 
 test("exports a frozen Edit task from a visual clip and saves it across reload", async ({
   page,
-}) => {
+}, testInfo) => {
   const { project, scene } = await openFixture(page);
   const panel = page.getByRole("dialog", { name: "Edit / Update" });
   await expect(panel.getByText(/Source revision 14/)).toBeVisible();
@@ -41,7 +45,13 @@ test("exports a frozen Edit task from a visual clip and saves it across reload",
   const response = await packageResponse;
   expect(response.ok(), await response.text()).toBe(true);
   const { result } = await response.json();
-  expect(await (await zip).failure()).toBeNull();
+  const downloaded = await zip;
+  expect(await downloaded.failure()).toBeNull();
+  await downloaded.saveAs(testInfo.outputPath("editor-exported-edit.zip"));
+  await writeFile(
+    testInfo.outputPath("editor-exported-prompt.txt"),
+    result.prompt,
+  );
   await expect(copy).toBeEnabled();
   await expect(
     panel.getByRole("textbox", { name: "Exported prompt" }),
@@ -197,4 +207,84 @@ test("reviews paste, upload and combined results, and applies one undoable chang
   ).toBeVisible();
   await review.getByRole("button", { name: "Export fresh task" }).click();
   await expect(panel).toContainText("Source revision 15");
+
+  await expect
+    .poll(async () => {
+      const saved = await page.request.post("/api/workspaceGet", {
+        headers: { "X-FrameScript": "1" },
+        data: { args: [] },
+      });
+      const workspace = (await saved.json()).result;
+      return workspace?.workflow?.scenes[0]?.structuredEdit;
+    })
+    .toEqual({
+      ...scene,
+      revision: 15,
+      star: { ...scene.star, keyframe: { ...scene.star.keyframe, value: 0.8 } },
+    });
+
+  await panel
+    .getByRole("button", { name: "Close", exact: true })
+    .first()
+    .click();
+  const preview = page
+    .frameLocator('iframe[title="Animation preview"]')
+    .locator("canvas");
+  const playhead = page.getByRole("slider", { name: "Timeline position" });
+  const seekPreview = async (time: number) => {
+    await playhead.fill(String(time));
+    await expect
+      .poll(() =>
+        preview.evaluate(
+          () =>
+            (window as Window & { __fsTime?: () => number }).__fsTime?.() ?? -1,
+        ),
+      )
+      .toBeCloseTo(time, 5);
+    return preview.evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
+  };
+  await seekPreview(1);
+  const forward = await seekPreview(3.2);
+  await seekPreview(4.5);
+  expect(await seekPreview(3.2)).toBe(forward);
+  await seekPreview(0);
+  expect(await seekPreview(3.2)).toBe(forward);
+  const previewGlow = await preview.evaluate((canvas: HTMLCanvasElement) => {
+    const crop = document.createElement("canvas");
+    crop.width = crop.height = 200;
+    crop.getContext("2d")!.drawImage(canvas, 220, 80, 200, 200, 0, 0, 200, 200);
+    return crop.toDataURL();
+  });
+
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  const exportDialog = page.getByRole("dialog", { name: "Export animation" });
+  await exportDialog.getByLabel("Export format").selectOption("png");
+  const [png] = await Promise.all([
+    page.waitForEvent("download"),
+    exportDialog.getByRole("button", { name: "Render & download" }).click(),
+  ]);
+  expect(png.suggestedFilename()).toMatch(/\.png$/);
+  const pngPath = await png.path();
+  const exportedGlow = await page.evaluate(
+    async (base64) => {
+      const image = new Image();
+      image.src = "data:image/png;base64," + base64;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 200;
+      const context = canvas.getContext("2d")!;
+      context.drawImage(image, 220, 80, 200, 200, 0, 0, 200, 200);
+      return {
+        width: image.width,
+        height: image.height,
+        glow: canvas.toDataURL(),
+      };
+    },
+    (await readFile(pngPath)).toString("base64"),
+  );
+  expect(exportedGlow).toEqual({
+    width: scene.width,
+    height: scene.height,
+    glow: previewGlow,
+  });
 });

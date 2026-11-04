@@ -56,7 +56,7 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - **Stage 1 — Done.** The versioned Edit fixture, candidate validator and sample ZIP are verified. Stage 2 can wire the outgoing workflow into the editor.
 - **Stage 2 — In verification.** The outgoing editor workflow and saved request are implemented. A fresh AI chat still needs to try the ZIP and prompt together.
 - **Stage 3 — Done.** JSON intake, candidate review, stale-result checks and undoable Apply are verified for the first Edit workflow.
-- **Stage 4 — Planned.** Depends on the full round trip and a working test environment.
+- **Stage 4 — In verification.** Browser verification uses a fixture patch. The fresh AI chat and first-response import remain open.
 - **Stage 5 — Planned.** Depends on evidence from the first Edit milestone.
 
 ### Stage 0 baseline evidence
@@ -91,6 +91,21 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - The candidate opens in the existing side-by-side review at the affected keyframe. Review shows the base and current revisions, value change and interpolation effect. Apply rechecks the current snapshot and uses one project history transaction. A stale result can be inspected, with an action to export from the current source.
 - `node node_modules/typescript/bin/tsc --noEmit`, all 156 Vitest tests and both tests in `tests/structured-edit.spec.ts` passed. The browser test exercised malformed and fenced JSON, paste, upload, matching and conflicting combined inputs, different preview pixels, Discard, Apply, Undo and Redo. It verified that a source change during review disables Apply.
 - Next action is Stage 4 verification. The fresh AI handoff also remains open in Stage 2. Use the editor to export a new task, bring the real response back, and record first-attempt success and preview/export evidence.
+
+### Stage 4 verification evidence
+
+- **4 November 2026.** Tested Stage 3 commit `2e57df0` plus Stage 4 test changes on `codex/structured-ai-edit`.
+- Reproduction command with host Chromium and loopback access: `node node_modules/playwright/cli.js test tests/structured-edit.spec.ts tests/workspace.spec.ts --grep 'exports a frozen|reviews paste|local Node backend|workspace executes preview' --reporter=line`.
+- TypeScript passed. All four selected Playwright tests passed. The exported PNG matched the live preview pixel-for-pixel in the 200 × 200 glow region at frame 96.
+- The structured test uses a fixture response tied to a real editor-exported request. It checks .frame import, exact saved scene data after Apply and Redo, invalid and stale results, identical canvas frames on repeated and backward seeks, and a pixel comparison of the glow region against an editor-exported PNG at 3.2 seconds. The legacy checks cover project save/reopen/import, preview/seek and MP4 export.
+- The outgoing test saves the actual downloaded ZIP and matching prompt in its Playwright output directory. Its request is stored in the isolated test workspace. For a live round trip, export a new task from the same FrameScript browser and project where the AI result will be imported.
+
+### Outstanding live AI check
+
+1. Open the generated `test-results/structured-edit-fixture/fireworks-galaxy.frame` using **Open .frame file** on the project home. Select the visual clip, open **Edit / Update**, keep the requested value at 0.8, then use **Download ZIP** and **Copy prompt**.
+2. In a fresh AI chat, attach that ZIP and paste the copied prompt in the same message. Record whether the AI could access the included PNG and save its first response before making any corrections.
+3. In the same FrameScript project and browser, open **Edit / Update → Import AI result**. Paste or upload the first response and record whether it passes validation without repair. Verify the review shows glow changing from 0.6 to 0.8 at 3.2 seconds. Apply it and record the outcome.
+4. Record the request ID, first-attempt outcome and any error or missing attachment. Update Stages 2 and 4 after the corresponding checks have evidence.
 
 ### Progress report template
 
