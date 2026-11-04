@@ -13,4 +13,10 @@ Use one authoritative clock across scenes, narration, music, SFX, text, effects 
 
 ## Deliverables and acceptance
 
+### Structured Edit clip timing
+
+The current editor stores clip duration and source offset in seconds. In combined preview, subtract the clip's project start to get clip-local time. Add the source offset to get source time. Playback speed changes elapsed playback time. For example, a source keyframe at 3.200s is 1.200s into a clip with a 2.000s source offset, and playback reaches that point after 0.600 seconds at 2× from the clip start.
+
+Use a half-open source interval for Edit eligibility. A keyframe at a cut belongs to the clip starting there. Keep the keyframe frame index and stable ID in the patch. A changed trim invalidates the saved task. Clip-only Apply forks the structured source ID if another clip shares it, and Undo restores the previous source link. This is the existing-editor bridge for the structured Edit workflow. The canonical timebase and Extend handoff remain part of the unified timeline work.
+
 Deliver the timebase specification, schemas, command model and timeline UI. Test long timelines, speed changes, trim/split boundaries, snapping, linked edits and overlapping scenes. Verify audio and picture stay aligned in preview and export, and undo/redo restores the exact prior state.

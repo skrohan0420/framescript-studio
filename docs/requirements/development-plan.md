@@ -57,7 +57,7 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - **Stage 2 — Done.** The outgoing editor workflow and saved request passed the live AI handoff.
 - **Stage 3 — Done.** JSON intake, candidate review, stale-result checks and undoable Apply are verified for the first Edit workflow.
 - **Stage 4 — Done.** Automated parity and legacy checks passed. The first live AI patch imported and applied.
-- **Stage 5 — Planned.** Depends on evidence from the first Edit milestone.
+- **Stage 5 — In progress.** The first increment supports clip-only Edit on trimmed and split structured clips at non-default playback speed. Shared-source Apply, Extend handoff and Generate remain open.
 
 ### Stage 0 baseline evidence
 
@@ -110,6 +110,14 @@ To repeat the check:
 2. In a fresh AI chat, attach that ZIP and paste the copied prompt in the same message. Record whether the AI could access the included PNG and save its first response before making any corrections.
 3. In the same FrameScript project and browser, open **Edit / Update → Import AI result**. Paste or upload the first response and record whether it passes validation without repair. Verify the review shows glow changing from 0.6 to 0.8 at 3.2 seconds. Apply it and record the outcome.
 4. Record the request ID, first-attempt outcome and any error or missing attachment. Update Stages 2 and 4 after the corresponding checks have evidence.
+
+### Stage 5 first increment
+
+- **4 November 2026.** Started from `fe6515f`, the live handoff evidence commit. Defined the [current clip timing rules](04-unified-timeline.md#structured-edit-clip-timing).
+- Edit checks whether the source keyframe is visible in the clip and records the source offset and duration with the request. Clip-only Apply changes the selected clip's source identity when a sibling shares it. The review shows clip-local and combined timeline positions and identifies siblings that keep their source.
+- The fixture splits at 2.000s, trims the right clip to 2.500s and plays at 2×. The source keyframe at 3.200s maps to 1.200s into the right clip. Verification covers applying the patch to frame 96, preserving the sibling and restoring the source link with one Undo. A unit case covers cut-boundary ownership.
+- TypeScript, all 157 Vitest tests and all three structured Edit browser tests passed. The browser test matched the applied clip's canvas at 1.200s to the reviewed source canvas at 3.200s.
+- Next action is explicit shared-source Edit with affected-clip review, followed by Extend timing and overlap behavior.
 
 ### Progress report template
 

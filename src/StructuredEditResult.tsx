@@ -13,6 +13,8 @@ import { bridge } from "./bridge";
 import { Modal } from "./components";
 import { SceneReview } from "./SceneReview";
 import { useStudio } from "./store";
+import { structuredClipTiming } from "../shared/structured-edit-timing";
+import { sceneOffset } from "../shared/workflow";
 
 type SavedTask = NonNullable<RpcResults["structuredEditRequest"]>;
 type Review = {
@@ -30,15 +32,14 @@ export function supportsStructuredClip(
   source = clip,
 ) {
   const scene = source?.structuredEdit;
-  if (!scene || !clip || clip.locked || clip.sourceOffset) return false;
-  const { width, height, fps, speed, timing } = project.settings;
+  if (!scene || !clip || clip.locked || !structuredClipTiming(clip))
+    return false;
+  const { width, height, fps, timing } = project.settings;
   const code = structuredStarCode(scene);
   return (
-    clip.duration === scene.durationFrames / scene.fps &&
     width === scene.width &&
     height === scene.height &&
     fps === scene.fps &&
-    speed === 1 &&
     timing === "seek" &&
     source.html === code.html &&
     source.css === code.css &&
@@ -76,6 +77,15 @@ function taskConflict(project: Project, clipId: string, task: SavedTask) {
     return "This result targets a different clip or scene.";
   if (JSON.stringify(clip.structuredEdit) !== JSON.stringify(task.scene))
     return "The source changed after this task was exported.";
+  const placement = task.placement ?? {
+    sourceOffset: 0,
+    duration: task.scene.durationFrames / task.scene.fps,
+  };
+  if (
+    placement.sourceOffset !== (clip.sourceOffset ?? 0) ||
+    placement.duration !== clip.duration
+  )
+    return "The clip trim changed after this task was exported.";
   if (!supportsStructuredClip(project, clip))
     return "The clip source, lock or playback settings changed after export.";
   return "";
@@ -205,6 +215,13 @@ export function StructuredEditResult({
     }
     const structuredEdit = {
       ...review.candidate,
+      sceneId: workflow.scenes.some(
+        (clip) =>
+          clip.id !== clipId &&
+          clip.structuredEdit?.sceneId === review.task.scene.sceneId,
+      )
+        ? crypto.randomUUID()
+        : review.candidate.sceneId,
       revision: review.task.scene.revision + 1,
     };
     const code = structuredStarCode(structuredEdit);
@@ -233,6 +250,13 @@ export function StructuredEditResult({
     const { scene } = review.task;
     const time = scene.star.keyframe.frame / scene.fps;
     const lastTime = (scene.durationFrames - 1) / scene.fps;
+    const clip = project.workflow?.scenes.find((item) => item.id === clipId);
+    const timing = clip && structuredClipTiming(clip);
+    const siblings =
+      project.workflow?.scenes.filter(
+        (item) =>
+          item.id !== clipId && item.structuredEdit?.sceneId === scene.sceneId,
+      ) ?? [];
     return (
       <SceneReview
         before={review.before}
@@ -249,6 +273,19 @@ export function StructuredEditResult({
               Glow at {time.toFixed(3)}s: {scene.star.keyframe.value} →{" "}
               {review.candidate.star.keyframe.value}
             </p>
+            {timing && (
+              <p>
+                Keyframe placement: {timing.clipTime.toFixed(3)}s into the clip,{" "}
+                {(sceneOffset(project, clipId) + timing.clipTime).toFixed(3)}s
+                on the combined timeline.
+              </p>
+            )}
+            {siblings.length > 0 && (
+              <p>
+                Other clips keep their source:{" "}
+                {siblings.map((item) => item.title).join(", ")}.
+              </p>
+            )}
             <p>
               Glow interpolates up to the keyframe and holds afterward. Rendered
               frames may change through {lastTime.toFixed(3)}s.

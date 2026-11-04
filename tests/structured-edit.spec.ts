@@ -2,10 +2,15 @@ import { test, expect } from "@playwright/test";
 import { structuredEditFixtureProject } from "./fixtures/structured-edit/project";
 import type { Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
+import { resizeVisual, splitVisual } from "../shared/timeline-edit";
+import { activateScene, selectedScene } from "../shared/workflow";
 
-async function openFixture(page: Page) {
-  const project = structuredEditFixtureProject();
-  const scene = project.workflow!.scenes[0].structuredEdit!;
+async function openFixture(
+  page: Page,
+  project = structuredEditFixtureProject(),
+) {
+  const clip = selectedScene(project)!;
+  const scene = clip.structuredEdit!;
   await page.goto("/");
   const [chooser] = await Promise.all([
     page.waitForEvent("filechooser"),
@@ -23,7 +28,7 @@ async function openFixture(page: Page) {
   ).toBeVisible();
   await page
     .locator(".track-clip")
-    .getByText(scene.title, { exact: true })
+    .getByText(clip.title, { exact: true })
     .click();
   await page.getByRole("button", { name: "Edit / Update" }).click();
   return { project, scene };
@@ -89,6 +94,103 @@ test("exports a frozen Edit task from a visual clip and saves it across reload",
       ]),
     },
   });
+});
+
+test("edits the source keyframe in a trimmed split at double speed without changing its sibling", async ({
+  page,
+}) => {
+  const base = structuredEditFixtureProject();
+  const leftId = base.workflow!.selectedId;
+  const split = { ...base, ...splitVisual(base, leftId, 2) };
+  const [left, right] = split.workflow!.scenes;
+  const trimmed = { ...split, ...resizeVisual(split, right.id, 2.5) };
+  const project = { ...trimmed, ...activateScene(trimmed, right.id) };
+  project.settings = { ...project.settings, speed: 2 };
+  const { scene } = await openFixture(page, project);
+  const panel = page.getByRole("dialog", { name: "Edit / Update" });
+  await expect(panel).toContainText(
+    "Source keyframe at 3.200s · 1.200s into this clip",
+  );
+  const exported = page.waitForResponse((response) =>
+    response.url().endsWith("/api/structuredEditPackage"),
+  );
+  await panel.getByRole("button", { name: "Download ZIP" }).click();
+  const response = await exported;
+  expect(response.ok(), await response.text()).toBe(true);
+  const { result } = await response.json();
+  await panel.getByRole("button", { name: "Import AI result" }).click();
+  const intake = page.getByRole("dialog", { name: "Import AI result" });
+  await intake.getByRole("textbox", { name: "Paste AI result" }).fill(
+    JSON.stringify({
+      contractVersion: "1",
+      type: "scene-patch",
+      requestId: result.requestId,
+      sceneId: scene.sceneId,
+      baseRevision: scene.revision,
+      operations: [
+        {
+          op: "set-keyframe-value",
+          nodeId: scene.star.id,
+          property: "glowIntensity",
+          keyframeId: scene.star.keyframe.id,
+          value: 0.8,
+        },
+      ],
+    }),
+  );
+  await intake.getByRole("button", { name: "Review result" }).click();
+  const review = page.getByRole("dialog", { name: "Review AI changes" });
+  await expect(review).toContainText(
+    "1.200s into the clip, 3.200s on the combined timeline",
+  );
+  await expect(review).toContainText(
+    "Other clips keep their source: Fireworks Galaxy.",
+  );
+  const glowFrame = (canvas: HTMLCanvasElement) => canvas.toDataURL();
+  const candidate = page
+    .frameLocator('iframe[title="Proposed scene"]')
+    .locator("canvas");
+  await expect
+    .poll(() =>
+      candidate.evaluate(
+        () =>
+          (window as Window & { __fsTime?: () => number }).__fsTime?.() ?? -1,
+      ),
+    )
+    .toBeCloseTo(3.2, 5);
+  const reviewedFrame = await candidate.evaluate(glowFrame);
+  await review.getByRole("button", { name: "Apply changes" }).click();
+  await page.getByRole("slider", { name: "Timeline position" }).fill("1.2");
+  const preview = page
+    .frameLocator('iframe[title="Animation preview"]')
+    .locator("canvas");
+  await expect.poll(() => preview.evaluate(glowFrame)).toBe(reviewedFrame);
+  const savedClips = async () => {
+    const response = await page.request.post("/api/workspaceGet", {
+      headers: { "X-FrameScript": "1" },
+      data: { args: [] },
+    });
+    return (await response.json()).result.workflow.scenes;
+  };
+  await expect.poll(savedClips).toEqual([
+    left,
+    expect.objectContaining({
+      id: right.id,
+      duration: 2.5,
+      sourceOffset: 2,
+      structuredEdit: expect.objectContaining({
+        revision: 15,
+        star: expect.objectContaining({
+          keyframe: { id: "glow-peak", frame: 96, value: 0.8 },
+        }),
+      }),
+    }),
+  ]);
+  expect((await savedClips())[1].structuredEdit.sceneId).not.toBe(
+    scene.sceneId,
+  );
+  await page.getByRole("button", { name: "Undo project change" }).click();
+  await expect.poll(savedClips).toEqual(project.workflow!.scenes);
 });
 
 test("reviews paste, upload and combined results, and applies one undoable change", async ({

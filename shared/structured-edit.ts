@@ -5,6 +5,10 @@ const id = z.string().min(1).max(128);
 const revision = z.number().int().nonnegative();
 const frame = z.number().int().nonnegative();
 const glow = z.number().min(0).max(1);
+export const editPlacementSchema = z.strictObject({
+  sourceOffset: z.number().min(0).max(600),
+  duration: z.number().min(0.1).max(600),
+});
 const target = z.strictObject({
   nodeId: id,
   property: z.literal("glowIntensity"),

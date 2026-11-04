@@ -198,6 +198,7 @@ async function invoke(
         path.join(dataDir, "structured-edit", owner, requestId + ".json"),
         args[2],
         client.current ?? null,
+        args[3],
       );
       return {
         ...saved,

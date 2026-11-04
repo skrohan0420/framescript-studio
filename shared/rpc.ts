@@ -3,7 +3,11 @@ import type { TranscriptWord } from "./transcript";
 import { projectSchema, exportSchema, aiSchema, type Project } from "./project";
 import { storyboardSchema } from "./workflow";
 import { serviceIds, type ServiceStatus, type ServiceCheck } from "./services";
-import { editSceneSchema, editRequestSchema } from "./structured-edit";
+import {
+  editSceneSchema,
+  editRequestSchema,
+  editPlacementSchema,
+} from "./structured-edit";
 
 const config = z.object({ provider: z.string(), model: z.string() });
 const chat = z.object({
@@ -36,6 +40,7 @@ export const rpcSchemas = {
     editSceneSchema,
     z.number().min(0).max(1),
     z.string().min(1).max(128),
+    editPlacementSchema.optional(),
   ]),
   structuredEditRequest: z.tuple([z.string().uuid()]),
   session: empty,
@@ -170,6 +175,7 @@ export interface RpcResults {
     projectId: string | null;
     clipId: string;
     scope: "clip";
+    placement?: z.infer<typeof editPlacementSchema>;
     request: z.infer<typeof editRequestSchema>;
     scene: z.infer<typeof editSceneSchema>;
     prompt: string;

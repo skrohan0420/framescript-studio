@@ -3,6 +3,7 @@ import type { Project } from "../shared/project";
 import type { RpcResults } from "../shared/rpc";
 import { bridge, download } from "./bridge";
 import { Modal } from "./components";
+import { structuredClipTiming } from "../shared/structured-edit-timing";
 import {
   StructuredEditResult,
   supportsStructuredClip,
@@ -41,6 +42,7 @@ export function StructuredEditPanel({
       clip.js !== applied.js);
   const source = pending && useApplied ? applied : clip;
   const scene = source?.structuredEdit;
+  const timing = clip && structuredClipTiming(clip);
   const supported = supportsStructuredClip(project, clip, source);
   const snapshot = JSON.stringify({
     scene,
@@ -59,7 +61,7 @@ export function StructuredEditPanel({
     setNotice("");
   };
   const exportZip = async () => {
-    if (!scene || !ready || !validValue || busy) return;
+    if (!scene || !timing || !ready || !validValue || busy) return;
     resetExport();
     setBusy(true);
     try {
@@ -68,6 +70,7 @@ export function StructuredEditPanel({
         scene,
         Number(value),
         clipId,
+        { sourceOffset: timing.sourceOffset, duration: timing.duration },
       );
       setExported({ snapshot, result });
       download(result);
@@ -93,6 +96,12 @@ export function StructuredEditPanel({
       {scene && (
         <>
           <p>Source revision {scene.revision} · This clip only</p>
+          {timing && timing.sourceOffset > 0 && (
+            <p>
+              Source keyframe at {timing.sourceTime.toFixed(3)}s ·{" "}
+              {timing.clipTime.toFixed(3)}s into this clip
+            </p>
+          )}
           <label>
             Glow at {(scene.star.keyframe.frame / scene.fps).toFixed(3)}s
             <input
@@ -135,9 +144,8 @@ export function StructuredEditPanel({
       )}
       {!supported && !(pending && !useApplied) && (
         <p role="alert">
-          Use the untrimmed structured Edit fixture at its original dimensions,
-          frame rate and normal speed. Modified source and legacy clips are
-          outside this milestone.
+          Edit requires an unlocked structured clip containing the source
+          keyframe, with its original dimensions and frame rate in seek mode.
         </p>
       )}
       {notice && <p role="status">{notice}</p>}

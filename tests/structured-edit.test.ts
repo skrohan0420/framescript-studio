@@ -1,6 +1,21 @@
 import { expect, it } from "vitest";
 import { prepareEditCandidate } from "../shared/structured-edit";
 import fixture from "./fixtures/structured-edit/round-trip.json";
+import { editSceneSchema } from "../shared/structured-edit";
+import { structuredClipTiming } from "../shared/structured-edit-timing";
+
+it("assigns a keyframe at a split boundary to the right clip only", () => {
+  const structuredEdit = editSceneSchema.parse(fixture.scene);
+  expect(
+    structuredClipTiming({ structuredEdit, duration: 3.2 }),
+  ).toBeUndefined();
+  expect(
+    structuredClipTiming({ structuredEdit, sourceOffset: 3.2, duration: 2.8 }),
+  ).toMatchObject({ sourceTime: 3.2, clipTime: 0 });
+  expect(
+    structuredClipTiming({ structuredEdit, sourceOffset: 3.2, duration: 3 }),
+  ).toBeUndefined();
+});
 
 it("changes only the requested keyframe value in the review candidate", () => {
   const original = structuredClone(fixture.scene);

@@ -13,6 +13,7 @@ import {
 import { archiveSequence } from "./archive";
 import { renderExport } from "./export";
 import { atomicWrite } from "./storage";
+import { structuredClipTiming } from "../shared/structured-edit-timing";
 
 export async function writeStructuredEditPackage(
   scene: StructuredEditScene,
@@ -22,7 +23,13 @@ export async function writeStructuredEditPackage(
   requestFile: string,
   clipId: string,
   projectId: string | null = null,
+  placement?: { sourceOffset: number; duration: number },
 ) {
+  if (
+    placement &&
+    !structuredClipTiming({ ...placement, structuredEdit: scene })
+  )
+    throw Error("The source keyframe must be inside the selected clip.");
   const request = editRequestSchema.parse({
     contractVersion: "1",
     mode: "edit",
@@ -124,6 +131,7 @@ export async function writeStructuredEditPackage(
       packageType: "framescript-task",
       packageVersion: "1",
       ...request,
+      placement,
       files: files.map(({ content, ...entry }) => ({
         ...entry,
         sha256: createHash("sha256").update(content).digest("hex"),
@@ -142,6 +150,7 @@ export async function writeStructuredEditPackage(
           clipId,
           scope: "clip",
           projectId,
+          placement,
         }),
       );
     } catch (error) {
