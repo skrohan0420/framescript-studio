@@ -52,12 +52,22 @@ Keep requirements in their numbered files, implementation evidence and status in
 
 Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. Mark a stage Done when its exit checks have evidence. Record partial checks under the active stage.
 
-- **Stage 0 — Planned.** Next action is to record the baseline commit and verify the test prerequisites.
+- **Stage 0 — Done.** Baseline, reusable entry points and test prerequisites recorded below.
 - **Stage 1 — Planned.** The illustrative patch is documented. The versioned schemas and fixtures are pending.
 - **Stage 2 — Planned.** Depends on Stage 1's outgoing contract and fixture.
 - **Stage 3 — Planned.** Depends on the expected result and saved task contract.
 - **Stage 4 — Planned.** Depends on the full round trip and a working test environment.
 - **Stage 5 — Planned.** Depends on evidence from the first Edit milestone.
+
+### Stage 0 baseline evidence
+
+- **4 November 2026.** Branch `codex/structured-ai-edit`, baseline commit `06538ef47fb0552ce715a4cce0e8a282fb23328b`, clean working tree before this tracker update. Node v26.12.1 and bundled FFmpeg were available.
+- **TypeScript.** `node node_modules/typescript/bin/tsc --noEmit` passed.
+- **Baseline suite.** `node node_modules/vitest/vitest.mjs run --reporter=dot` passed all 146 tests across 37 files with approved access to the host environment. The sandboxed run passed 129 and failed 17. Six OAuth fixture tests hit loopback `EACCES`, and 11 rendering tests could not find Chromium in the sandbox browser cache. All 17 passed on rerun with host access. Use the verified host setup for later browser and loopback checks.
+- **Persistence.** [Editor workspace load](../../src/App.tsx#L605) and [project save](../../src/App.tsx#L815) use the bridge. [Server RPC](../../server/index.ts#L410) dispatches workspace and project operations backed by the [database](../../server/database.ts#L234).
+- **Clip targeting and undo.** [Timeline actions](../../src/Timeline.tsx#L230) already route visual splits through shared timeline logic. Reuse the [project store history](../../src/store.ts#L191) for undoable edits.
+- **Preview and export.** The [editor preview](../../src/App.tsx#L3186) renders in a [sandboxed iframe](../../src/Preview.tsx#L537), with the [shared runtime](../../shared/runtime.ts#L70) evaluating `renderFrame(time)`. Export starts from the [editor action](../../src/App.tsx#L1195) and reaches the [render worker](../../server/export-worker.ts#L7).
+- **Scope decision.** Use the [first Edit milestone](first-edit-milestone.md) as written. One untrimmed clip at normal speed, a Canvas star, native label and one glow keyframe edit. Stage 1 defines the versioned schema and fixtures. The browser end-to-end and live AI handoff gates belong to Stage 4.
 
 ### Progress report template
 
@@ -87,7 +97,7 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 ## Open items to track
 
 - Exact FSSF v1 fields, module interface and patch schema. Resolve for the baseline in Stage 1.
-- Rendering and loopback test prerequisites. Verify in Stage 0 and resolve before the applicable Stage 4 checks.
+- Rendering and loopback test prerequisites are verified with host access. Use that setup for the applicable Stage 4 checks.
 - Project-to-source time, shared-source fixtures and extension handoff rules for nontrivial clips. Resolve before expanding those workflows.
 - Package budgets and long-scene threshold. Set after measuring representative handoffs and first-result success.
 
