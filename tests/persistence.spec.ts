@@ -58,6 +58,7 @@ test("reload restores manual code, project name and legacy narration", async ({
   await page
     .getByRole("textbox", { name: "Project name", exact: true })
     .fill(name);
+  await page.getByRole("button", { name: "Code editor options" }).click();
   await page
     .getByRole("button", { name: "Paste full HTML document", exact: true })
     .click();

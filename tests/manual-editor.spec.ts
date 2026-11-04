@@ -164,7 +164,11 @@ test("full document paste splits code, rejects unsupported imports, and runtime 
     name: "Paste full HTML document",
     exact: true,
   });
-  await open.click();
+  const openPaste = async () => {
+    await page.getByRole("button", { name: "Code editor options" }).click();
+    await open.click();
+  };
+  await openPaste();
   const dialog = page.getByRole("dialog", {
     name: "Paste full HTML document",
     exact: true,
@@ -182,7 +186,7 @@ test("full document paste splits code, rejects unsupported imports, and runtime 
   const preview = page.frameLocator('iframe[title="Animation preview"]');
   await expect(preview.locator("#pasted")).toHaveAttribute("data-ready", "yes");
   await expect(preview.locator("#pasted")).toHaveCSS("font-size", "100px");
-  await open.click();
+  await openPaste();
   await expect(dialog.getByLabel("HTML document to import")).toHaveValue(
     /id="pasted"/,
   );
@@ -202,7 +206,7 @@ test("full document paste splits code, rejects unsupported imports, and runtime 
     "inline styles and classic scripts only",
   );
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await open.click();
+  await openPaste();
   await expect(dialog.getByLabel("HTML document to import")).toHaveValue(
     '<html><script src="https://example.com/library.js"></script></html>',
   );

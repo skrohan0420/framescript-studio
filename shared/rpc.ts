@@ -22,6 +22,8 @@ const aiRequest = z.object({
   selection: z.unknown().optional(),
 });
 const empty = z.tuple([]);
+export type CodeSnapshot = Pick<Project, "html" | "css" | "js">;
+export type CodeVersion = { id: string; created: number; reason: string };
 export const rpcSchemas = {
   session: empty,
   exportStorage: empty,
@@ -51,7 +53,11 @@ export const rpcSchemas = {
   projectDuplicate: z.tuple([z.string().max(300)]),
   projectTrash: z.tuple([z.string().max(300)]),
   projectRestore: z.tuple([z.string().max(300)]),
+  projectDeleteForever: z.tuple([z.string().max(300)]),
   recoveryList: empty,
+  codeHistory: z.tuple([z.string().nullable()]),
+  codeBaseline: z.tuple([z.string().nullable()]),
+  codeVersion: z.tuple([z.string().nullable(), z.string().uuid()]),
   open: empty,
   deleteProject: empty,
   cancelAI: empty,
@@ -164,6 +170,10 @@ export interface RpcResults {
   projectDuplicate: string;
   projectTrash: boolean;
   projectRestore: boolean;
+  codeHistory: CodeVersion[];
+  codeBaseline: CodeSnapshot | null;
+  codeVersion: CodeSnapshot;
+  projectDeleteForever: boolean;
   recoveryList: RecoveryVersion[];
   checkpoint: string | undefined;
   recoveryRestore: { project: Project; editor: WorkspaceEditor };

@@ -1,8 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import {
   previewDocument,
   previewScale,
   type PreviewQuality,
+  type PreviewConsoleEntry,
 } from "./preview-document";
 import { useStudio } from "./store";
 import type { Project } from "../shared/project";
@@ -20,6 +27,8 @@ export function Preview({
   onSelect,
   onReady,
   onVisual,
+  onConsole,
+  consoleCommandRef,
   zoom,
   projectOverride,
   textEditing = true,
@@ -32,6 +41,8 @@ export function Preview({
   onSelect: (s: any) => void;
   onReady: (s: any) => void;
   onVisual: (s: any) => void;
+  onConsole: (entries: PreviewConsoleEntry[]) => void;
+  consoleCommandRef: Ref<(command: string) => void>;
   zoom: number;
   projectOverride?: Project;
   textEditing?: boolean;
@@ -46,12 +57,60 @@ export function Preview({
   const project = projectOverride ?? storedProject;
   const [active, setActive] = useState<number | null>(null);
   const [candidate, setCandidate] = useState<number | null>(null);
-  const [frames, setFrames] = useState<{ id: number; source: string }[]>([]);
+  const [frames, setFrames] = useState<
+    { id: number; source: string; js: string }[]
+  >([]);
   const nextFrame = useRef(0);
   const activeId = useRef<number | null>(null);
   const activeRef = useRef<HTMLIFrameElement>(null),
     candidateRef = useRef<HTMLIFrameElement>(null);
   const box = useRef<HTMLDivElement>(null);
+  useImperativeHandle(
+    consoleCommandRef,
+    () => async (command) => {
+      const target = activeRef.current?.contentWindow;
+      if (!target) {
+        onConsole([
+          {
+            level: "error",
+            text: "Run a valid preview before using the console prompt.",
+          },
+        ]);
+        return;
+      }
+      try {
+        const { parse, parseExpression } = await import("@babel/parser");
+        let body = "";
+        let result = "undefined";
+        try {
+          const expression = parseExpression(command);
+          result = command.slice(expression.start!, expression.end!);
+        } catch {
+          const { program } = parse(command, { sourceType: "script" });
+          const last = program.body.at(-1);
+          if (last?.type === "ExpressionStatement") {
+            body = command.slice(0, last.start!);
+            result = command.slice(
+              last.expression.start!,
+              last.expression.end!,
+            );
+          } else {
+            body = command;
+          }
+        }
+        if (target !== activeRef.current?.contentWindow)
+          throw Error("The preview changed. Run the command again.");
+        const script = `try {\n${body}\n;window.__fsConsoleReport("result", (${result}\n));\n} catch (error) { window.__fsConsoleReport("error", error); }`;
+        target.postMessage(
+          { framescript: true, type: "preview-console-eval", value: script },
+          "*",
+        );
+      } catch (error) {
+        onConsole([{ level: "error", text: String(error) }]);
+      }
+    },
+    [onConsole],
+  );
   const [fit, setFit] = useState(1);
   const [inlineText, setInlineText] = useState<string | null>(null);
   const openText = (id: string) => {
@@ -120,7 +179,6 @@ export function Preview({
   }, [project.settings.width, project.settings.height]);
   useEffect(() => {
     const id = setTimeout(() => {
-      setError("");
       const id = ++nextFrame.current;
       const source = previewDocument(
         project,
@@ -130,7 +188,7 @@ export function Preview({
       );
       setFrames((previous) => [
         ...previous.filter((frame) => frame.id === activeId.current),
-        { id, source },
+        { id, source, js: project.js },
       ]);
       setCandidate(id);
     }, 500);
@@ -152,6 +210,31 @@ export function Preview({
       const pending = e.source === candidateRef.current?.contentWindow;
       const visible = e.source === activeRef.current?.contentWindow;
       if (!pending && !visible) return;
+      if (e.data.type === "preview-console" && Array.isArray(e.data.value)) {
+        const payload: Partial<PreviewConsoleEntry>[] = e.data.value;
+        const entries = payload
+          .slice(0, 50)
+          .filter(
+            (entry): entry is PreviewConsoleEntry =>
+              entry &&
+              ["log", "info", "debug", "warn", "error", "result"].includes(
+                entry.level ?? "",
+              ) &&
+              typeof entry.text === "string",
+          )
+          .map(({ level, text, pretty, structured, table }) => ({
+            level,
+            text: text.slice(0, 4000),
+            pretty:
+              typeof pretty === "string" ? pretty.slice(0, 8000) : undefined,
+            structured:
+              typeof structured === "string" && structured.length <= 256000
+                ? structured
+                : undefined,
+            table: table === true,
+          }));
+        if (entries.length) onConsole(entries);
+      }
       if (visible && e.data.type === "preview-seek-done") {
         seekBusy.current = false;
         if (sentTime.current !== timeRef.current) sendSeek();
@@ -221,13 +304,19 @@ export function Preview({
       }
       if (e.data.type === "error") {
         const error = e.data.value;
-        setError(
+        const message =
           typeof error === "object" && error
             ? String(error.message)
-            : String(error),
+            : String(error);
+        onConsole([{ level: "error", text: message.slice(0, 4000) }]);
+        setError(
+          message,
           error && Number.isInteger(error.line) && error.line > 0
             ? { line: error.line, column: error.column || 1 }
             : undefined,
+          frames.find(
+            (frame) => frame.id === (pending ? candidate : activeId.current),
+          )?.js,
         );
         if (pending) {
           setFrames((previous) =>
@@ -237,6 +326,7 @@ export function Preview({
         }
       }
       if (e.data.type === "ready" && pending) {
+        setError("");
         if (Array.isArray(e.data.value?.typography))
           saveTextTemplates(e.data.value.typography);
         activeId.current = candidate;
@@ -252,7 +342,16 @@ export function Preview({
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [candidate, onSelect, onReady, onVisual, textEditing]);
+  }, [
+    candidate,
+    frames,
+    onSelect,
+    onReady,
+    onVisual,
+    onConsole,
+    setError,
+    textEditing,
+  ]);
   useEffect(() => {
     activeRef.current?.contentWindow?.postMessage(
       { framescript: true, type: "select-text", value: selectedText },

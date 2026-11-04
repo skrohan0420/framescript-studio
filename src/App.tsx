@@ -7,7 +7,9 @@ import {
   lazy,
   Suspense,
 } from "react";
-import Editor from "./LazyEditor";
+import Editor, { LazyChangesEditor } from "./LazyEditor";
+import type { CodeSnapshot } from "../shared/rpc";
+import type { editor as Monaco } from "monaco-editor";
 import { PromptTemplates } from "./PromptTemplates";
 import { PromptDrawer } from "./PromptDrawer";
 import { readEditorTabs, saveEditorTabs } from "./editor-tabs";
@@ -48,6 +50,8 @@ import {
   History,
   ImagePlus,
   Maximize2,
+  Ellipsis,
+  GitCompare,
   Minus,
   MousePointer2,
   Moon,
@@ -62,10 +66,17 @@ import {
   Settings2,
   Sparkles,
   Square,
+  SquareTerminal,
+  Search,
+  Replace,
+  ListEnd,
+  Command,
+  WrapText,
   Sun,
   Undo2,
   UserRound,
   X,
+  TriangleAlert,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -100,6 +111,14 @@ import {
 import { composeProject } from "../shared/composition";
 import { acknowledgeRecovery, recoveryAcknowledged } from "./recovery";
 import { RecoveryHistory, downloadRecoveryCopy } from "./RecoveryHistory";
+import { CodeHistory } from "./CodeHistory";
+import { PreviewConsole } from "./PreviewConsole";
+import type { PreviewConsoleEntry } from "./preview-document";
+import {
+  CodeProblems,
+  useCodeSyntax,
+  type ProblemLanguage,
+} from "./CodeProblems";
 import { SceneReview } from "./SceneReview";
 const Services = lazy(() =>
   import("./Services").then((module) => ({ default: module.Services })),
@@ -181,7 +200,25 @@ export function App() {
   } | null>(null);
   const [pasteDocument, setPasteDocument] = useState("");
   const [pasteError, setPasteError] = useState("");
-  const jumpLine = useRef<{ line: number; column: number } | null>(null);
+  const jumpLine = useRef<{
+    language: ProblemLanguage;
+    line: number;
+    column: number;
+  } | null>(null);
+  const [showProblems, setShowProblems] = useState(false);
+  const [showConsole, setShowConsole] = useState(false);
+  const [outputHeight, setOutputHeight] = useState(170);
+  const outputDrag = useRef<{ y: number; height: number; max: number } | null>(
+    null,
+  );
+  const [consoleEntries, setConsoleEntries] = useState<PreviewConsoleEntry[]>(
+    [],
+  );
+  const consoleCommandRef = useRef<((command: string) => void) | null>(null);
+  const appendConsole = useCallback((entries: PreviewConsoleEntry[]) => {
+    setConsoleEntries((previous) => [...previous, ...entries].slice(-300));
+  }, []);
+  useEffect(() => setConsoleEntries([]), [s.session]);
   const [reviewAI, setReviewAI] = useState(false);
   const [pendingAI, setPendingAI] = useState<{
     before: Project;
@@ -189,10 +226,6 @@ export function App() {
     revision: number;
     explanation: string;
   } | null>(null);
-  const viewProject = useMemo(
-    () => (masterMode ? composeProject(p) : p),
-    [masterMode, p],
-  );
   const playbackDuration = masterMode ? totalDuration(p) : p.settings.duration;
   const sceneLocked = !!selectedScene(p)?.locked;
   const changeScope = (master: boolean) => {
@@ -209,6 +242,12 @@ export function App() {
     }),
     [combinedDraft, setCombinedDraft] = useState(""),
     [parseError, setParseError] = useState("");
+  const combinedEditRevision = useRef<number | null>(null);
+  const syntax = useCodeSyntax(
+    p,
+    !showHome,
+    tab === "all" ? combinedDraft : undefined,
+  );
   const [run, setRun] = useState(0),
     [zoom, setZoom] = useState(1),
     [select, setSelect] = useState(false),
@@ -270,7 +309,83 @@ export function App() {
     [timelineHidden, setTimelineHidden] = useState(false),
     [fontSize, setFontSize] = useState(14),
     [light, setLight] = useState(false);
-  const editorRef = useRef<any>(null),
+  const [editorExpanded, setEditorExpanded] = useState(false);
+  const [autosave, setAutosave] = useState(true);
+  const [appliedCode, setAppliedCode] = useState<{
+    session: number;
+    project: Project;
+  } | null>(null);
+  const [savedCode, setSavedCode] = useState<{
+    session: number;
+    project: Project;
+  } | null>(null);
+  const executionProject = useMemo(() => {
+    if (autosave || appliedCode?.session !== s.session) return p;
+    const saved = appliedCode.project;
+    const savedScenes = new Map(
+      saved.workflow?.scenes.map((scene) => [scene.id, scene]),
+    );
+    const empty: CodeSnapshot = { html: "", css: "", js: "" };
+    const source = (id?: string): CodeSnapshot => {
+      const code = id
+        ? (savedScenes.get(id) ??
+          (!saved.workflow && id === p.workflow?.scenes[0]?.id ? saved : empty))
+        : saved;
+      return { html: code.html, css: code.css, js: code.js };
+    };
+    return {
+      ...p,
+      ...source(p.workflow?.selectedId),
+      workflow: p.workflow && {
+        ...p.workflow,
+        scenes: p.workflow.scenes.map((scene) => ({
+          ...scene,
+          ...source(scene.id),
+        })),
+      },
+    };
+  }, [autosave, appliedCode, s.session, p]);
+  const viewProject = useMemo(
+    () => (masterMode ? composeProject(executionProject) : executionProject),
+    [masterMode, executionProject],
+  );
+  const previewLocation =
+    !masterMode && s.errorCode === p.js ? s.errorLocation : undefined;
+  const problemCount =
+    syntax.problems.length + Number(!!parseError) + Number(!!s.error);
+  const hasProblems = problemCount > 0;
+  useEffect(() => setShowProblems(hasProblems), [hasProblems]);
+  const codeUnsaved = useMemo(() => {
+    if (parseError) return true;
+    if (savedCode?.session !== s.session) return false;
+    const differs = (code: CodeSnapshot, saved?: CodeSnapshot) =>
+      !saved ||
+      code.html !== saved.html ||
+      code.css !== saved.css ||
+      code.js !== saved.js;
+    const saved = savedCode.project;
+    if (!p.workflow) return differs(p, saved);
+    const savedScenes = new Map(
+      saved.workflow?.scenes.map((scene) => [scene.id, scene]),
+    );
+    return p.workflow.scenes.some((scene) =>
+      differs(scene, savedScenes.get(scene.id)),
+    );
+  }, [parseError, p, s.session, savedCode]);
+  const [expandedWrap, setExpandedWrap] = useState(false);
+  const [formatError, setFormatError] = useState("");
+  const [changes, setChanges] = useState<{
+    session: number;
+    scene: string | null;
+    code?: CodeSnapshot;
+  } | null>(null);
+  const [codeBaseline, setCodeBaseline] = useState<{
+    anchor: typeof appliedCode;
+    scene: string | null;
+    code: CodeSnapshot;
+  } | null>(null);
+  const expandEditorRef = useRef<HTMLButtonElement>(null);
+  const editorRef = useRef<Monaco.IStandaloneCodeEditor | null>(null),
     workspaceRef = useRef<HTMLDivElement>(null),
     fullscreenRef = useRef<HTMLDivElement>(null),
     fileRef = useRef<HTMLInputElement>(null);
@@ -346,6 +461,15 @@ export function App() {
   const [storageSaveError, setStorageSaveError] = useState("");
   const [saveAttempt, setSaveAttempt] = useState(0);
   const autosaveGeneration = useRef(0);
+  const workspaceSavedRevision = useRef<number | null>(null);
+  useEffect(() => {
+    const current = useStudio.getState();
+    setSavedCode({ session: current.session, project: current.project });
+  }, [s.session]);
+  useEffect(() => {
+    const current = useStudio.getState();
+    setAppliedCode({ session: current.session, project: current.project });
+  }, [autosave, s.session]);
   useEffect(() => {
     void act(async () => {
       const layout = await bridge.call("settingsGet");
@@ -355,6 +479,7 @@ export function App() {
       if (layout.leftWidth) setLeftWidth(layout.leftWidth);
       if (layout.rightWidth) setRightWidth(layout.rightWidth);
       if (layout.fontSize) setFontSize(layout.fontSize);
+      setAutosave(layout.autosave !== false);
       if (layout.theme) setLight(layout.theme === "light");
       if (layout.timelineHeight) setTimelineHeight(layout.timelineHeight);
       if (typeof layout.leftHidden === "boolean")
@@ -455,6 +580,7 @@ export function App() {
             leftWidth,
             rightWidth,
             fontSize,
+            autosave,
             theme: light ? "light" : "dark",
             provider,
             model,
@@ -476,6 +602,7 @@ export function App() {
     leftWidth,
     rightWidth,
     fontSize,
+    autosave,
     light,
     provider,
     model,
@@ -556,7 +683,7 @@ export function App() {
     }
   };
   useEffect(() => {
-    if (!storageReady) return;
+    if (!storageReady || !autosave) return;
     const generation = ++autosaveGeneration.current;
     setStorageSaveState("saving");
     setStorageSaveError("");
@@ -568,6 +695,9 @@ export function App() {
               sceneChats: { ...sceneChats.current, [chatScene.current]: chat },
             })
             .then(() => {
+              if (useStudio.getState().session === s.session)
+                setSavedCode({ session: s.session, project: p });
+              workspaceSavedRevision.current = s.revision;
               if (generation === autosaveGeneration.current)
                 setStorageSaveState("saved");
             })
@@ -588,21 +718,43 @@ export function App() {
       if (generation === autosaveGeneration.current)
         autosaveGeneration.current++;
     };
-  }, [s.revision, storageReady, chat, saveAttempt]);
+  }, [s.revision, storageReady, chat, saveAttempt, autosave]);
+  const manualUnsaved =
+    !autosave && s.dirty && workspaceSavedRevision.current !== s.revision;
+  useEffect(() => {
+    if (!manualUnsaved && !parseError) return;
+    const warnUnsaved = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = true;
+    };
+    window.addEventListener("beforeunload", warnUnsaved);
+    return () => window.removeEventListener("beforeunload", warnUnsaved);
+  }, [manualUnsaved, parseError]);
   const save = useCallback(
     (as = false) =>
       void act(async () => {
+        if (parseError) throw Error("Fix the combined document before saving.");
         const submitted = useStudio.getState();
-        const file = await bridge.call(
-          as ? "saveAs" : "save",
-          submitted.project,
-        );
-        if (file) {
+        const result = as
+          ? await bridge.call("saveAs", submitted.project)
+          : await bridge.call("projectSave", submitted.project);
+        if (result && useStudio.getState().session === submitted.session) {
+          setAppliedCode({
+            session: submitted.session,
+            project: submitted.project,
+          });
+          setSavedCode({
+            session: submitted.session,
+            project: submitted.project,
+          });
           useStudio.getState().saved(submitted.revision);
-          setNotice("Saved · " + file);
+          setStorageSaveState("saved");
+          setNotice(
+            as ? "Saved · " + result : "Code saved and applied locally",
+          );
         }
       }),
-    [act],
+    [act, parseError],
   );
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -635,7 +787,7 @@ export function App() {
           state.setPlaying(!state.playing);
         }
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
         save(e.shiftKey);
       }
@@ -652,7 +804,34 @@ export function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [save, masterMode, showHome]);
   useEffect(() => {
-    if (tab === "all" && !parseError) setCombinedDraft(combined(p));
+    if (!editorExpanded || showHome || leftView !== "code" || modal) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.repeat || event.isComposing) return;
+      const widgets = document.querySelectorAll(
+        '[role="dialog"]:not([aria-hidden="true"]), [role="alertdialog"], .quick-input-widget, .monaco-menu-container, .code-workbench-expanded .suggest-widget.visible, .code-workbench-expanded .parameter-hints-widget.visible, .code-editor-menu:popover-open',
+      );
+      if (
+        [...widgets].some((widget) =>
+          widget.checkVisibility({ visibilityProperty: true }),
+        )
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      setEditorExpanded(false);
+      expandEditorRef.current?.focus();
+    };
+    // Monaco can consume Escape before it bubbles, even for a plain selection.
+    window.addEventListener("keydown", closeOnEscape, true);
+    return () => window.removeEventListener("keydown", closeOnEscape, true);
+  }, [editorExpanded, showHome, leftView, modal]);
+  useEffect(() => {
+    if (
+      tab === "all" &&
+      !parseError &&
+      combinedEditRevision.current !== s.revision
+    )
+      setCombinedDraft(combined(p));
   }, [tab, s.revision]);
   const changeTab = (next: Tab) => {
     if (parseError && next !== "all") {
@@ -668,6 +847,7 @@ export function App() {
     try {
       const parsed = parseCombined(text);
       s.change(parsed, "Combined document");
+      combinedEditRevision.current = useStudio.getState().revision;
       setParseError("");
     } catch (e) {
       setParseError((e as Error).message);
@@ -733,10 +913,15 @@ export function App() {
   };
   const checkpointCurrent = async (reason: string) => {
     const state = useStudio.getState();
-    await bridge.call("autosave", state.project, {
+    const editor = {
       sceneChats: { ...sceneChats.current, [chatScene.current]: chat },
-    });
-    await bridge.call("checkpoint", reason);
+    };
+    if (autosave) {
+      await bridge.call("autosave", state.project, editor);
+      await bridge.call("checkpoint", reason);
+    } else {
+      await bridge.call("checkpoint", reason, state.project, editor);
+    }
     if (state.revision !== useStudio.getState().revision)
       throw Error("Project changed while preparing recovery. Try again.");
   };
@@ -1008,41 +1193,214 @@ export function App() {
       notify(e);
     }
   };
-  const editor = (language: "html" | "css" | "js", height = "100%") => (
-    <Editor
+  const revealCodeLocation = (
+    instance: Monaco.IStandaloneCodeEditor,
+    location: { line: number; column: number },
+  ) => {
+    instance.setPosition({
+      lineNumber: location.line,
+      column: location.column,
+    });
+    instance.revealLineInCenter(
+      instance.getPosition()?.lineNumber ?? location.line,
+    );
+    instance.focus();
+  };
+  const jumpToProblem = (
+    language: ProblemLanguage,
+    location: { line: number; column: number },
+  ) => {
+    if (tab === "all" && parseError && language !== "all") {
+      setFormatError(
+        "Fix or discard the combined edits before jumping to a language tab.",
+      );
+      return;
+    }
+    setLeftView("code");
+    setLeftHidden(false);
+    if (tab === language && editorRef.current?.getModel()) {
+      revealCodeLocation(editorRef.current, location);
+    } else {
+      jumpLine.current = { language, ...location };
+      setTab(language);
+    }
+  };
+  const trackEditor = (
+    instance: Monaco.IStandaloneCodeEditor,
+    language?: ProblemLanguage | "all",
+  ) => {
+    editorRef.current = instance;
+    instance.onDidFocusEditorWidget(() => {
+      editorRef.current = instance;
+    });
+    instance.onDidDispose(() => {
+      if (editorRef.current === instance) editorRef.current = null;
+    });
+    if (jumpLine.current && jumpLine.current.language === language) {
+      revealCodeLocation(instance, jumpLine.current);
+      jumpLine.current = null;
+    }
+  };
+  const runEditorAction = (id: string) => {
+    const instance = editorRef.current;
+    instance?.focus();
+    void instance?.getAction(id)?.run();
+  };
+  const formatSelectedJson = async () => {
+    const instance = editorRef.current;
+    const model = instance?.getModel();
+    const selection = instance?.getSelection();
+    if (!instance || !model || !selection || selection.isEmpty()) {
+      setFormatError("Select the JSON you want to format first.");
+      return;
+    }
+    const source = model.getValueInRange(selection);
+    const version = model.getVersionId();
+    try {
+      JSON.parse(source);
+    } catch {
+      setFormatError("The selection isn’t valid JSON.");
+      return;
+    }
+    try {
+      const [{ format }, { default: babel }, { default: estree }] =
+        await Promise.all([
+          import("prettier/standalone"),
+          import("prettier/plugins/babel"),
+          import("prettier/plugins/estree"),
+        ]);
+      const formatted = (
+        await format(source, { parser: "json", plugins: [babel, estree] })
+      )
+        .trimEnd()
+        .replace(/<(?=\/script\b)/gi, "\\u003c");
+      if (
+        editorRef.current !== instance ||
+        instance.getModel() !== model ||
+        instance.getRawOptions().readOnly ||
+        model.getVersionId() !== version
+      )
+        return;
+      instance.pushUndoStop();
+      instance.executeEdits("format-json", [
+        { range: selection, text: formatted },
+      ]);
+      instance.pushUndoStop();
+      instance.focus();
+    } catch {
+      setFormatError("Couldn’t format the selected JSON.");
+    }
+  };
+  const editorDisplay = {
+    minimap: { enabled: editorExpanded && tab !== "split" },
+    wordWrap: (!editorExpanded || expandedWrap ? "on" : "off") as "on" | "off",
+  };
+  const codeScene = p.workflow?.selectedId ?? null;
+  useEffect(() => {
+    if (!storageReady) return;
+    let active = true;
+    void bridge
+      .call("codeBaseline", codeScene)
+      .then((code) => {
+        if (active && code)
+          setCodeBaseline({ anchor: appliedCode, scene: codeScene, code });
+      })
+      .catch(() => {
+        // The opened code is also a baseline for unsaved projects.
+      });
+    return () => {
+      active = false;
+    };
+  }, [storageReady, s.session, codeScene, appliedCode]);
+  const gutterProject =
+    appliedCode?.session === s.session ? appliedCode.project : undefined;
+  const gutterCode = codeScene
+    ? (gutterProject?.workflow?.scenes.find(
+        (scene) => scene.id === codeScene,
+      ) ??
+      (!gutterProject?.workflow && codeScene === p.workflow?.scenes[0]?.id
+        ? gutterProject
+        : undefined))
+    : gutterProject;
+  const workingBase =
+    codeBaseline?.anchor === appliedCode && codeBaseline.scene === codeScene
+      ? codeBaseline.code
+      : (gutterCode ?? { html: "", css: "", js: "" });
+  const showChanges =
+    changes?.session === s.session && changes.scene === codeScene;
+  const changesBase = showChanges ? (changes.code ?? workingBase) : null;
+  const renderChanges = (
+    language: "html" | "css" | "js" | "all",
+    original: string,
+    modified: string,
+    onChange: (value: string) => void,
+    height = "100%",
+  ) => (
+    <LazyChangesEditor
+      key={language}
       height={height}
-      language={language === "js" ? "javascript" : language}
-      path={(p.workflow?.selectedId ?? "project") + "/" + language}
+      language={
+        language === "js"
+          ? "javascript"
+          : language === "all"
+            ? "html"
+            : language
+      }
+      original={original}
+      modified={modified}
+      modifiedModelPath={(codeScene ?? "project") + "/" + language}
+      keepCurrentModifiedModel
       theme={light ? "framescript-light" : "framescript-dark"}
-      value={p[language]}
-      onMount={(e) => {
-        editorRef.current = e;
-        if (language === "js" && jumpLine.current) {
-          e.setPosition({
-            lineNumber: jumpLine.current.line,
-            column: jumpLine.current.column,
-          });
-          e.revealLineInCenter(jumpLine.current.line);
-          e.focus();
-          jumpLine.current = null;
-        }
-      }}
-      onChange={(v) => s.change({ [language]: v ?? "" })}
+      onMount={(diff) => trackEditor(diff.getModifiedEditor(), language)}
+      onChange={onChange}
       options={{
+        ...editorDisplay,
         fontSize,
-        readOnly: masterMode || sceneLocked,
-        fontFamily: "'Cascadia Code', Consolas, monospace",
-        lineHeight: 22,
-        minimap: { enabled: false },
-        padding: { top: 18 },
-        scrollBeyondLastLine: false,
-        wordWrap: "on",
         automaticLayout: true,
-        tabSize: 2,
-        bracketPairColorization: { enabled: true },
+        renderSideBySide: false,
+        ignoreTrimWhitespace: false,
+        readOnly: masterMode || sceneLocked,
+        originalEditable: false,
       }}
     />
   );
+  const editor = (language: "html" | "css" | "js", height = "100%") =>
+    changesBase ? (
+      renderChanges(
+        language,
+        changesBase[language],
+        p[language],
+        (value) => s.change({ [language]: value }),
+        height,
+      )
+    ) : (
+      <Editor
+        key={language}
+        height={height}
+        language={language === "js" ? "javascript" : language}
+        path={(p.workflow?.selectedId ?? "project") + "/" + language}
+        keepCurrentModel
+        theme={light ? "framescript-light" : "framescript-dark"}
+        value={p[language]}
+        gutterBaseline={
+          masterMode || !gutterProject ? undefined : workingBase[language]
+        }
+        onMount={(e) => trackEditor(e, language)}
+        onChange={(v) => s.change({ [language]: v ?? "" })}
+        options={{
+          fontSize,
+          readOnly: masterMode || sceneLocked,
+          fontFamily: "'Cascadia Code', Consolas, monospace",
+          lineHeight: Math.round(fontSize * 1.57),
+          ...editorDisplay,
+          padding: { top: 18 },
+          scrollBeyondLastLine: false,
+          automaticLayout: true,
+          tabSize: 2,
+          bracketPairColorization: { enabled: true },
+        }}
+      />
+    );
   const handleSelect = useCallback((value: any) => setSelection(value), []);
   const handleReady = useCallback((value: any) => setRuntime(value), []);
   const handleVisual = useCallback((value: any) => {
@@ -1234,7 +1592,8 @@ export function App() {
         <ProjectHome
           onRenameCurrent={async (name) => {
             useStudio.getState().change({ name }, "Rename project");
-            await bridge.call("autosave", useStudio.getState().project);
+            if (autosave)
+              await bridge.call("autosave", useStudio.getState().project);
           }}
           workspace={p}
           onContinue={enterEditor}
@@ -1327,10 +1686,22 @@ export function App() {
           title="Save and return to project home"
           onClick={() =>
             void act(async () => {
+              if (parseError)
+                throw Error("Fix the combined document before saving.");
               useStudio.getState().setPlaying(false);
               await checkpointCurrent("Return to project home");
-              await bridge.call("projectSave", useStudio.getState().project, {
+              const submitted = useStudio.getState();
+              await bridge.call("projectSave", submitted.project, {
                 thumbnail: runtime?.thumbnail,
+              });
+              useStudio.getState().saved(submitted.revision);
+              setAppliedCode({
+                session: submitted.session,
+                project: submitted.project,
+              });
+              setSavedCode({
+                session: submitted.session,
+                project: submitted.project,
               });
               window.location.hash = "home";
               setShowHome(true);
@@ -1702,7 +2073,10 @@ export function App() {
               </div>
             )}
           <div
-            className="code-workbench"
+            className={
+              "code-workbench" +
+              (editorExpanded ? " code-workbench-expanded" : "")
+            }
             hidden={leftView !== "code"}
             onPasteCapture={(event) => {
               const text = event.clipboardData.getData("text/plain");
@@ -1721,35 +2095,144 @@ export function App() {
               <>
                 <div className="panel-heading">
                   <span>
-                    <Code2 size={14} /> SOURCE CODE
+                    <Code2 size={14} />{" "}
+                    {editorExpanded ? "CODE EDITOR" : "SOURCE CODE"}
+                    {codeUnsaved && (
+                      <span className="unsaved-code-badge" role="status">
+                        Unsaved code
+                      </span>
+                    )}
                   </span>
                   <div>
                     <button
-                      title="Paste full HTML document"
-                      aria-label="Paste full HTML document"
-                      disabled={masterMode || sceneLocked}
-                      onClick={() => {
-                        setPasteError("");
-                        setModal("paste-code");
+                      className="code-editor-menu-trigger"
+                      title="Code editor options"
+                      aria-label="Code editor options"
+                      popoverTarget="code-editor-menu"
+                    >
+                      <Ellipsis size={18} />
+                      {!!problemCount && (
+                        <span
+                          className="code-problem-dot"
+                          role="status"
+                          aria-label={`${problemCount} code problems`}
+                        />
+                      )}
+                    </button>
+                    <div
+                      id="code-editor-menu"
+                      popover="auto"
+                      className="code-editor-menu"
+                      role="group"
+                      aria-label="Code editor actions"
+                      onClickCapture={(event) => {
+                        if ((event.target as Element).closest("button"))
+                          event.currentTarget.hidePopover();
                       }}
                     >
-                      <ClipboardPaste size={16} />
-                    </button>
+                      <button
+                        title="Code problems"
+                        aria-label="Code problems"
+                        aria-pressed={showProblems && !showConsole}
+                        onClick={() => {
+                          setShowProblems(showConsole || !showProblems);
+                          setShowConsole(false);
+                        }}
+                      >
+                        <TriangleAlert size={16} aria-hidden="true" />
+                        Code problems{problemCount ? ` (${problemCount})` : ""}
+                      </button>
+                      <button
+                        aria-label="Preview console"
+                        aria-pressed={showConsole}
+                        onClick={() => setShowConsole((visible) => !visible)}
+                      >
+                        <SquareTerminal size={16} aria-hidden="true" /> Console
+                      </button>
+                      <button
+                        title="Show code changes"
+                        aria-label="Show code changes"
+                        aria-pressed={!!changesBase}
+                        onClick={() =>
+                          setChanges(
+                            showChanges
+                              ? null
+                              : { session: s.session, scene: codeScene },
+                          )
+                        }
+                      >
+                        <GitCompare size={16} aria-hidden="true" />
+                        Show code changes
+                      </button>
+                      <button
+                        title="Code history"
+                        aria-label="Code history"
+                        onClick={() => setModal("code-history")}
+                      >
+                        <History size={16} />
+                        Code history
+                      </button>
+                      <button
+                        title="Paste full HTML document"
+                        aria-label="Paste full HTML document"
+                        disabled={masterMode || sceneLocked}
+                        onClick={() => {
+                          setPasteError("");
+                          setModal("paste-code");
+                        }}
+                      >
+                        <ClipboardPaste size={16} />
+                        Paste full HTML document
+                      </button>
+                      <button
+                        title="Format document"
+                        disabled={masterMode || sceneLocked}
+                        onClick={() =>
+                          runEditorAction("editor.action.formatDocument")
+                        }
+                      >
+                        <Code2 size={16} />
+                        Format document
+                      </button>
+                      {!editorExpanded && (
+                        <button
+                          title="Collapse code panel"
+                          onClick={() => setLeftHidden(true)}
+                        >
+                          <Columns2 size={16} aria-hidden="true" /> Collapse
+                          code panel
+                        </button>
+                      )}
+                    </div>
+                    {editorExpanded && (
+                      <button
+                        title="Save (Ctrl+S)"
+                        aria-label="Save code (Ctrl+S)"
+                        onClick={() => save()}
+                      >
+                        <Save size={16} />
+                      </button>
+                    )}
                     <button
-                      title="Format document"
-                      onClick={() =>
-                        editorRef.current
-                          ?.getAction("editor.action.formatDocument")
-                          ?.run()
+                      ref={expandEditorRef}
+                      title={
+                        editorExpanded
+                          ? "Close expanded editor"
+                          : "Expand editor"
                       }
+                      aria-label={
+                        editorExpanded
+                          ? "Close expanded editor"
+                          : "Expand editor"
+                      }
+                      aria-expanded={editorExpanded}
+                      onClick={() => setEditorExpanded((expanded) => !expanded)}
                     >
-                      <Code2 size={16} />
-                    </button>
-                    <button
-                      title="Collapse code panel"
-                      onClick={() => setLeftHidden(true)}
-                    >
-                      <Columns2 size={14} />
+                      {editorExpanded ? (
+                        <X size={16} />
+                      ) : (
+                        <Maximize2 size={15} />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1797,55 +2280,232 @@ export function App() {
                     </button>
                   </div>
                 )}
-                <div className="editor-tabs">
-                  {(["all", "html", "css", "js", "split"] as Tab[]).map((t) => (
-                    <button
-                      key={t}
-                      aria-label={t === "js" ? "JavaScript" : t.toUpperCase()}
-                      title={
-                        t === "js"
-                          ? "JavaScript"
-                          : t === "all"
-                            ? "Complete document"
-                            : t === "split"
-                              ? "Split editors"
-                              : t.toUpperCase()
-                      }
-                      className={tab === t ? "active" : ""}
-                      onClick={() => changeTab(t)}
+                <div className="code-editor-controls">
+                  <div
+                    className="editor-tabs"
+                    role="group"
+                    aria-label="Code views"
+                  >
+                    {(["all", "html", "css", "js", "split"] as Tab[]).map(
+                      (t) => (
+                        <button
+                          key={t}
+                          aria-label={
+                            t === "js" ? "JavaScript" : t.toUpperCase()
+                          }
+                          title={
+                            t === "js"
+                              ? "JavaScript"
+                              : t === "all"
+                                ? "Complete document"
+                                : t === "split"
+                                  ? "Split editors"
+                                  : t.toUpperCase()
+                          }
+                          className={tab === t ? "active" : ""}
+                          aria-pressed={tab === t}
+                          onClick={() => changeTab(t)}
+                        >
+                          {t === "html" ? (
+                            <Code2 size={13} />
+                          ) : t === "css" ? (
+                            <Palette size={13} />
+                          ) : t === "js" ? (
+                            <Braces size={13} />
+                          ) : t === "all" ? (
+                            <Layers size={13} />
+                          ) : (
+                            <Columns2 size={13} />
+                          )}
+                          <span>
+                            {t === "all"
+                              ? "All"
+                              : t === "split"
+                                ? "Split"
+                                : t.toUpperCase()}
+                          </span>
+                        </button>
+                      ),
+                    )}
+                  </div>
+                  {editorExpanded && (
+                    <div
+                      className="expanded-editor-tools"
+                      role="group"
+                      aria-label="Code tools"
                     >
-                      {t === "html" ? (
-                        <Code2 size={13} />
-                      ) : t === "css" ? (
-                        <Palette size={13} />
-                      ) : t === "js" ? (
-                        <Braces size={13} />
-                      ) : t === "all" ? (
-                        <Layers size={13} />
-                      ) : (
-                        <Columns2 size={13} />
-                      )}
-                      <span>{t === "js" ? "JS" : t.toUpperCase()}</span>
-                    </button>
-                  ))}
+                      <select
+                        className="editor-save-mode"
+                        aria-label="Workspace save mode"
+                        title="Workspace save mode"
+                        value={autosave ? "auto" : "manual"}
+                        onChange={(event) =>
+                          setAutosave(event.target.value === "auto")
+                        }
+                      >
+                        <option value="auto">Autosave</option>
+                        <option value="manual">Manual save</option>
+                      </select>
+                      <div
+                        className="editor-action-group"
+                        role="group"
+                        aria-label="Search and navigation"
+                      >
+                        <button
+                          aria-label="Find"
+                          title="Find (Ctrl+F)"
+                          onClick={() => runEditorAction("actions.find")}
+                        >
+                          <Search size={14} aria-hidden="true" />
+                        </button>
+                        <button
+                          aria-label="Replace"
+                          title="Replace (Ctrl+H)"
+                          disabled={masterMode || sceneLocked}
+                          onClick={() =>
+                            runEditorAction(
+                              "editor.action.startFindReplaceAction",
+                            )
+                          }
+                        >
+                          <Replace size={14} aria-hidden="true" />
+                        </button>
+                        <button
+                          aria-label="Go to line"
+                          title="Go to line (Ctrl+G)"
+                          onClick={() =>
+                            runEditorAction("editor.action.gotoLine")
+                          }
+                        >
+                          <ListEnd size={14} aria-hidden="true" />
+                        </button>
+                        <button
+                          aria-label="Command palette"
+                          title="Command palette (F1)"
+                          onClick={() =>
+                            runEditorAction("editor.action.quickCommand")
+                          }
+                        >
+                          <Command size={14} aria-hidden="true" />
+                        </button>
+                        <button
+                          aria-label="Word wrap"
+                          title="Word wrap"
+                          aria-pressed={expandedWrap}
+                          onClick={() => setExpandedWrap((wrap) => !wrap)}
+                        >
+                          <WrapText size={14} aria-hidden="true" />
+                        </button>
+                      </div>
+                      <select
+                        className="editor-format-menu"
+                        aria-label="Format code"
+                        value=""
+                        disabled={masterMode || sceneLocked}
+                        onChange={(event) => {
+                          setFormatError("");
+                          const action = event.target.value;
+                          if (action === "json") void formatSelectedJson();
+                          else runEditorAction(action);
+                        }}
+                      >
+                        <option value="" disabled>
+                          Format
+                        </option>
+                        <option value="editor.action.formatDocument">
+                          Format document
+                        </option>
+                        <option value="editor.action.formatSelection">
+                          Format selection
+                        </option>
+                        <option value="json">Format selected JSON</option>
+                      </select>
+                      <div
+                        className="editor-font-controls"
+                        role="group"
+                        aria-label="Code text size"
+                      >
+                        <button
+                          aria-label="Decrease code text size"
+                          disabled={fontSize <= 10}
+                          onClick={() =>
+                            setFontSize((size) => Math.max(10, size - 1))
+                          }
+                        >
+                          <Minus size={13} />
+                        </button>
+                        <output aria-label="Code text size in pixels">
+                          {fontSize}px
+                        </output>
+                        <button
+                          aria-label="Increase code text size"
+                          disabled={fontSize >= 28}
+                          onClick={() =>
+                            setFontSize((size) => Math.min(28, size + 1))
+                          }
+                        >
+                          <Plus size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
+                {formatError && (
+                  <div className="code-readonly-notice" role="status">
+                    <span>{formatError}</span>
+                    <button
+                      aria-label="Dismiss format message"
+                      onClick={() => setFormatError("")}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+                {changesBase && (
+                  <div className="code-changes-legend">
+                    <span>
+                      {changes?.code
+                        ? "Compared with a history version"
+                        : "Changes since the baseline save"}
+                    </span>
+                    <span className="code-change-removed">− Removed</span>
+                    <span className="code-change-added">+ Added</span>
+                  </div>
+                )}
                 <div className="editor-container">
                   {tab === "all" ? (
                     <>
-                      <Editor
-                        language="html"
-                        theme={light ? "framescript-light" : "framescript-dark"}
-                        path={(p.workflow?.selectedId ?? "project") + "/all"}
-                        value={combinedDraft}
-                        onChange={(v) => updateCombined(v ?? "")}
-                        options={{
-                          fontSize,
-                          readOnly: masterMode || sceneLocked,
-                          minimap: { enabled: false },
-                          wordWrap: "on",
-                          automaticLayout: true,
-                        }}
-                      />
+                      {changesBase ? (
+                        renderChanges(
+                          "all",
+                          combined({ ...p, ...changesBase }),
+                          combinedDraft,
+                          updateCombined,
+                        )
+                      ) : (
+                        <Editor
+                          language="html"
+                          theme={
+                            light ? "framescript-light" : "framescript-dark"
+                          }
+                          path={(p.workflow?.selectedId ?? "project") + "/all"}
+                          keepCurrentModel
+                          value={combinedDraft}
+                          gutterBaseline={
+                            masterMode || !gutterProject
+                              ? undefined
+                              : combined({ ...p, ...workingBase })
+                          }
+                          onChange={(v) => updateCombined(v ?? "")}
+                          onMount={(instance) => trackEditor(instance, "all")}
+                          options={{
+                            fontSize,
+                            readOnly: masterMode || sceneLocked,
+                            ...editorDisplay,
+                            automaticLayout: true,
+                          }}
+                        />
+                      )}
                       {parseError && (
                         <div className="inline-error">
                           {parseError}
@@ -1873,6 +2533,126 @@ export function App() {
                     editor(tab)
                   )}
                 </div>
+                {(showProblems || showConsole) && (
+                  <div
+                    className="code-bottom-panel"
+                    style={{ height: outputHeight }}
+                  >
+                    <div
+                      className="code-bottom-resizer"
+                      role="separator"
+                      aria-label="Resize code output panel"
+                      aria-orientation="horizontal"
+                      tabIndex={0}
+                      onPointerDown={(event) => {
+                        if (event.button !== 0) return;
+                        const panel = event.currentTarget.parentElement!;
+                        outputDrag.current = {
+                          y: event.clientY,
+                          height: panel.offsetHeight,
+                          max: Math.max(
+                            100,
+                            (panel.parentElement?.clientHeight ?? 400) * 0.75,
+                          ),
+                        };
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                      }}
+                      onPointerMove={(event) => {
+                        const drag = outputDrag.current;
+                        if (
+                          drag &&
+                          event.currentTarget.hasPointerCapture(event.pointerId)
+                        )
+                          setOutputHeight(
+                            Math.max(
+                              100,
+                              Math.min(
+                                drag.max,
+                                drag.height + drag.y - event.clientY,
+                              ),
+                            ),
+                          );
+                      }}
+                      onLostPointerCapture={() => {
+                        outputDrag.current = null;
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key !== "ArrowUp" &&
+                          event.key !== "ArrowDown"
+                        )
+                          return;
+                        event.preventDefault();
+                        const panel = event.currentTarget.parentElement!;
+                        const max = Math.max(
+                          100,
+                          (panel.parentElement?.clientHeight ?? 400) * 0.75,
+                        );
+                        setOutputHeight(
+                          Math.max(
+                            100,
+                            Math.min(
+                              max,
+                              panel.offsetHeight +
+                                (event.key === "ArrowUp" ? 20 : -20),
+                            ),
+                          ),
+                        );
+                      }}
+                      onDoubleClick={() => setOutputHeight(170)}
+                    />
+                    <div
+                      className="code-bottom-tabs"
+                      role="group"
+                      aria-label="Code output panels"
+                    >
+                      <button
+                        aria-pressed={!showConsole}
+                        onClick={() => {
+                          setShowProblems(true);
+                          setShowConsole(false);
+                        }}
+                      >
+                        Problems{problemCount ? ` (${problemCount})` : ""}
+                      </button>
+                      <button
+                        aria-pressed={showConsole}
+                        onClick={() => setShowConsole(true)}
+                      >
+                        Console
+                      </button>
+                      <button
+                        className="code-bottom-close"
+                        aria-label="Close code output panel"
+                        onClick={() => {
+                          setShowProblems(false);
+                          setShowConsole(false);
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    {showConsole ? (
+                      <PreviewConsole
+                        entries={consoleEntries}
+                        onClear={() => setConsoleEntries([])}
+                        onCommand={(command) => {
+                          appendConsole([{ level: "command", text: command }]);
+                          consoleCommandRef.current?.(command);
+                        }}
+                      />
+                    ) : (
+                      <CodeProblems
+                        syntax={syntax}
+                        parseError={parseError}
+                        previewError={s.errorCode !== undefined ? s.error : ""}
+                        previewLocation={previewLocation ?? undefined}
+                        projectError={s.errorCode === undefined ? s.error : ""}
+                        onJump={jumpToProblem}
+                      />
+                    )}
+                  </div>
+                )}
                 <div
                   className={"assets" + (assetsCollapsed ? " collapsed" : "")}
                 >
@@ -2132,7 +2912,7 @@ export function App() {
           >
             <Preview
               quality={previewQuality}
-              compositionProject={masterMode ? p : undefined}
+              compositionProject={masterMode ? executionProject : undefined}
               textEditing={!masterMode}
               projectOverride={viewProject}
               run={run}
@@ -2140,6 +2920,8 @@ export function App() {
               onSelect={handleSelect}
               onReady={handleReady}
               onVisual={handleVisual}
+              onConsole={appendConsole}
+              consoleCommandRef={consoleCommandRef}
               zoom={zoom}
               rulers={previewRulers}
             />
@@ -2158,32 +2940,18 @@ export function App() {
           {s.error && (
             <div className="preview-error" role="alert">
               <span>
-                {s.errorLocation
-                  ? `JavaScript · line ${s.errorLocation.line}, column ${s.errorLocation.column}: `
-                  : "Preview error: "}
+                {previewLocation
+                  ? `JavaScript · line ${previewLocation.line}, column ${previewLocation.column}: `
+                  : s.errorCode !== undefined
+                    ? "Preview error: "
+                    : "Project error: "}
                 {s.error}
               </span>
-              {s.errorLocation && !masterMode && (
+              {previewLocation && (
                 <button
                   title="Jump to error"
                   aria-label="Jump to error"
-                  onClick={() => {
-                    const location = s.errorLocation!;
-                    jumpLine.current = location;
-                    setLeftView("code");
-                    setLeftHidden(false);
-                    setTab("js");
-                    const model = editorRef.current?.getModel();
-                    if (tab === "js" && model) {
-                      editorRef.current.setPosition({
-                        lineNumber: location.line,
-                        column: location.column,
-                      });
-                      editorRef.current.revealLineInCenter(location.line);
-                      editorRef.current.focus();
-                      jumpLine.current = null;
-                    }
-                  }}
+                  onClick={() => jumpToProblem("js", previewLocation)}
                 >
                   <Code2 size={16} />
                 </button>
@@ -2645,11 +3413,15 @@ export function App() {
         <span role="status">{notice}</span>
         <span className="toolbar-spacer" />
         <span aria-label="Workspace save status">
-          {storageSaveState === "saved"
-            ? "Workspace saved locally"
-            : storageSaveState === "error"
-              ? "Workspace save failed"
-              : "Saving workspace…"}
+          {!autosave
+            ? manualUnsaved
+              ? "Manual save · Unsaved changes"
+              : "Manual save"
+            : storageSaveState === "saved"
+              ? "Workspace saved locally"
+              : storageSaveState === "error"
+                ? "Workspace save failed"
+                : "Saving workspace…"}
         </span>
         <span>LOCAL WEB APP</span>
         <span>UTF-8</span>
@@ -2690,6 +3462,24 @@ export function App() {
             ]);
             setPendingAI(null);
             setNotice("AI changes applied · Undo available");
+          }}
+        />
+      )}
+      {modal === "code-history" && (
+        <CodeHistory
+          scene={p.workflow?.selectedId ?? null}
+          readOnly={masterMode || sceneLocked}
+          onClose={() => setModal("")}
+          onCompare={(code, language) => {
+            changeTab(language);
+            setChanges({ session: s.session, scene: codeScene, code });
+            setModal("");
+          }}
+          onRestore={(code) => {
+            setParseError("");
+            setCombinedDraft(combined({ ...p, ...code }));
+            s.change(code, "Restore code version");
+            setModal("");
           }}
         />
       )}
@@ -2916,6 +3706,15 @@ export function App() {
               </option>
             </select>
           </Field>
+          <Field label="Workspace save mode">
+            <select
+              value={autosave ? "auto" : "manual"}
+              onChange={(event) => setAutosave(event.target.value === "auto")}
+            >
+              <option value="auto">Autosave</option>
+              <option value="manual">Manual save</option>
+            </select>
+          </Field>
           <Field label="Editor font size">
             <input
               type="number"
@@ -2961,7 +3760,7 @@ export function App() {
             Recovery history
           </button>
           <button onClick={downloadRecoveryCopy}>Download recovery copy</button>
-          <button onClick={() => save(true)}>Save as / duplicate</button>
+          <button onClick={() => save(true)}>Save copy as .frame</button>
           <button
             onClick={() =>
               void act(async () => {

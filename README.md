@@ -88,7 +88,7 @@ The main workspace now uses a library/player/inspector layout: **Media, Audio, S
 - Import or drop images. The asset + button inserts an image; the sparkle attaches it to an AI request. Project assets use portable `asset://<id>` references.
 - Select elements with unique source IDs to edit styles and text. Drag to move; Shift+drag resizes. Dynamic elements without a source match remain inspection-only. Visual changes support project undo.
 - Open ten editable scenes from Examples.
-- Save creates a copy in the server project directory and downloads a portable `.frame` file. Open uses the browser file picker. Recent server projects appear in Examples. Save As duplicates; edit the title to rename. Moving a saved project to trash preserves downloaded copies.
+- Save and Ctrl+S apply the code and save the project locally. In Manual save mode, the preview and export use the last applied code while the editor shows an Unsaved code indicator. Use Project settings → Save copy as .frame to download a portable copy.
 - Startup automatically restores the SQLite workspace. Legacy recovery can appear in a nonblocking banner if no workspace exists. Restore or dismiss it once; the same snapshot stays acknowledged in that browser even after refreshing, while a changed autosave can prompt again. Dismissal preserves the recovery file on disk. Export HTML source downloads a standalone scene with embedded assets and playback runtime.
 - Export MP4/H.264, MKV/H.264, WebM/VP9, GIF, PNG sequences in a ZIP, or one PNG at the current timeline time. Resolution, FPS, duration, speed, CRF, fitting and supported transparency are configurable. The browser handles the download location.
 

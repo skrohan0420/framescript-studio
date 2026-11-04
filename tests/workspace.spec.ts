@@ -1,5 +1,67 @@
 import { test, expect } from "@playwright/test";
 import { newProject } from "../shared/project";
+test("expanded code editor keeps the same document and exposes navigation tools", async ({
+  page,
+}) => {
+  await page.goto("/#editor");
+  await page.getByRole("button", { name: "Code panel", exact: true }).click();
+  const panel = page.locator(".code-workbench");
+  await panel.getByRole("button", { name: "JavaScript", exact: true }).click();
+  const editor = panel.locator(".monaco-editor");
+  await expect(editor).toBeVisible();
+  const compactWidth = (await editor.boundingBox())!.width;
+  await panel
+    .getByRole("button", { name: "Expand editor", exact: true })
+    .click();
+  await expect
+    .poll(async () => (await editor.boundingBox())!.width)
+    .toBeGreaterThan(compactWidth * 2);
+  const size = panel.getByLabel("Code text size in pixels");
+  const originalSize = Number.parseInt((await size.textContent())!, 10);
+  await panel.getByRole("button", { name: "Increase code text size" }).click();
+  await expect(size).toHaveText(`${originalSize + 1}px`);
+  await panel.getByRole("button", { name: "Decrease code text size" }).click();
+  await expect(size).toHaveText(`${originalSize}px`);
+  await panel.getByRole("button", { name: "Find", exact: true }).click();
+  await expect(editor.locator(".find-widget.visible")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(editor.locator(".find-widget.visible")).toHaveCount(0);
+  await expect(
+    panel.getByRole("button", { name: "Close expanded editor" }),
+  ).toBeVisible();
+  for (const tool of ["Go to line", "Command palette"]) {
+    await panel.getByRole("button", { name: tool, exact: true }).click();
+    const quickInput = page.locator(".quick-input-widget:visible");
+    await expect(quickInput).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(quickInput).toHaveCount(0);
+  }
+  await editor.click();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.insertText("const answer=42;");
+  const formatter = panel.getByLabel("Format code");
+  await formatter.selectOption({ label: "Format document" });
+  await expect(editor.locator(".view-lines")).toContainText(
+    "const answer = 42;",
+  );
+  await editor.click();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.press("Backspace");
+  await page.keyboard.insertText("[1,2,3]");
+  await page.keyboard.press("Control+A");
+  await formatter.selectOption({ label: "Format selected JSON" });
+  await expect(editor.locator(".view-lines")).toContainText("[1, 2, 3]");
+  await page.keyboard.press("Control+Home");
+  await page.keyboard.insertText("// expanded editor check\n");
+  await page.keyboard.press("Shift+ArrowDown");
+  await page.keyboard.press("Escape");
+  await expect(
+    panel.getByRole("button", { name: "Expand editor", exact: true }),
+  ).toBeFocused();
+  await expect(editor.locator(".view-lines")).toContainText(
+    "expanded editor check",
+  );
+});
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/recover", (route) =>
     route.fulfill({ json: { result: null } }),
@@ -50,10 +112,18 @@ test("local Node backend saves, reopens, imports assets and downloads an MP4", a
   await expect(
     page.frameLocator('iframe[title="Animation preview"]').locator("#ball"),
   ).toBeVisible();
+  await page
+    .getByRole("banner")
+    .getByRole("button", { name: "Project settings", exact: true })
+    .click();
+  const settings = page.getByRole("dialog");
   const [projectDownload] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByRole("button", { name: "Save (Ctrl+S)", exact: true }).click(),
+    settings
+      .getByRole("button", { name: "Save copy as .frame", exact: true })
+      .click(),
   ]);
+  await settings.getByRole("button", { name: "Close", exact: true }).click();
   const projectFile = await projectDownload.path();
   expect(projectFile).toBeTruthy();
   const [chooser] = await Promise.all([
@@ -162,13 +232,134 @@ test("failed preview preserves last valid frame and visual edits update source",
   const editor = page.locator(".monaco-editor").first();
   await editor.click();
   await page.keyboard.press("Control+A");
+  await page.keyboard.insertText('import value from "./module.js";');
+  await expect(page.locator(".code-problem-dot")).toBeVisible();
+  const problems = page.getByRole("region", { name: "Code problems" });
+  await expect(problems).toBeVisible();
+  await expect(problems).toContainText(
+    "Import and export statements require a module",
+  );
+  await problems.getByRole("button", { name: /JavaScript · Line 1/ }).click();
+  await expect(editor.locator("textarea")).toBeFocused();
+  await page.keyboard.press("Control+A");
   await page.keyboard.insertText(
-    'throw new Error("intentional validation failure")',
+    "// THREE" + "\n".repeat(11) + "  console.log(dead)",
   );
   await expect(page.locator(".preview-error")).toContainText(
-    "intentional validation failure",
+    "dead is not defined",
   );
+  await expect(
+    problems.getByRole("button", {
+      name: "Preview error · Line 12, column 15",
+    }),
+  ).toBeVisible();
+  await expect(problems).toContainText("No syntax errors found.");
   await expect(preview.locator("#ball")).toBeVisible();
+  await page.getByRole("button", { name: "ALL", exact: true }).click();
+  await editor.click();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.insertText(
+    "<!doctype html>\n<html><body><div></span></body></html>",
+  );
+  await expect(problems).toContainText('Unexpected closing tag "span"');
+  await problems
+    .getByRole("button", { name: /Combined HTML · Line 2/ })
+    .click();
+  await expect(editor.locator("textarea")).toBeFocused();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.insertText(
+    "<!doctype html>\n<html><body><div>Fixed</div></body></html>",
+  );
+  await expect(problems).toHaveCount(0);
+  await expect(page.locator(".code-problem-dot")).toHaveCount(0);
+  await page.getByRole("button", { name: "JavaScript", exact: true }).click();
+  await editor.click();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.insertText(
+    'console.log("Frame value", { count: 3, nested: { speed: 2 } }); console.info(JSON.stringify({ ready: true })); console.table([{ name: "Orbit", frames: 60 }]); console.warn("Sample warning");',
+  );
+  await page.getByRole("button", { name: "Code editor options" }).click();
+  await page
+    .getByRole("button", { name: "Preview console", exact: true })
+    .click();
+  const consolePanel = page.getByRole("region", { name: "Preview console" });
+  await consolePanel.getByLabel("Console output format").selectOption("pretty");
+  await expect(consolePanel).toContainText('"count": 3');
+  await expect(consolePanel).toContainText('"ready": true');
+  const table = consolePanel.getByRole("table", { name: "Console data" });
+  await expect(
+    table.getByRole("columnheader", { name: "frames" }),
+  ).toBeVisible();
+  await expect(table.getByRole("cell", { name: "60" })).toBeVisible();
+  await consolePanel.getByLabel("Console output format").selectOption("json");
+  const nested = consolePanel.locator("summary").filter({ hasText: "nested:" });
+  await nested.click();
+  await expect(
+    consolePanel
+      .locator(".console-json-children")
+      .getByText("speed:", { exact: false }),
+  ).toBeVisible();
+  await consolePanel.getByLabel("Console output format").selectOption("table");
+  await expect(
+    consolePanel.getByRole("table", { name: "Console data" }),
+  ).toHaveCount(3);
+  await consolePanel.getByLabel("Console output format").selectOption("text");
+  await expect(consolePanel).toContainText("Frame value {count: 3, nested:");
+  await expect(consolePanel).toContainText("Sample warning");
+  await page
+    .getByRole("button", { name: "Expand editor", exact: true })
+    .click();
+  const panel = page.locator(".code-bottom-panel");
+  const initialHeight = (await panel.boundingBox())!.height;
+  const handle = await page
+    .getByRole("separator", { name: "Resize code output panel" })
+    .boundingBox();
+  await page.mouse.move(
+    handle!.x + handle!.width / 2,
+    handle!.y + handle!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(handle!.x + handle!.width / 2, handle!.y - 90, {
+    steps: 5,
+  });
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await panel.boundingBox())!.height)
+    .toBeGreaterThan(initialHeight + 70);
+  await consolePanel.getByLabel("Console message level").selectOption("warn");
+  await expect(consolePanel).not.toContainText("Frame value");
+  await consolePanel.getByRole("button", { name: "Clear console" }).click();
+  await expect(consolePanel).not.toContainText("Sample warning");
+  await consolePanel.getByLabel("Console message level").selectOption("all");
+  const prompt = consolePanel.getByRole("textbox", { name: "Console command" });
+  const command = 'document.querySelector("div").textContent';
+  await prompt.fill(command);
+  await prompt.press("Enter");
+  await expect(consolePanel.locator('[data-level="result"]')).toContainText(
+    "Fixed",
+  );
+  await prompt.press("ArrowUp");
+  await expect(prompt).toHaveValue(command);
+  await consolePanel
+    .getByRole("searchbox", { name: "Filter console" })
+    .fill("Fixed");
+  await expect(consolePanel.locator('[data-level="command"]')).toHaveCount(0);
+  await expect(consolePanel.locator('[data-level="result"]')).toContainText(
+    "Fixed",
+  );
+  await consolePanel
+    .getByRole("searchbox", { name: "Filter console" })
+    .fill("");
+  await consolePanel.getByLabel("Console output format").selectOption("json");
+  await prompt.fill(
+    'Object.fromEntries(Array.from({ length: 44 }, (_, i) => ["property" + i, i]))',
+  );
+  await prompt.press("Enter");
+  const wideResult = consolePanel.locator('[data-level="result"]').last();
+  await wideResult.getByRole("button", { name: "Show 20 more" }).click();
+  await expect(
+    wideResult.getByText("property43:", { exact: false }),
+  ).toBeVisible();
 });
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/workspaceGet", (r) =>

@@ -101,6 +101,7 @@ const workspaceWrites = new Set([
   "projectDuplicate",
   "projectTrash",
   "projectRestore",
+  "projectDeleteForever",
   "autosave",
   "newSession",
   "openRecent",

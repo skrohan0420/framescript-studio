@@ -61,6 +61,9 @@ export function ProjectHome({
     [tool, setTool] = useState("code");
   const [rename, setRename] = useState<ProjectSummary | null>(null),
     [renameValue, setRenameValue] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<ProjectSummary | null>(
+    null,
+  );
   const returnFocus = useRef<HTMLElement | null>(null);
   const refresh = async () => {
     setLoading(true);
@@ -297,7 +300,7 @@ export function ProjectHome({
                 {search
                   ? "Try another project name."
                   : section === "trash"
-                    ? "Removed projects appear here and can be restored."
+                    ? "Removed projects can be restored or deleted forever."
                     : "Create your first project, import a .frame file, or continue your current workspace."}
               </p>
               {!search && section !== "trash" && (
@@ -353,17 +356,29 @@ export function ProjectHome({
                   </div>
                   <div className="home-card-actions">
                     {section === "trash" ? (
-                      <button
-                        disabled={busy}
-                        aria-label={`Restore ${project.name}`}
-                        onClick={() =>
-                          void act(() =>
-                            bridge.call("projectRestore", project.id),
-                          )
-                        }
-                      >
-                        <RotateCcw size={14} /> Restore
-                      </button>
+                      <>
+                        <button
+                          disabled={busy}
+                          aria-label={`Restore ${project.name}`}
+                          onClick={() =>
+                            void act(() =>
+                              bridge.call("projectRestore", project.id),
+                            )
+                          }
+                        >
+                          <RotateCcw size={14} /> Restore
+                        </button>
+                        <button
+                          disabled={busy}
+                          aria-label={`Delete ${project.name} forever`}
+                          onClick={(event) => {
+                            returnFocus.current = event.currentTarget;
+                            setPendingDelete(project);
+                          }}
+                        >
+                          <Trash2 size={14} /> Delete forever
+                        </button>
+                      </>
                     ) : (
                       <>
                         <button
@@ -506,6 +521,53 @@ export function ProjectHome({
                     <Plus size={16} /> Create project
                   </button>
                 </form>
+              </Dialog.Content>
+            </Dialog.Overlay>
+          </Dialog.Portal>
+        </Dialog.Root>
+      )}
+      {pendingDelete && (
+        <Dialog.Root
+          open
+          onOpenChange={(open) => !open && setPendingDelete(null)}
+        >
+          <Dialog.Portal>
+            <Dialog.Overlay className="home-modal-backdrop">
+              <Dialog.Content
+                className="home-modal home-delete-modal"
+                role="alertdialog"
+                onPointerDownOutside={(event) => event.preventDefault()}
+                onCloseAutoFocus={(event) => {
+                  event.preventDefault();
+                  returnFocus.current?.focus();
+                }}
+              >
+                <span className="home-delete-icon" aria-hidden="true">
+                  <Trash2 size={20} />
+                </span>
+                <Dialog.Title>Delete project forever?</Dialog.Title>
+                <Dialog.Description>
+                  <strong>{pendingDelete.name}</strong> will be permanently
+                  removed from Trash. This action can’t be undone.
+                </Dialog.Description>
+                <div className="modal-actions">
+                  <Dialog.Close asChild>
+                    <button type="button">Cancel</button>
+                  </Dialog.Close>
+                  <button
+                    className="primary home-delete-confirm"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setPendingDelete(null);
+                      void act(() =>
+                        bridge.call("projectDeleteForever", pendingDelete.id),
+                      );
+                    }}
+                  >
+                    Delete forever
+                  </button>
+                </div>
               </Dialog.Content>
             </Dialog.Overlay>
           </Dialog.Portal>

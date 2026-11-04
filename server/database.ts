@@ -3,7 +3,9 @@ import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { gzipSync, gunzipSync } from "node:zlib";
 import { projectSchema, type Project } from "../shared/project";
+import type { CodeSnapshot } from "../shared/rpc";
 const require = createRequire(path.resolve("package.json"));
 export class StudioDatabase {
   private mediaCache = new Map<string, { data: string; reference: string }>();
@@ -45,6 +47,10 @@ export class StudioDatabase {
     instance.db.run(
       "CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY,payload TEXT NOT NULL,updated INTEGER NOT NULL,deleted INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY,header TEXT NOT NULL,filename TEXT NOT NULL); CREATE TABLE IF NOT EXISTS recovery (id TEXT PRIMARY KEY,payload TEXT NOT NULL,editor TEXT NOT NULL,reason TEXT NOT NULL,created INTEGER NOT NULL);",
     );
+    instance.db.run(`CREATE TABLE IF NOT EXISTS code_versions (
+      id TEXT PRIMARY KEY, project TEXT NOT NULL, scene TEXT NOT NULL,
+      payload BLOB NOT NULL, reason TEXT NOT NULL, created INTEGER NOT NULL
+    ); CREATE INDEX IF NOT EXISTS code_versions_scope ON code_versions(project, scene);`);
     if (!instance.get("migration-v1")) {
       const legacy = path.join(directory, "projects");
       if (fs.existsSync(legacy))
@@ -225,9 +231,16 @@ export class StudioDatabase {
     const value = this.get("workspace");
     return value ? this.unpack(value) : null;
   }
-  saveWorkspace(p: Project, editor?: unknown, projectId?: string) {
+  saveWorkspace(
+    p: Project,
+    editor?: unknown,
+    projectId?: string,
+    draftScope?: string,
+  ) {
     this.transaction(() => {
       const payload = this.pack(p);
+      if (projectId) this.recordProjectCode(projectId, p, "Autosave");
+      else if (draftScope) this.recordCode(draftScope, p, "Autosave");
       this.writeValue("workspace", payload);
       if (projectId)
         this.db.run(
@@ -288,8 +301,116 @@ export class StudioDatabase {
       editor: JSON.parse(String(row.editor)),
     };
   }
-  putProject(id: string, p: Project) {
+  private recordProjectCode(id: string, p: Project, reason: string) {
+    if (
+      !this.row("SELECT 1 FROM code_versions WHERE project=? LIMIT 1", [id])
+    ) {
+      const previous = this.row(
+        "SELECT payload FROM projects WHERE id=? AND deleted=0",
+        [id],
+      );
+      if (previous)
+        this.recordCode(
+          id,
+          JSON.parse(String(previous.payload)),
+          "Previous save",
+        );
+    }
+    this.recordCode(id, p, reason);
+  }
+  private recordCode(id: string, p: Project, reason: string) {
+    const scenes = p.workflow?.scenes ?? [p];
+    for (const code of scenes) {
+      const scene = "id" in code ? `scene:${code.id}` : "project";
+      const payload = JSON.stringify({
+        html: code.html,
+        css: code.css,
+        js: code.js,
+      });
+      const digest = createHash("sha256").update(payload).digest();
+      const latest = this.row(
+        "SELECT id,reason,substr(payload,1,32) AS digest FROM code_versions WHERE project=? AND scene=? ORDER BY rowid DESC LIMIT 1",
+        [id, scene],
+      );
+      if (
+        latest?.digest instanceof Uint8Array &&
+        digest.equals(latest.digest)
+      ) {
+        if (reason === "Manual save" && latest.reason !== reason)
+          this.db.run(
+            "UPDATE code_versions SET reason=?,created=? WHERE id=?",
+            [reason, Date.now(), latest.id],
+          );
+        continue;
+      }
+      this.db.run("INSERT INTO code_versions VALUES(?,?,?,?,?,?)", [
+        crypto.randomUUID(),
+        id,
+        scene,
+        Buffer.concat([digest, gzipSync(payload)]),
+        reason,
+        Date.now(),
+      ]);
+      this.db.run(
+        `DELETE FROM code_versions WHERE project=? AND scene=? AND rowid NOT IN (
+        SELECT rowid FROM code_versions WHERE project=? AND scene=? ORDER BY (id=?) DESC,rowid DESC LIMIT 20
+      )`,
+        [id, scene, id, scene, this.baselineId(id, scene) ?? ""],
+      );
+    }
+  }
+  private baselineId(project: string, scene: string) {
+    return this.row(
+      `SELECT id FROM code_versions WHERE project=? AND scene=?
+      ORDER BY (reason <> 'Autosave') DESC, CASE WHEN reason = 'Autosave' THEN rowid ELSE -rowid END LIMIT 1`,
+      [project, scene],
+    )?.id as string | undefined;
+  }
+  codeBaseline(project: string, scene: string | null): CodeSnapshot | null {
+    const id = this.baselineId(
+      project,
+      scene === null ? "project" : `scene:${scene}`,
+    );
+    return id ? this.codeVersion(project, scene, id) : null;
+  }
+  codeHistory(id: string, scene: string | null) {
+    return (
+      this.db.exec(
+        "SELECT id,created,reason FROM code_versions WHERE project=? AND scene=? ORDER BY rowid DESC",
+        [id, scene === null ? "project" : `scene:${scene}`],
+      )[0]?.values ?? []
+    ).map(([id, created, reason]) => ({
+      id: String(id),
+      created: Number(created),
+      reason: String(reason),
+    }));
+  }
+  codeVersion(project: string, scene: string | null, id: string): CodeSnapshot {
+    const row = this.row(
+      "SELECT payload FROM code_versions WHERE project=? AND scene=? AND id=?",
+      [project, scene === null ? "project" : `scene:${scene}`, id],
+    );
+    if (!row) throw Error("Code version is no longer available.");
+    const payload = row.payload;
+    return JSON.parse(
+      payload instanceof Uint8Array
+        ? gunzipSync(payload.subarray(32)).toString("utf8")
+        : String(payload),
+    );
+  }
+  clearDraftCode() {
+    this.transaction(() =>
+      this.db.run("DELETE FROM code_versions WHERE project='draft'"),
+    );
+  }
+  putProject(id: string, p: Project, draftScope?: string) {
     this.transaction(() => {
+      if (draftScope)
+        this.db.run("UPDATE code_versions SET project=? WHERE project=?", [
+          id,
+          draftScope,
+        ]);
+      this.recordProjectCode(id, p, "Manual save");
       const payload = JSON.stringify(this.pack(p));
       this.db.run(
         "INSERT INTO projects(id,payload,updated) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,updated=excluded.updated,deleted=0",
@@ -374,6 +495,17 @@ export class StudioDatabase {
         id,
       ]),
     );
+  }
+  deleteTrashedProject(id: string) {
+    this.transaction(() => {
+      this.db.run("DELETE FROM projects WHERE id=? AND deleted=1", [id]);
+      if (!this.db.getRowsModified())
+        throw Error("Project is no longer in Trash.");
+      this.db.run("DELETE FROM kv WHERE key=?", ["thumbnail:" + id]);
+      this.db.run("DELETE FROM code_versions WHERE project=?", [id]);
+      if (this.get("currentProject") === id)
+        this.writeValue("currentProject", null);
+    });
   }
   duplicateProject(id: string, nextId: string) {
     const project = this.project(id);

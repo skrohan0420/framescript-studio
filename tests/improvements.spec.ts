@@ -187,7 +187,7 @@ test("Save completion leaves edits made during its request dirty", async ({
   const response = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await page.route("**/api/save", async (r) => {
+  await page.route("**/api/projectSave", async (r) => {
     await response;
     await r.fulfill({ json: { result: "Submitted.frame" } });
   });
@@ -197,7 +197,7 @@ test("Save completion leaves edits made during its request dirty", async ({
     exact: true,
   });
   await title.fill("Submitted revision");
-  const request = page.waitForRequest("**/api/save");
+  const request = page.waitForRequest("**/api/projectSave");
   await page
     .getByRole("button", { name: "Save (Ctrl+S)", exact: true })
     .click();
@@ -205,7 +205,9 @@ test("Save completion leaves edits made during its request dirty", async ({
   await title.fill("Newer edit while saving");
   release();
   await expect(
-    page.getByRole("status").filter({ hasText: "Saved · Submitted.frame" }),
+    page
+      .getByRole("status")
+      .filter({ hasText: "Code saved and applied locally" }),
   ).toBeVisible();
   await expect(page.locator(".dirty")).toHaveText("●");
 });

@@ -81,6 +81,7 @@ const workspaceWrites = new Set([
   "projectDuplicate",
   "projectTrash",
   "projectRestore",
+  "projectDeleteForever",
   "autosave",
   "newSession",
   "openRecent",
@@ -385,6 +386,7 @@ async function invoke(
       return true;
     case "newSession":
       database.checkpoint("Before replacing project");
+      database.clearDraftCode();
       database.set("currentProject", null);
       client.current = undefined;
       return true;
@@ -411,8 +413,15 @@ async function invoke(
         client.current === database.get("currentProject")
           ? client.current
           : undefined,
+        client.current ? undefined : "draft",
       );
       return true;
+    case "codeHistory":
+      return database.codeHistory(client.current ?? "draft", args[0]);
+    case "codeBaseline":
+      return database.codeBaseline(client.current ?? "draft", args[0]);
+    case "codeVersion":
+      return database.codeVersion(client.current ?? "draft", args[0], args[1]);
     case "checkpoint":
       return database.checkpoint(
         String(args[0] || "Manual checkpoint"),
@@ -441,7 +450,11 @@ async function invoke(
         args[1]?.create || !client.current
           ? cleanName(project.name) + "-" + randomUUID() + ".frame"
           : client.current;
-      database.putProject(id, project);
+      database.putProject(
+        id,
+        project,
+        !args[1]?.create && !client.current ? "draft" : undefined,
+      );
       database.saveWorkspace(project);
       database.set("currentProject", id);
       client.current = id;
@@ -469,6 +482,14 @@ async function invoke(
     case "projectRestore":
       database.restoreProject(args[0]);
       return true;
+    case "projectDeleteForever": {
+      const id = args[0];
+      database.deleteTrashedProject(id);
+      for (const session of clients.values()) {
+        if (session.current === id) session.current = undefined;
+      }
+      return true;
+    }
     case "openRecent": {
       const file = args[0];
       if (
@@ -491,7 +512,11 @@ async function invoke(
         name === "save" && client.current
           ? client.current
           : cleanName(p.name) + "-" + randomUUID() + ".frame";
-      database.putProject(file, p);
+      database.putProject(
+        file,
+        p,
+        name === "save" && !client.current ? "draft" : undefined,
+      );
       database.saveWorkspace(p);
       database.set("currentProject", file);
       await saveProject(path.join(projectsDir, file), p);
@@ -627,7 +652,13 @@ async function invoke(
         release = await exportQueue.acquire(exportAbort.signal);
         await new Promise<void>((resolve, reject) => {
           const worker = new Worker(path.join(__dirname, "export-worker.cjs"), {
-            workerData: { project, options, destination, ffmpeg, cacheDirectory: path.join(dataDir, "render-cache", owner!) },
+            workerData: {
+              project,
+              options,
+              destination,
+              ffmpeg,
+              cacheDirectory: path.join(dataDir, "render-cache", owner!),
+            },
           });
           job.worker = worker;
           if (exportAbort.signal.aborted) worker.postMessage("cancel");

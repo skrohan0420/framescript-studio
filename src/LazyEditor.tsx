@@ -1,6 +1,9 @@
 import { Component, lazy, Suspense, type ReactNode } from "react";
-import type { EditorProps } from "@monaco-editor/react";
+import type { ChangesEditorProps, SourceEditorProps } from "./CodeEditor";
 const Editor = lazy(() => import("./CodeEditor"));
+const Changes = lazy(() =>
+  import("./CodeEditor").then((module) => ({ default: module.ChangesEditor })),
+);
 // A failed optional editor download must not replace the entire workspace with
 // the root error screen or interrupt preview and autosave.
 class EditorBoundary extends Component<
@@ -27,7 +30,7 @@ class EditorBoundary extends Component<
     );
   }
 }
-export default function LazyEditor(props: EditorProps) {
+function EditorLoader({ children }: { children: ReactNode }) {
   return (
     <EditorBoundary>
       <Suspense
@@ -37,8 +40,22 @@ export default function LazyEditor(props: EditorProps) {
           </div>
         }
       >
-        <Editor {...props} />
+        {children}
       </Suspense>
     </EditorBoundary>
+  );
+}
+export default function LazyEditor(props: SourceEditorProps) {
+  return (
+    <EditorLoader>
+      <Editor {...props} />
+    </EditorLoader>
+  );
+}
+export function LazyChangesEditor(props: ChangesEditorProps) {
+  return (
+    <EditorLoader>
+      <Changes {...props} />
+    </EditorLoader>
   );
 }

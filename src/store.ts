@@ -26,7 +26,12 @@ interface State {
   selectedText: string | null;
   setSelectedText: (id: string | null) => void;
   errorLocation?: { line: number; column: number };
-  setError: (e: string, location?: { line: number; column: number }) => void;
+  errorCode?: string;
+  setError: (
+    e: string,
+    location?: { line: number; column: number },
+    code?: string,
+  ) => void;
   change: (p: Partial<Project>, label?: string) => void;
   load: (p: Project) => void;
   undo: () => void;
@@ -65,7 +70,8 @@ export const useStudio = create<State>((set, get) => ({
   error: "",
   selectedText: null,
   setSelectedText: (selectedText) => set({ selectedText }),
-  setError: (error, errorLocation) => set({ error, errorLocation }),
+  setError: (error, errorLocation, errorCode) =>
+    set({ error, errorLocation, errorCode }),
   change: (patch, label = "Code edit") => {
     const s = get();
     const sourceChange =
@@ -81,6 +87,8 @@ export const useStudio = create<State>((set, get) => ({
         patch.workflow.selectedId === s.project.workflow?.selectedId)
     ) {
       set({
+        errorLocation: undefined,
+        errorCode: undefined,
         error:
           "This scene is locked. Unlock it in the storyboard before editing.",
       });
@@ -89,6 +97,8 @@ export const useStudio = create<State>((set, get) => ({
     const candidate = patchSchema.safeParse(patch);
     if (!candidate.success) {
       set({
+        errorLocation: undefined,
+        errorCode: undefined,
         error: candidate.error.issues.map((issue) => issue.message).join("; "),
       });
       return;
@@ -118,7 +128,11 @@ export const useStudio = create<State>((set, get) => ({
         )
           project = applyGeneratedAudio(project);
       } catch (error) {
-        set({ error: "Generated audio: " + (error as Error).message });
+        set({
+          error: "Generated audio: " + (error as Error).message,
+          errorLocation: undefined,
+          errorCode: undefined,
+        });
         return;
       }
     }
@@ -127,7 +141,11 @@ export const useStudio = create<State>((set, get) => ({
       project.workflow.scenes.reduce((sum, scene) => sum + scene.duration, 0) >
         600
     ) {
-      set({ error: "Composition exceeds ten minutes" });
+      set({
+        error: "Composition exceeds ten minutes",
+        errorLocation: undefined,
+        errorCode: undefined,
+      });
       return;
     }
     try {
@@ -138,7 +156,11 @@ export const useStudio = create<State>((set, get) => ({
       )
         assertProjectSize(project);
     } catch (error) {
-      set({ error: (error as Error).message });
+      set({
+        error: (error as Error).message,
+        errorLocation: undefined,
+        errorCode: undefined,
+      });
       return;
     }
     set({
@@ -153,6 +175,9 @@ export const useStudio = create<State>((set, get) => ({
     const project = retainAudioSources(projectSchema.parse(p));
     set((s) => ({
       project,
+      error: "",
+      errorLocation: undefined,
+      errorCode: undefined,
       selectedText: null,
       past: [],
       future: [],

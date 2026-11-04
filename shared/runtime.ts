@@ -33,28 +33,31 @@ function runtime(
     event.preventDefault();
     if (!event.repeat) send("toggle-play", null);
   });
+  const userLocation = (file: string, line: number, column: number) => {
+    const first = w.__fsUserLine;
+    if (file === location.href && line >= first && line <= w.__fsUserLastLine)
+      return { line: line - first + 1, column: column || 1 };
+  };
   window.addEventListener("error", (e) => {
     failed = true;
-    const user = e.filename?.includes("framescript-user.js");
     send("error", {
       message: e.message,
-      ...(user
-        ? {
-            line: Math.max(
-              1,
-              e.error?.name === "SyntaxError" &&
-                !/\n\s+at /.test(e.error?.stack ?? "")
-                ? e.lineno - w.__fsUserLine + 1
-                : e.lineno - 1,
-            ),
-            column: e.colno || 1,
-          }
-        : {}),
+      ...userLocation(e.filename, e.lineno, e.colno),
     });
   });
   window.addEventListener("unhandledrejection", (e) => {
     failed = true;
-    send("error", String(e.reason));
+    let source;
+    for (const frame of String(e.reason?.stack ?? "")
+      .split("\n")
+      .slice(1)) {
+      const match = /:(\d+):(\d+)\)?\s*$/.exec(frame);
+      if (!match || !frame.slice(0, match.index).endsWith(location.href))
+        continue;
+      source = userLocation(location.href, Number(match[1]), Number(match[2]));
+      if (source) break;
+    }
+    send("error", { message: String(e.reason), ...source });
   });
   w.__fsSeek = (time: number) => {
     time += sourceOffset;
@@ -239,6 +242,9 @@ export function documentFor(
     ? `<script>${safe(threeSource, "script")}</script><script>(()=>{const __name=(fn)=>fn;(${threeRuntime.toString()})()})()</script>`
     : "";
   const captureHelper = `<script>(()=>{const __name=(fn)=>fn;window.__fsDirectCanvas=(${directCanvas.toString()})})()</script>`;
-  const firstLine = (prefix + three + captureHelper).split("\n").length + 1;
-  return `${prefix}${three}${captureHelper}<script>window.__fsUserLine=${firstLine}</script><script>\n${safe(js, "script")}\n//# sourceURL=framescript-user.js\n</script></body></html>`;
+  const firstLine =
+    (prefix + three + captureHelper).split(/\r\n|\r|\n/).length + 1;
+  const lastLine = firstLine + js.split(/\r\n|\r|\n/).length;
+  // Keep browser coordinates document-relative so one offset works for both parse and runtime errors.
+  return `${prefix}${three}${captureHelper}<script>window.__fsUserLine=${firstLine};window.__fsUserLastLine=${lastLine}</script><script>\n${safe(js, "script")}\n</script></body></html>`;
 }

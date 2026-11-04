@@ -52,6 +52,7 @@ test("generated scene code creates real BGM and SFX audio tracks with undo", asy
     },
   ];
   await page.getByRole("button", { name: "Code panel", exact: true }).click();
+  await page.getByRole("button", { name: "Code editor options" }).click();
   await page
     .getByRole("button", { name: "Paste full HTML document", exact: true })
     .click();

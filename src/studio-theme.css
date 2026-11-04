@@ -121,6 +121,32 @@ button.audio-cut-deleted { color: var(--error); border-color: var(--error); back
 .home-empty, .home-modal { background: var(--surface); color: var(--secondary); border-color: var(--border); }
 .home-empty strong, .home-modal h2 { color: var(--text); }
 .home-modal p, .home-modal .field > span { color: var(--secondary); }
+.home-delete-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 14px;
+  border-radius: 10px;
+  background: #c3344426;
+  color: var(--text);
+}
+.home-delete-modal > p {
+  margin: 10px 0 24px;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.home-delete-modal strong { color: var(--text); }
+.home-delete-modal .home-delete-confirm {
+  background: #b42336;
+  border-color: #b42336;
+  color: #fff;
+}
+.home-delete-modal .home-delete-confirm:hover:not(:disabled) {
+  background: #951c2c;
+  border-color: #951c2c;
+}
 .home-modal input, .home-modal select { background: var(--input); border-color: var(--border); color: var(--text); }
 @media (prefers-reduced-motion: reduce) {
   button, input, textarea, select { transition: none; }
