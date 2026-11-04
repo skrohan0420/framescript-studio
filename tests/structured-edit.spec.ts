@@ -5,6 +5,54 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resizeVisual, splitVisual } from "../shared/timeline-edit";
 import { activateScene, selectedScene } from "../shared/workflow";
 
+test("reveals existing source only after confirming later clip movement", async ({
+  page,
+}) => {
+  const base = structuredEditFixtureProject();
+  const split = { ...base, ...splitVisual(base, base.workflow!.selectedId, 2) };
+  const [left, right] = split.workflow!.scenes;
+  await openFixture(page, split);
+  await page
+    .getByRole("dialog", { name: "Edit / Update" })
+    .getByRole("button", { name: "Close", exact: true })
+    .first()
+    .click();
+  await page.getByRole("button", { name: "Extend", exact: true }).click();
+  const panel = page.getByRole("dialog", { name: "Extend clip" });
+  await expect(panel).toContainText(
+    "Handoff at source 2.000s · combined timeline 2.000s",
+  );
+  await expect(panel).toContainText("Last source frame before handoff: 59");
+  const amount = panel.getByLabel("Source seconds to reveal");
+  const apply = panel.getByRole("button", { name: "Reveal source time" });
+  await amount.fill("4.1");
+  await expect(apply).toBeDisabled();
+  await amount.fill("0.5");
+  const confirm = panel.getByRole("checkbox", {
+    name: /Move following clips later by 0.500s/,
+  });
+  await expect(apply).toBeDisabled();
+  await confirm.check();
+  await expect(apply).toBeEnabled();
+  await amount.fill("0.75");
+  await expect(apply).toBeDisabled();
+  await panel
+    .getByRole("checkbox", { name: /Move following clips later by 0.750s/ })
+    .check();
+  await apply.click();
+  await expect(panel).toBeHidden();
+  const savedClips = async () => {
+    const response = await page.request.post("/api/workspaceGet", {
+      headers: { "X-FrameScript": "1" },
+      data: { args: [] },
+    });
+    return (await response.json()).result.workflow.scenes;
+  };
+  await expect.poll(savedClips).toEqual([{ ...left, duration: 2.75 }, right]);
+  await page.getByRole("button", { name: "Undo project change" }).click();
+  await expect.poll(savedClips).toEqual([left, right]);
+});
+
 async function openFixture(
   page: Page,
   project = structuredEditFixtureProject(),
@@ -96,102 +144,124 @@ test("exports a frozen Edit task from a visual clip and saves it across reload",
   });
 });
 
-test("edits the source keyframe in a trimmed split at double speed without changing its sibling", async ({
-  page,
-}) => {
-  const base = structuredEditFixtureProject();
-  const leftId = base.workflow!.selectedId;
-  const split = { ...base, ...splitVisual(base, leftId, 2) };
-  const [left, right] = split.workflow!.scenes;
-  const trimmed = { ...split, ...resizeVisual(split, right.id, 2.5) };
-  const project = { ...trimmed, ...activateScene(trimmed, right.id) };
-  project.settings = { ...project.settings, speed: 2 };
-  const { scene } = await openFixture(page, project);
-  const panel = page.getByRole("dialog", { name: "Edit / Update" });
-  await expect(panel).toContainText(
-    "Source keyframe at 3.200s · 1.200s into this clip",
-  );
-  const exported = page.waitForResponse((response) =>
-    response.url().endsWith("/api/structuredEditPackage"),
-  );
-  await panel.getByRole("button", { name: "Download ZIP" }).click();
-  const response = await exported;
-  expect(response.ok(), await response.text()).toBe(true);
-  const { result } = await response.json();
-  await panel.getByRole("button", { name: "Import AI result" }).click();
-  const intake = page.getByRole("dialog", { name: "Import AI result" });
-  await intake.getByRole("textbox", { name: "Paste AI result" }).fill(
-    JSON.stringify({
-      contractVersion: "1",
-      type: "scene-patch",
-      requestId: result.requestId,
-      sceneId: scene.sceneId,
-      baseRevision: scene.revision,
-      operations: [
-        {
-          op: "set-keyframe-value",
-          nodeId: scene.star.id,
-          property: "glowIntensity",
-          keyframeId: scene.star.keyframe.id,
-          value: 0.8,
-        },
-      ],
-    }),
-  );
-  await intake.getByRole("button", { name: "Review result" }).click();
-  const review = page.getByRole("dialog", { name: "Review AI changes" });
-  await expect(review).toContainText(
-    "1.200s into the clip, 3.200s on the combined timeline",
-  );
-  await expect(review).toContainText(
-    "Other clips keep their source: Fireworks Galaxy.",
-  );
-  const glowFrame = (canvas: HTMLCanvasElement) => canvas.toDataURL();
-  const candidate = page
-    .frameLocator('iframe[title="Proposed scene"]')
-    .locator("canvas");
-  await expect
-    .poll(() =>
-      candidate.evaluate(
-        () =>
-          (window as Window & { __fsTime?: () => number }).__fsTime?.() ?? -1,
-      ),
-    )
-    .toBeCloseTo(3.2, 5);
-  const reviewedFrame = await candidate.evaluate(glowFrame);
-  await review.getByRole("button", { name: "Apply changes" }).click();
-  await page.getByRole("slider", { name: "Timeline position" }).fill("1.2");
-  const preview = page
-    .frameLocator('iframe[title="Animation preview"]')
-    .locator("canvas");
-  await expect.poll(() => preview.evaluate(glowFrame)).toBe(reviewedFrame);
-  const savedClips = async () => {
-    const response = await page.request.post("/api/workspaceGet", {
-      headers: { "X-FrameScript": "1" },
-      data: { args: [] },
-    });
-    return (await response.json()).result.workflow.scenes;
-  };
-  await expect.poll(savedClips).toEqual([
-    left,
-    expect.objectContaining({
-      id: right.id,
-      duration: 2.5,
-      sourceOffset: 2,
-      structuredEdit: expect.objectContaining({
-        revision: 15,
-        star: expect.objectContaining({
-          keyframe: { id: "glow-peak", frame: 96, value: 0.8 },
-        }),
+for (const scope of ["clip", "shared"] as const)
+  test(`edits the source keyframe in a trimmed split at double speed with ${scope} scope`, async ({
+    page,
+  }) => {
+    const base = structuredEditFixtureProject();
+    const leftId = base.workflow!.selectedId;
+    const split = { ...base, ...splitVisual(base, leftId, 2) };
+    const [left, right] = split.workflow!.scenes;
+    const trimmed = { ...split, ...resizeVisual(split, right.id, 2.5) };
+    const project = { ...trimmed, ...activateScene(trimmed, right.id) };
+    project.settings = { ...project.settings, speed: 2 };
+    const { scene } = await openFixture(page, project);
+    const panel = page.getByRole("dialog", { name: "Edit / Update" });
+    await expect(panel.getByLabel("Edit scope")).toHaveValue("clip");
+    if (scope === "shared")
+      await panel.getByLabel("Edit scope").selectOption(scope);
+    await expect(panel).toContainText(
+      "Source keyframe at 3.200s · 1.200s into this clip",
+    );
+    const exported = page.waitForResponse((response) =>
+      response.url().endsWith("/api/structuredEditPackage"),
+    );
+    await panel.getByRole("button", { name: "Download ZIP" }).click();
+    const response = await exported;
+    expect(response.ok(), await response.text()).toBe(true);
+    const { result } = await response.json();
+    await panel.getByRole("button", { name: "Import AI result" }).click();
+    const intake = page.getByRole("dialog", { name: "Import AI result" });
+    await intake.getByRole("textbox", { name: "Paste AI result" }).fill(
+      JSON.stringify({
+        contractVersion: "1",
+        type: "scene-patch",
+        requestId: result.requestId,
+        sceneId: scene.sceneId,
+        baseRevision: scene.revision,
+        operations: [
+          {
+            op: "set-keyframe-value",
+            nodeId: scene.star.id,
+            property: "glowIntensity",
+            keyframeId: scene.star.keyframe.id,
+            value: 0.8,
+          },
+        ],
       }),
-    }),
-  ]);
-  expect((await savedClips())[1].structuredEdit.sceneId).not.toBe(
-    scene.sceneId,
-  );
-  await page.getByRole("button", { name: "Undo project change" }).click();
-  await expect.poll(savedClips).toEqual(project.workflow!.scenes);
-});
+    );
+    await intake.getByRole("button", { name: "Review result" }).click();
+    const review = page.getByRole("dialog", { name: "Review AI changes" });
+    await expect(review).toContainText(
+      "1.200s into the clip, 3.200s on the combined timeline",
+    );
+    if (scope === "shared") {
+      await expect(review).toContainText("Fireworks Galaxy · 0.000s to 2.000s");
+      await expect(review).toContainText(
+        "Fireworks Galaxy (split) · 2.000s to 4.500s",
+      );
+    } else {
+      await expect(review).toContainText(
+        "Other clips keep their source: Fireworks Galaxy.",
+      );
+    }
+    const glowFrame = (canvas: HTMLCanvasElement) => canvas.toDataURL();
+    const candidate = page
+      .frameLocator('iframe[title="Proposed scene"]')
+      .locator("canvas");
+    await expect
+      .poll(() =>
+        candidate.evaluate(
+          () =>
+            (window as Window & { __fsTime?: () => number }).__fsTime?.() ?? -1,
+        ),
+      )
+      .toBeCloseTo(3.2, 5);
+    const reviewedFrame = await candidate.evaluate(glowFrame);
+    await review.getByRole("button", { name: "Apply changes" }).click();
+    await page.getByRole("slider", { name: "Timeline position" }).fill("1.2");
+    const preview = page
+      .frameLocator('iframe[title="Animation preview"]')
+      .locator("canvas");
+    await expect.poll(() => preview.evaluate(glowFrame)).toBe(reviewedFrame);
+    const savedClips = async () => {
+      const response = await page.request.post("/api/workspaceGet", {
+        headers: { "X-FrameScript": "1" },
+        data: { args: [] },
+      });
+      return (await response.json()).result.workflow.scenes;
+    };
+    const editedSource = expect.objectContaining({
+      revision: 15,
+      star: expect.objectContaining({
+        keyframe: { id: "glow-peak", frame: 96, value: 0.8 },
+      }),
+    });
+    await expect.poll(savedClips).toEqual([
+      scope === "shared"
+        ? expect.objectContaining({
+            id: left.id,
+            duration: left.duration,
+            structuredEdit: editedSource,
+          })
+        : left,
+      expect.objectContaining({
+        id: right.id,
+        duration: 2.5,
+        sourceOffset: 2,
+        structuredEdit: editedSource,
+      }),
+    ]);
+    const saved = await savedClips();
+    if (scope === "shared") {
+      expect(
+        saved.map((clip: typeof left) => clip.structuredEdit?.sceneId),
+      ).toEqual([scene.sceneId, scene.sceneId]);
+      expect(saved[0].structuredEdit).toEqual(saved[1].structuredEdit);
+    } else expect(saved[1].structuredEdit.sceneId).not.toBe(scene.sceneId);
+    await page.getByRole("button", { name: "Undo project change" }).click();
+    await expect.poll(savedClips).toEqual(project.workflow!.scenes);
+  });
 
 test("reviews paste, upload and combined results, and applies one undoable change", async ({
   page,

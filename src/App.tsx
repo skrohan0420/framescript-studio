@@ -93,6 +93,7 @@ import {
 import { useStudio, useProjectState } from "./store";
 import { Timeline, type TimelineActions } from "./Timeline";
 import { StructuredEditPanel } from "./StructuredEditPanel";
+import { StructuredExtendPanel } from "./StructuredExtendPanel";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import {
   formatShortcut,
@@ -154,6 +155,7 @@ export function App() {
   );
   const timelineActions = useRef<TimelineActions>(null);
   const [structuredEditClip, setStructuredEditClip] = useState<string>();
+  const [structuredExtendClip, setStructuredExtendClip] = useState<string>();
   const shortcutHandler = useRef<
     (event: KeyboardEvent, capture: boolean) => void
   >(() => {});
@@ -3634,6 +3636,7 @@ export function App() {
         <Timeline
           actionsRef={timelineActions}
           onStructuredEdit={setStructuredEditClip}
+          onStructuredExtend={setStructuredExtendClip}
           splitHint={shortcutTitle("split")}
           onSelectText={(sceneId, textId) => {
             const state = useStudio.getState();
@@ -3827,6 +3830,14 @@ export function App() {
           project={p}
           appliedProject={executionProject}
           onClose={() => setStructuredEditClip(undefined)}
+        />
+      )}
+      {structuredExtendClip && (
+        <StructuredExtendPanel
+          key={s.session + ":" + structuredExtendClip}
+          clipId={structuredExtendClip}
+          project={p}
+          onClose={() => setStructuredExtendClip(undefined)}
         />
       )}
       <Modal

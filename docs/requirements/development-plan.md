@@ -57,7 +57,7 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - **Stage 2 — Done.** The outgoing editor workflow and saved request passed the live AI handoff.
 - **Stage 3 — Done.** JSON intake, candidate review, stale-result checks and undoable Apply are verified for the first Edit workflow.
 - **Stage 4 — Done.** Automated parity and legacy checks passed. The first live AI patch imported and applied.
-- **Stage 5 — In progress.** The first increment supports clip-only Edit on trimmed and split structured clips at non-default playback speed. Shared-source Apply, Extend handoff and Generate remain open.
+- **Stage 5 — In progress.** Clip-only and shared-source Edit support trimmed and split structured clips at non-default playback speed. Extend can reveal unused source time with explicit confirmation before shifting later clips. AI continuation and Generate remain open.
 
 ### Stage 0 baseline evidence
 
@@ -117,7 +117,10 @@ To repeat the check:
 - Edit checks whether the source keyframe is visible in the clip and records the source offset and duration with the request. Clip-only Apply changes the selected clip's source identity when a sibling shares it. The review shows clip-local and combined timeline positions and identifies siblings that keep their source.
 - The fixture splits at 2.000s, trims the right clip to 2.500s and plays at 2×. The source keyframe at 3.200s maps to 1.200s into the right clip. Verification covers applying the patch to frame 96, preserving the sibling and restoring the source link with one Undo. A unit case covers cut-boundary ownership.
 - TypeScript, all 157 Vitest tests and all three structured Edit browser tests passed. The browser test matched the applied clip's canvas at 1.200s to the reviewed source canvas at 3.200s.
-- Next action is explicit shared-source Edit with affected-clip review, followed by Extend timing and overlap behavior.
+- Shared-source Edit now saves the chosen scope with the request. Review lists clips and their visible source ranges. Changed placement impact requires confirmation, and locked or divergent sources block Apply. Shared Apply preserves clip placement and source identity in one undoable change.
+- TypeScript and all four structured Edit browser tests passed after adding shared scope. The split fixture verifies that shared Apply updates both clips, preserves their trims and restores both with one Undo.
+- The Extend panel shows the source and project handoffs and available source time. Reveal reuses the existing placement edit and requires consent to move later clips. The browser fixture covers source limits, consent invalidation when the duration changes, Apply and Undo.
+- Next action is the AI continuation package and result contract, including forking at an interior handoff and reviewing the placement impact before Apply.
 
 ### Progress report template
 

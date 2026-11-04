@@ -9,6 +9,7 @@ export const editPlacementSchema = z.strictObject({
   sourceOffset: z.number().min(0).max(600),
   duration: z.number().min(0.1).max(600),
 });
+export const editScopeSchema = z.enum(["clip", "shared"]);
 const target = z.strictObject({
   nodeId: id,
   property: z.literal("glowIntensity"),

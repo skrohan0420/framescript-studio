@@ -7,6 +7,7 @@ import {
   editSceneSchema,
   editRequestSchema,
   editPlacementSchema,
+  editScopeSchema,
 } from "./structured-edit";
 
 const config = z.object({ provider: z.string(), model: z.string() });
@@ -41,6 +42,7 @@ export const rpcSchemas = {
     z.number().min(0).max(1),
     z.string().min(1).max(128),
     editPlacementSchema.optional(),
+    editScopeSchema.optional(),
   ]),
   structuredEditRequest: z.tuple([z.string().uuid()]),
   session: empty,
@@ -174,7 +176,7 @@ export interface RpcResults {
   structuredEditRequest: {
     projectId: string | null;
     clipId: string;
-    scope: "clip";
+    scope: z.infer<typeof editScopeSchema>;
     placement?: z.infer<typeof editPlacementSchema>;
     request: z.infer<typeof editRequestSchema>;
     scene: z.infer<typeof editSceneSchema>;

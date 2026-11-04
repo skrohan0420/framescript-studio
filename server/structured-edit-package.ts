@@ -24,6 +24,7 @@ export async function writeStructuredEditPackage(
   clipId: string,
   projectId: string | null = null,
   placement?: { sourceOffset: number; duration: number },
+  scope: "clip" | "shared" = "clip",
 ) {
   if (
     placement &&
@@ -132,6 +133,7 @@ export async function writeStructuredEditPackage(
       packageVersion: "1",
       ...request,
       placement,
+      scope,
       files: files.map(({ content, ...entry }) => ({
         ...entry,
         sha256: createHash("sha256").update(content).digest("hex"),
@@ -148,7 +150,7 @@ export async function writeStructuredEditPackage(
           manifest,
           prompt,
           clipId,
-          scope: "clip",
+          scope,
           projectId,
           placement,
         }),

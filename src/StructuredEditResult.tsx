@@ -23,6 +23,7 @@ type Review = {
   before: Project;
   after: Project;
   session: number;
+  reviewedImpact: string;
 };
 const resultSizeLimit = 64 * 1024;
 
@@ -70,7 +71,6 @@ function projectForPreview(scene: StructuredEditScene): Project {
 function taskConflict(project: Project, clipId: string, task: SavedTask) {
   const clip = project.workflow?.scenes.find((item) => item.id === clipId);
   if (
-    task.scope !== "clip" ||
     task.clipId !== clipId ||
     clip?.structuredEdit?.sceneId !== task.scene.sceneId
   )
@@ -88,7 +88,46 @@ function taskConflict(project: Project, clipId: string, task: SavedTask) {
     return "The clip trim changed after this task was exported.";
   if (!supportsStructuredClip(project, clip))
     return "The clip source, lock or playback settings changed after export.";
+  if (task.scope === "shared") {
+    const code = structuredStarCode(task.scene);
+    for (const item of affectedClips(project, task)) {
+      if (
+        item.locked ||
+        JSON.stringify(item.structuredEdit) !== JSON.stringify(task.scene) ||
+        item.html !== code.html ||
+        item.css !== code.css ||
+        item.js !== code.js ||
+        (project.workflow?.selectedId === item.id &&
+          (project.html !== code.html ||
+            project.css !== code.css ||
+            project.js !== code.js))
+      )
+        return "A shared clip is locked or its source differs. Resolve it before applying a shared edit.";
+    }
+  }
   return "";
+}
+
+function affectedClips(project: Project, task: SavedTask) {
+  return (
+    project.workflow?.scenes.filter((clip) =>
+      task.scope === "shared"
+        ? clip.structuredEdit?.sceneId === task.scene.sceneId
+        : clip.id === task.clipId,
+    ) ?? []
+  );
+}
+
+function impactSignature(project: Project, task: SavedTask) {
+  return JSON.stringify(
+    affectedClips(project, task).map((clip) => [
+      clip.id,
+      clip.title,
+      sceneOffset(project, clip.id),
+      clip.sourceOffset ?? 0,
+      clip.duration,
+    ]),
+  );
 }
 
 export function StructuredEditResult({
@@ -116,6 +155,8 @@ export function StructuredEditResult({
   const currentRevision = project.workflow?.scenes.find(
     (clip) => clip.id === clipId,
   )?.structuredEdit?.revision;
+  const impactChanged =
+    !!review && impactSignature(project, review.task) !== review.reviewedImpact;
   const clearFeedback = () => {
     setError("");
     setRepair("");
@@ -185,6 +226,7 @@ export function StructuredEditResult({
         session,
         before: projectForPreview(task.scene),
         after: projectForPreview(candidate),
+        reviewedImpact: impactSignature(state.project, task),
       });
     } catch (failure) {
       const message =
@@ -213,25 +255,36 @@ export function StructuredEditResult({
       );
       return;
     }
+    if (impactSignature(state.project, review.task) !== review.reviewedImpact) {
+      setError(
+        "Clip placements changed. Confirm the updated impact before applying.",
+      );
+      return;
+    }
+    const affected = new Set(
+      affectedClips(state.project, review.task).map((clip) => clip.id),
+    );
     const structuredEdit = {
       ...review.candidate,
-      sceneId: workflow.scenes.some(
-        (clip) =>
-          clip.id !== clipId &&
-          clip.structuredEdit?.sceneId === review.task.scene.sceneId,
-      )
-        ? crypto.randomUUID()
-        : review.candidate.sceneId,
+      sceneId:
+        review.task.scope === "clip" &&
+        workflow.scenes.some(
+          (clip) =>
+            clip.id !== clipId &&
+            clip.structuredEdit?.sceneId === review.task.scene.sceneId,
+        )
+          ? crypto.randomUUID()
+          : review.candidate.sceneId,
       revision: review.task.scene.revision + 1,
     };
     const code = structuredStarCode(structuredEdit);
     state.change(
       {
-        ...(workflow.selectedId === clipId ? code : {}),
+        ...(affected.has(workflow.selectedId) ? code : {}),
         workflow: {
           ...workflow,
           scenes: workflow.scenes.map((clip) =>
-            clip.id === clipId ? { ...clip, ...code, structuredEdit } : clip,
+            affected.has(clip.id) ? { ...clip, ...code, structuredEdit } : clip,
           ),
         },
       },
@@ -262,12 +315,16 @@ export function StructuredEditResult({
         before={review.before}
         after={review.after}
         initialTime={time}
-        applyDisabled={!!conflict}
+        applyDisabled={!!conflict || impactChanged}
         explanation={
           <>
             <p>
-              {scene.title} · This clip only · AI base revision {scene.revision}{" "}
-              · Current revision {currentRevision ?? "unavailable"}
+              {scene.title} ·{" "}
+              {review.task.scope === "shared"
+                ? "All clips using this scene"
+                : "This clip only"}{" "}
+              · AI base revision {scene.revision} · Current revision{" "}
+              {currentRevision ?? "unavailable"}
             </p>
             <p>
               Glow at {time.toFixed(3)}s: {scene.star.keyframe.value} →{" "}
@@ -280,21 +337,61 @@ export function StructuredEditResult({
                 on the combined timeline.
               </p>
             )}
-            {siblings.length > 0 && (
-              <p>
-                Other clips keep their source:{" "}
-                {siblings.map((item) => item.title).join(", ")}.
-              </p>
+            {review.task.scope === "shared" ? (
+              <>
+                <p>Affected clips and their visible source ranges:</p>
+                <ul>
+                  {affectedClips(project, review.task).map((item) => {
+                    const start = item.sourceOffset ?? 0;
+                    return (
+                      <li key={item.id}>
+                        {item.title} · {start.toFixed(3)}s to{" "}
+                        {(start + item.duration).toFixed(3)}s
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            ) : (
+              siblings.length > 0 && (
+                <p>
+                  Other clips keep their source:{" "}
+                  {siblings.map((item) => item.title).join(", ")}.
+                </p>
+              )
             )}
             <p>
               Glow interpolates up to the keyframe and holds afterward. Rendered
               frames may change through {lastTime.toFixed(3)}s.
             </p>
-            {(conflict || error) && <p role="alert">{conflict || error}</p>}
+            {(conflict || impactChanged || error) && (
+              <p role="alert">
+                {conflict ||
+                  (impactChanged
+                    ? "Clip placements changed. Confirm the updated impact before applying."
+                    : error)}
+              </p>
+            )}
           </>
         }
         actions={
-          conflict && <button onClick={onBack}>Export fresh task</button>
+          conflict ? (
+            <button onClick={onBack}>Export fresh task</button>
+          ) : (
+            impactChanged && (
+              <button
+                onClick={() => {
+                  setReview({
+                    ...review,
+                    reviewedImpact: impactSignature(project, review.task),
+                  });
+                  setError("");
+                }}
+              >
+                Confirm updated impact
+              </button>
+            )
+          )
         }
         onApply={apply}
         onDiscard={onBack}

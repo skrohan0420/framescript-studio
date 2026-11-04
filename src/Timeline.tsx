@@ -62,6 +62,7 @@ export const Timeline = memo(function Timeline({
   actionsRef,
   splitHint,
   onStructuredEdit,
+  onStructuredExtend,
 }: {
   masterMode: boolean;
   timelineHidden: boolean;
@@ -76,6 +77,7 @@ export const Timeline = memo(function Timeline({
   actionsRef?: Ref<TimelineActions>;
   splitHint?: string;
   onStructuredEdit?: (id: string) => void;
+  onStructuredExtend?: (id: string) => void;
 }) {
   const playing = useStudio((state) => state.playing);
   const s = useProjectState(),
@@ -939,9 +941,16 @@ export const Timeline = memo(function Timeline({
           p.workflow?.scenes.some(
             (scene) => scene.id === selection.id && scene.structuredEdit,
           ) && (
-            <button onClick={() => onStructuredEdit(selection.id)}>
-              Edit / Update
-            </button>
+            <>
+              <button onClick={() => onStructuredEdit(selection.id)}>
+                Edit / Update
+              </button>
+              {onStructuredExtend && (
+                <button onClick={() => onStructuredExtend(selection.id)}>
+                  Extend
+                </button>
+              )}
+            </>
           )}
         <button
           title={splitHint ?? "Split at playhead"}

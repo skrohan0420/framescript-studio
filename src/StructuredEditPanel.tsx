@@ -25,6 +25,7 @@ export function StructuredEditPanel({
     (scene) => scene.id === clipId,
   );
   const [value, setValue] = useState("0.8");
+  const [scope, setScope] = useState<"clip" | "shared">("clip");
   const [useApplied, setUseApplied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -50,6 +51,7 @@ export function StructuredEditPanel({
     settings: project.settings,
     value,
     useApplied,
+    scope,
   });
   const ready = supported && (!pending || useApplied);
   const validValue =
@@ -71,6 +73,7 @@ export function StructuredEditPanel({
         Number(value),
         clipId,
         { sourceOffset: timing.sourceOffset, duration: timing.duration },
+        scope,
       );
       setExported({ snapshot, result });
       download(result);
@@ -95,7 +98,24 @@ export function StructuredEditPanel({
       <p>{clip?.title ?? "The selected clip is no longer available."}</p>
       {scene && (
         <>
-          <p>Source revision {scene.revision} · This clip only</p>
+          <p>
+            Source revision {scene.revision} ·{" "}
+            {scope === "clip" ? "This clip only" : "All clips using this scene"}
+          </p>
+          <label className="field">
+            <span>Edit scope</span>
+            <select
+              value={scope}
+              disabled={busy}
+              onChange={(event) => {
+                setScope(event.target.value === "shared" ? "shared" : "clip");
+                resetExport();
+              }}
+            >
+              <option value="clip">This clip only</option>
+              <option value="shared">All clips using this scene</option>
+            </select>
+          </label>
           {timing && timing.sourceOffset > 0 && (
             <p>
               Source keyframe at {timing.sourceTime.toFixed(3)}s ·{" "}

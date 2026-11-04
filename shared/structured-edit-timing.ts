@@ -1,4 +1,31 @@
-import type { Scene } from "./project";
+import type { Project, Scene } from "./project";
+import { sceneOffset, totalDuration } from "./workflow";
+import { structuredStarCode } from "./structured-star";
+
+export function structuredExtensionTiming(project: Project, clipId: string) {
+  const clips = project.workflow?.scenes ?? [];
+  const index = clips.findIndex((clip) => clip.id === clipId);
+  const clip = clips[index];
+  const source = clip?.structuredEdit;
+  if (!clip || !source || clip.locked) return;
+  const code = structuredStarCode(source);
+  if (clip.html !== code.html || clip.css !== code.css || clip.js !== code.js)
+    return;
+  const handoff = (clip.sourceOffset ?? 0) + clip.duration;
+  const sourceEnd = source.durationFrames / source.fps;
+  if (handoff > sourceEnd + 1e-9) return;
+  return {
+    clip,
+    handoff,
+    lastVisibleFrame: Math.max(0, Math.ceil(handoff * source.fps - 1e-9) - 1),
+    projectEnd: sceneOffset(project, clipId) + clip.duration,
+    available: Math.max(
+      0,
+      Math.min(sourceEnd - handoff, 600 - totalDuration(project)),
+    ),
+    following: clips.slice(index + 1),
+  };
+}
 
 // Timeline positions are measured in scene seconds. Playback speed changes
 // elapsed playback time, not the position sent to renderFrame.

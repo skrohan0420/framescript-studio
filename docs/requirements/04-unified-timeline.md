@@ -19,4 +19,10 @@ The current editor stores clip duration and source offset in seconds. In combine
 
 Use a half-open source interval for Edit eligibility. A keyframe at a cut belongs to the clip starting there. Keep the keyframe frame index and stable ID in the patch. A changed trim invalidates the saved task. Clip-only Apply forks the structured source ID if another clip shares it, and Undo restores the previous source link. This is the existing-editor bridge for the structured Edit workflow. The canonical timebase and Extend handoff remain part of the unified timeline work.
 
+### Extend handoff in the current timeline
+
+The source handoff is the clip's source offset plus its duration. The combined timeline handoff is the clip's project start plus its duration. The last source frame before the handoff is the largest frame index whose time is strictly before the endpoint.
+
+Reveal existing source only within the unused source range and the project duration limit. The current timeline places visual clips consecutively, so revealing time before a later clip requires an explicit choice to move following clips. Review lists the clips that will move and by how much. Preserve the source, later trims, and existing audio data. One Undo restores the placement change. AI-generated continuation is a separate operation.
+
 Deliver the timebase specification, schemas, command model and timeline UI. Test long timelines, speed changes, trim/split boundaries, snapping, linked edits and overlapping scenes. Verify audio and picture stay aligned in preview and export, and undo/redo restores the exact prior state.
