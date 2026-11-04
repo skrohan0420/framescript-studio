@@ -24,8 +24,18 @@ const aiRequest = z.object({
 const empty = z.tuple([]);
 export type CodeSnapshot = Pick<Project, "html" | "css" | "js">;
 export type CodeVersion = { id: string; created: number; reason: string };
+export type TerminalState = {
+  cwd: string;
+  output: string;
+  running: boolean;
+  exitCode: number | null;
+};
 export const rpcSchemas = {
   session: empty,
+  terminalRun: z.tuple([z.string().uuid(), z.string().trim().min(1).max(3000)]),
+  terminalPoll: z.tuple([z.string().uuid()]),
+  terminalStop: z.tuple([z.string().uuid(), z.boolean().optional()]),
+  terminalClear: z.tuple([z.string().uuid()]),
   exportStorage: empty,
   clearExportFiles: empty,
   newSession: empty,
@@ -146,6 +156,10 @@ export interface RpcResults {
   exportStorage: { files: number; bytes: number; retentionDays: number };
   clearExportFiles: { files: number; bytes: number; retentionDays: number };
   session: boolean;
+  terminalRun: TerminalState;
+  terminalPoll: TerminalState;
+  terminalStop: boolean;
+  terminalClear: TerminalState;
   newSession: boolean;
   hasKey: boolean;
   mediaStatus: { gemini: boolean; eleven: boolean };

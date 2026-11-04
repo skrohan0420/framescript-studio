@@ -1,5 +1,121 @@
 import { test, expect } from "@playwright/test";
 import { newProject } from "../shared/project";
+test("PowerShell terminal runs commands and keeps the working directory", async ({
+  page,
+}) => {
+  test.skip(process.platform !== "win32", "Windows PowerShell");
+  await page.goto("/#editor");
+  await page.getByRole("button", { name: "Code panel", exact: true }).click();
+  await page.getByRole("button", { name: "Code editor options" }).click();
+  await page
+    .getByRole("button", { name: "PowerShell terminal", exact: true })
+    .click();
+  const terminal = page.getByRole("region", { name: "PowerShell terminal" });
+  const command = terminal.getByRole("textbox", { name: "PowerShell command" });
+  const output = terminal.locator("pre");
+  const blocked = await page.request.post("/api/terminalRun", {
+    headers: { "X-FrameScript": "1", Origin: "null" },
+    data: {
+      args: ["02ecae65-6c7f-4cb8-9516-fd13c94b6fd1", "Write-Output blocked"],
+    },
+  });
+  expect(blocked.status()).toBe(403);
+  await command.fill(
+    "Set-Location -LiteralPath $env:TEMP; Write-Output 'terminal-ready'",
+  );
+  await expect(
+    terminal.getByRole("button", { name: "Run", exact: true }),
+  ).toBeEnabled();
+  await command.press("Enter");
+  await expect(output).toContainText(/\nterminal-ready/);
+  await expect(terminal.getByText("Exit 0", { exact: true })).toBeVisible();
+  await expect(terminal.locator(".terminal-cwd")).toContainText(
+    process.env.TEMP!,
+  );
+  await command.fill("(Get-Location).Path");
+  await command.press("Enter");
+  await expect(output).toContainText(`\n${process.env.TEMP}`);
+  await command.fill("Start-Sleep -Seconds 30");
+  await expect(
+    terminal.getByRole("button", { name: "Run", exact: true }),
+  ).toBeEnabled();
+  await command.press("Enter");
+  await terminal.getByRole("button", { name: "Stop command" }).click();
+  await expect(terminal.getByText(/^Exit \d+$/)).toBeVisible();
+  await terminal.getByRole("button", { name: "Clear terminal" }).click();
+  await expect(output).toHaveText("Run a local PowerShell command below.");
+});
+test("workspace shortcuts can be remapped, persisted, and used from the preview", async ({
+  page,
+}) => {
+  await page.goto("/#editor");
+  const settingsButton = page
+    .getByRole("banner")
+    .getByRole("button", { name: "Project settings", exact: true });
+  const openShortcuts = async () => {
+    await settingsButton.click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Keyboard shortcuts", exact: true })
+      .click();
+  };
+  await openShortcuts();
+  const dialog = page.getByRole("dialog", {
+    name: "Keyboard shortcuts",
+    exact: true,
+  });
+  await dialog
+    .getByRole("searchbox", { name: "Filter shortcuts" })
+    .fill("Play or pause");
+  const binding = dialog.getByRole("button", {
+    name: "Change shortcut for Play or pause",
+    exact: true,
+  });
+  await binding.click();
+  await binding.press("Escape");
+  await expect(dialog).toBeVisible();
+  await expect(binding).toHaveText("Space");
+  await binding.click();
+  await binding.press("w");
+  await expect(dialog.getByRole("status")).toContainText("Split at playhead");
+  const persisted = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/settingsSet") &&
+      response.request().postData()?.includes('"play":"KeyP"') === true,
+  );
+  await binding.click();
+  await binding.press("p");
+  await expect(binding).toHaveText("P");
+  await persisted;
+  await page.reload();
+  const transport = page.locator(".center > .transport");
+  const title = page.getByRole("textbox", {
+    name: "Project name",
+    exact: true,
+  });
+  await title.press("p");
+  await expect(
+    transport.getByRole("button", { name: "Play", exact: true }),
+  ).toBeVisible();
+  const frame = page.frameLocator('iframe[title="Animation preview"]');
+  await frame.locator("body").click({ position: { x: 4, y: 4 } });
+  await page.keyboard.press("p");
+  await expect(
+    transport.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("p");
+  await expect(
+    transport.getByRole("button", { name: "Play", exact: true }),
+  ).toBeVisible();
+  await openShortcuts();
+  const resetSaved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/settingsSet") &&
+      response.request().postData()?.includes('"shortcuts":{}') === true,
+  );
+  await dialog.getByRole("button", { name: "Reset all", exact: true }).click();
+  await resetSaved;
+});
 test("expanded code editor keeps the same document and exposes navigation tools", async ({
   page,
 }) => {

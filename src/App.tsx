@@ -91,7 +91,19 @@ import {
   type ExportOptions,
 } from "../shared/project";
 import { useStudio, useProjectState } from "./store";
-import { Timeline } from "./Timeline";
+import { Timeline, type TimelineActions } from "./Timeline";
+import { KeyboardShortcuts } from "./KeyboardShortcuts";
+import {
+  formatShortcut,
+  keyboardChord,
+  previewShortcutIds,
+  readShortcutOverrides,
+  shortcutBinding,
+  shortcutIds,
+  shortcuts,
+  type ShortcutId,
+  type ShortcutOverrides,
+} from "./shortcuts";
 import { PlayerTransport } from "./PlayerTransport";
 import { MediaLibrary } from "./MediaLibrary";
 import { ProjectInspector } from "./ProjectInspector";
@@ -113,6 +125,7 @@ import { acknowledgeRecovery, recoveryAcknowledged } from "./recovery";
 import { RecoveryHistory, downloadRecoveryCopy } from "./RecoveryHistory";
 import { CodeHistory } from "./CodeHistory";
 import { PreviewConsole } from "./PreviewConsole";
+import { TerminalPanel } from "./TerminalPanel";
 import type { PreviewConsoleEntry } from "./preview-document";
 import {
   CodeProblems,
@@ -134,6 +147,47 @@ export function App() {
   const manualMode = true;
   const [showHome, setShowHome] = useState(
     () => window.location.hash !== "#editor",
+  );
+  const [shortcutOverrides, setShortcutOverrides] = useState<ShortcutOverrides>(
+    {},
+  );
+  const timelineActions = useRef<TimelineActions>(null);
+  const shortcutHandler = useRef<
+    (event: KeyboardEvent, capture: boolean) => void
+  >(() => {});
+  const iframeShortcut = useRef<
+    (chord: string, repeat: boolean, text: boolean) => void
+  >(() => {});
+  const handlePreviewShortcut = useCallback(
+    (chord: string, repeat: boolean) =>
+      iframeShortcut.current(chord, repeat, false),
+    [],
+  );
+  const handleTextShortcut = useCallback(
+    (key: string) =>
+      iframeShortcut.current(
+        key.toLowerCase() === "w" ? "KeyW" : key,
+        false,
+        true,
+      ),
+    [],
+  );
+  const bindings = useMemo(() => {
+    const map = new Map<string, ShortcutId>();
+    for (const id of shortcutIds) {
+      const key = shortcutBinding(id, shortcutOverrides);
+      if (key) map.set(key, id);
+    }
+    if (shortcutOverrides.deleteText === undefined && !map.has("Backspace"))
+      map.set("Backspace", "deleteText");
+    return map;
+  }, [shortcutOverrides]);
+  const previewKeys = useMemo(
+    () =>
+      [...bindings]
+        .filter(([, action]) => previewShortcutIds.has(action))
+        .map(([key]) => key),
+    [bindings],
   );
   useEffect(() => {
     const route = () => setShowHome(window.location.hash !== "#editor");
@@ -207,6 +261,23 @@ export function App() {
   } | null>(null);
   const [showProblems, setShowProblems] = useState(false);
   const [showConsole, setShowConsole] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [terminalId] = useState(() => crypto.randomUUID());
+  const terminalUsed = useRef(false);
+  useEffect(() => {
+    const closeTerminal = () => {
+      if (!terminalUsed.current) return;
+      void fetch("/api/terminalStop", {
+        method: "POST",
+        credentials: "same-origin",
+        keepalive: true,
+        headers: { "Content-Type": "application/json", "X-FrameScript": "1" },
+        body: JSON.stringify({ args: [terminalId, true] }),
+      }).catch(() => {});
+    };
+    window.addEventListener("pagehide", closeTerminal);
+    return () => window.removeEventListener("pagehide", closeTerminal);
+  }, [terminalId]);
   const [outputHeight, setOutputHeight] = useState(170);
   const outputDrag = useRef<{ y: number; height: number; max: number } | null>(
     null,
@@ -373,6 +444,7 @@ export function App() {
     );
   }, [parseError, p, s.session, savedCode]);
   const [expandedWrap, setExpandedWrap] = useState(false);
+  const [compactWrap, setCompactWrap] = useState(true);
   const [formatError, setFormatError] = useState("");
   const [changes, setChanges] = useState<{
     session: number;
@@ -473,6 +545,7 @@ export function App() {
   useEffect(() => {
     void act(async () => {
       const layout = await bridge.call("settingsGet");
+      setShortcutOverrides(readShortcutOverrides(layout.shortcuts));
       const rememberedTabs = readEditorTabs();
       const savedLeftView = rememberedTabs.leftView ?? layout.leftView;
       const savedRightTab = rememberedTabs.rightTab ?? layout.rightTab;
@@ -581,6 +654,7 @@ export function App() {
             rightWidth,
             fontSize,
             autosave,
+            shortcuts: shortcutOverrides,
             theme: light ? "light" : "dark",
             provider,
             model,
@@ -603,6 +677,7 @@ export function App() {
     rightWidth,
     fontSize,
     autosave,
+    shortcutOverrides,
     light,
     provider,
     model,
@@ -757,52 +832,17 @@ export function App() {
     [act, parseError],
   );
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (showHome) return;
-      if (
-        (e.code === "Space" || e.key === " ") &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        !e.altKey
-      ) {
-        const target = e.target as HTMLElement;
-        if (
-          target.closest(
-            "input, textarea, select, [contenteditable], .monaco-editor, [role=dialog]",
-          ) ||
-          document.querySelector('[role="dialog"]')
-        )
-          return;
-        e.preventDefault();
-        if (!e.repeat) {
-          const state = useStudio.getState();
-          if (
-            !state.playing &&
-            state.time >=
-              (masterMode
-                ? totalDuration(state.project)
-                : state.project.settings.duration)
-          )
-            state.setTime(0);
-          state.setPlaying(!state.playing);
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        save(e.shiftKey);
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        setRun((r) => r + 1);
-      }
-      if ((e.ctrlKey || e.metaKey) && e.altKey && e.key === "z") {
-        e.preventDefault();
-        useStudio.getState().undo();
-      }
+    const capture = (event: KeyboardEvent) =>
+      shortcutHandler.current(event, true);
+    const bubble = (event: KeyboardEvent) =>
+      shortcutHandler.current(event, false);
+    window.addEventListener("keydown", capture, true);
+    window.addEventListener("keydown", bubble);
+    return () => {
+      window.removeEventListener("keydown", capture, true);
+      window.removeEventListener("keydown", bubble);
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [save, masterMode, showHome]);
+  }, []);
   useEffect(() => {
     if (!editorExpanded || showHome || leftView !== "code" || modal) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -1293,7 +1333,8 @@ export function App() {
   };
   const editorDisplay = {
     minimap: { enabled: editorExpanded && tab !== "split" },
-    wordWrap: (!editorExpanded || expandedWrap ? "on" : "off") as "on" | "off",
+    wordWrap: ((editorExpanded ? expandedWrap : compactWrap) ? "on" : "off") as
+      "on" | "off",
   };
   const codeScene = p.workflow?.selectedId ?? null;
   useEffect(() => {
@@ -1545,6 +1586,253 @@ export function App() {
         }}
       />
     ) : null;
+  const openProject = () =>
+    void act(async () => {
+      if (
+        s.dirty &&
+        !confirm("Open another project and replace unsaved changes?")
+      )
+        return;
+      await checkpointCurrent("Before opening a project file");
+      const project = await bridge.call("open");
+      if (project) load(project);
+    });
+  const returnHome = () =>
+    void act(async () => {
+      if (parseError) throw Error("Fix the combined document before saving.");
+      useStudio.getState().setPlaying(false);
+      await checkpointCurrent("Return to project home");
+      const submitted = useStudio.getState();
+      await bridge.call("projectSave", submitted.project, {
+        thumbnail: runtime?.thumbnail,
+      });
+      useStudio.getState().saved(submitted.revision);
+      setAppliedCode({
+        session: submitted.session,
+        project: submitted.project,
+      });
+      setSavedCode({ session: submitted.session, project: submitted.project });
+      window.location.hash = "home";
+      setShowHome(true);
+    });
+  const runPreview = () => {
+    setRun((value) => value + 1);
+    s.setTime(0);
+  };
+  const toggleFullscreen = () => {
+    const target = fullscreenRef.current;
+    const request = document.fullscreenElement
+      ? document.exitFullscreen()
+      : target?.requestFullscreen();
+    void request?.catch((error: Error) => setNotice(error.message));
+  };
+  const stepFrame = (direction: number) => {
+    const state = useStudio.getState();
+    state.setPlaying(false);
+    state.setTime(
+      Math.max(
+        0,
+        Math.min(playbackDuration, state.time + direction / p.settings.fps),
+      ),
+    );
+  };
+  const showCodeTab = (next: Tab) => {
+    selectLeftView("code");
+    changeTab(next);
+  };
+  const toggleEditor = () => {
+    if (!editorExpanded) {
+      selectLeftView("code");
+      setCompactInspector(false);
+    }
+    setEditorExpanded((value) => !value);
+  };
+  const toggleProblems = () => {
+    setShowProblems(showTerminal || showConsole || !showProblems);
+    setShowConsole(false);
+    setShowTerminal(false);
+  };
+  const toggleConsole = () => {
+    setShowTerminal(false);
+    setShowConsole((visible) => !visible);
+  };
+  const openTerminal = () => {
+    terminalUsed.current = true;
+    setShowConsole(false);
+    setShowTerminal(true);
+  };
+  const toggleTerminal = () => {
+    if (showTerminal) setShowTerminal(false);
+    else openTerminal();
+  };
+  const toggleDiff = () =>
+    setChanges(showChanges ? null : { session: s.session, scene: codeScene });
+  const openPaste = () => {
+    setPasteError("");
+    setModal("paste-code");
+  };
+  const shortcutTitle = (id: ShortcutId, label: string = shortcuts[id][1]) => {
+    const chord = shortcutBinding(id, shortcutOverrides);
+    return chord ? `${label} (${formatShortcut(chord)})` : label;
+  };
+  const editorActions: Partial<Record<ShortcutId, string>> = {
+    find: "actions.find",
+    replace: "editor.action.startFindReplaceAction",
+    goToLine: "editor.action.gotoLine",
+    commands: "editor.action.quickCommand",
+    format: "editor.action.formatDocument",
+  };
+  const actions: Record<ShortcutId, () => void> = {
+    save: () => save(),
+    saveCopy: () => save(true),
+    newProject: () => requestLoad(newProject()),
+    openProject,
+    home: returnHome,
+    export: openExport,
+    settings: () => setModal("settings"),
+    shortcuts: () => setModal("keyboard-shortcuts"),
+    undo: s.undo,
+    redo: s.redo,
+    recovery: () => setModal("recovery-history"),
+    play: () => {
+      const state = useStudio.getState();
+      if (!state.playing && state.time >= playbackDuration) state.setTime(0);
+      state.setPlaying(!state.playing);
+    },
+    run: runPreview,
+    previousFrame: () => stepFrame(-1),
+    nextFrame: () => stepFrame(1),
+    stop: () => {
+      s.setPlaying(false);
+      s.setTime(0);
+    },
+    fullscreen: toggleFullscreen,
+    split: () => timelineActions.current?.split(),
+    deleteText: () => timelineActions.current?.deleteText(),
+    snapping: () => timelineActions.current?.toggleSnapping(),
+    timeline: () => setTimelineHidden((value) => !value),
+    rulers: () => setPreviewRulers((value) => !value),
+    fit: () => setZoom(1),
+    zoomIn: () => setZoom((value) => Math.min(4, value + 0.1)),
+    zoomOut: () => setZoom((value) => Math.max(0.1, value - 0.1)),
+    combinedPreview: () => changeScope(!masterMode),
+    code: () => selectLeftView("code"),
+    media: () => selectLeftView("media"),
+    importMedia: () => fileRef.current?.click(),
+    audio: () => selectLeftView("audio"),
+    prompts: () => selectLeftView("prompts"),
+    typography: () => selectLeftView("typography"),
+    theme: () => setLight((value) => !value),
+    expand: toggleEditor,
+    all: () => showCodeTab("all"),
+    html: () => showCodeTab("html"),
+    css: () => showCodeTab("css"),
+    js: () => showCodeTab("js"),
+    splitCode: () => showCodeTab("split"),
+    find: () => runEditorAction(editorActions.find!),
+    replace: () => runEditorAction(editorActions.replace!),
+    goToLine: () => runEditorAction(editorActions.goToLine!),
+    commands: () => runEditorAction(editorActions.commands!),
+    format: () => runEditorAction(editorActions.format!),
+    diff: () => {
+      selectLeftView("code");
+      toggleDiff();
+    },
+    history: () => {
+      selectLeftView("code");
+      setModal("code-history");
+    },
+    problems: () => {
+      selectLeftView("code");
+      toggleProblems();
+    },
+    console: () => {
+      selectLeftView("code");
+      toggleConsole();
+    },
+    terminal: () => {
+      selectLeftView("code");
+      toggleTerminal();
+    },
+    wrap: () =>
+      (editorExpanded ? setExpandedWrap : setCompactWrap)((value) => !value),
+    pasteDocument: () => {
+      selectLeftView("code");
+      openPaste();
+    },
+  };
+  shortcutHandler.current = (event, capture) => {
+    if (
+      showHome ||
+      !storageReady ||
+      modal ||
+      event.defaultPrevented ||
+      event.getModifierState("AltGraph") ||
+      document.querySelector(
+        '[role="dialog"]:not(.find-widget):not([aria-hidden="true"]), [role="alertdialog"], .code-editor-menu:popover-open',
+      )
+    )
+      return;
+    const target = event.target instanceof Element ? event.target : null;
+    const inMonaco = !!target?.closest(".monaco-editor");
+    const editing =
+      inMonaco ||
+      !!target?.closest("input, textarea, select, [contenteditable]");
+    if (capture !== editing) return;
+    const chord = keyboardChord(event);
+    if (!chord) return;
+    const id = bindings.get(chord);
+    if (
+      inMonaco &&
+      (!id || !editorActions[id]) &&
+      shortcutIds.some(
+        (action) =>
+          editorActions[action] &&
+          shortcutOverrides[action] !== undefined &&
+          shortcuts[action][2] === chord &&
+          shortcutOverrides[action] !== chord,
+      )
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!id) return;
+    }
+    if (!id) return;
+    if (
+      editorActions[id] &&
+      !inMonaco &&
+      (editing || leftView !== "code" || leftHidden || !editorRef.current)
+    )
+      return;
+    if (
+      editing &&
+      (!/^(?:Mod\+|Alt\+|F\d+$)/.test(chord) ||
+        (!inMonaco && !["save", "saveCopy", "run"].includes(id)))
+    )
+      return;
+    if (
+      (id === "format" || id === "replace" || id === "pasteDocument") &&
+      (masterMode || sceneLocked)
+    )
+      return;
+    if (id === "deleteText" && !useStudio.getState().selectedText) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat || id === "previousFrame" || id === "nextFrame")
+      actions[id]();
+  };
+  iframeShortcut.current = (chord, repeat, text) => {
+    if (modal || showHome) return;
+    const id = bindings.get(chord);
+    if (
+      !id ||
+      !(text
+        ? id === "split" || id === "deleteText"
+        : previewShortcutIds.has(id))
+    )
+      return;
+    if (!repeat || id === "previousFrame" || id === "nextFrame") actions[id]();
+  };
   const previewControls = (
     <div className="transport-preview-controls">
       <button
@@ -1683,30 +1971,8 @@ export function App() {
         </button>
         <button
           aria-label="Project home"
-          title="Save and return to project home"
-          onClick={() =>
-            void act(async () => {
-              if (parseError)
-                throw Error("Fix the combined document before saving.");
-              useStudio.getState().setPlaying(false);
-              await checkpointCurrent("Return to project home");
-              const submitted = useStudio.getState();
-              await bridge.call("projectSave", submitted.project, {
-                thumbnail: runtime?.thumbnail,
-              });
-              useStudio.getState().saved(submitted.revision);
-              setAppliedCode({
-                session: submitted.session,
-                project: submitted.project,
-              });
-              setSavedCode({
-                session: submitted.session,
-                project: submitted.project,
-              });
-              window.location.hash = "home";
-              setShowHome(true);
-            })
-          }
+          title={shortcutTitle("home")}
+          onClick={returnHome}
         >
           <Home size={17} />
         </button>
@@ -1732,48 +1998,39 @@ export function App() {
         <div className="toolbar-actions">
           <button
             aria-label="New project"
-            title="New project"
+            title={shortcutTitle("newProject")}
             onClick={() => requestLoad(newProject())}
           >
             <FilePlus2 size={17} />
             <span className="action-label">New</span>
           </button>
           <button
-            title="Open project"
+            title={shortcutTitle("openProject")}
             aria-label="Open project"
-            onClick={() =>
-              void act(async () => {
-                if (
-                  s.dirty &&
-                  !confirm("Open another project and replace unsaved changes?")
-                )
-                  return;
-                await checkpointCurrent("Before opening a project file");
-                const project = await bridge.call("open");
-                if (project) load(project);
-              })
-            }
+            onClick={openProject}
           >
             <FolderOpen size={17} />
             <span className="action-label">Open</span>
           </button>
           <button
-            aria-label="Save (Ctrl+S)"
-            title="Save (Ctrl+S)"
+            aria-label={shortcutTitle("save", "Save")}
+            title={shortcutTitle("save", "Save")}
             onClick={() => save()}
           >
             <Save size={17} />
             <span className="action-label">Save</span>
           </button>
           <button
-            title="Undo project change"
+            aria-label="Undo project change"
+            title={shortcutTitle("undo")}
             disabled={!s.past.length}
             onClick={s.undo}
           >
             <Undo2 size={17} />
           </button>
           <button
-            title="Redo project change"
+            aria-label="Redo project change"
+            title={shortcutTitle("redo")}
             disabled={!s.future.length}
             onClick={s.redo}
           >
@@ -1844,7 +2101,7 @@ export function App() {
           {light ? <Moon size={18} /> : <Sun size={18} />}
         </button>
         <button
-          title="Project settings"
+          title={shortcutTitle("settings", "Project settings")}
           aria-label="Project settings"
           onClick={() => setModal("settings")}
         >
@@ -1852,7 +2109,7 @@ export function App() {
         </button>
         <button
           className="primary"
-          title="Export"
+          title={shortcutTitle("export", "Export")}
           aria-label="Export"
           onClick={openExport}
         >
@@ -1922,7 +2179,7 @@ export function App() {
           gridTemplateColumns: `${visibleLeftWidth}px ${leftHidden ? "0" : "5"}px minmax(250px,1fr) ${rightHidden ? "0" : "5"}px ${visibleRightWidth}px`,
         }}
       >
-        <PromptDrawer open={promptsOpen}>
+        <PromptDrawer open={promptsOpen} onClose={() => setPromptsOpen(false)}>
           <PromptTemplates
             master={masterMode}
             onClose={() => setPromptsOpen(false)}
@@ -2133,11 +2390,10 @@ export function App() {
                       <button
                         title="Code problems"
                         aria-label="Code problems"
-                        aria-pressed={showProblems && !showConsole}
-                        onClick={() => {
-                          setShowProblems(showConsole || !showProblems);
-                          setShowConsole(false);
-                        }}
+                        aria-pressed={
+                          showProblems && !showConsole && !showTerminal
+                        }
+                        onClick={toggleProblems}
                       >
                         <TriangleAlert size={16} aria-hidden="true" />
                         Code problems{problemCount ? ` (${problemCount})` : ""}
@@ -2145,9 +2401,16 @@ export function App() {
                       <button
                         aria-label="Preview console"
                         aria-pressed={showConsole}
-                        onClick={() => setShowConsole((visible) => !visible)}
+                        onClick={toggleConsole}
                       >
-                        <SquareTerminal size={16} aria-hidden="true" /> Console
+                        <Braces size={16} aria-hidden="true" /> Console
+                      </button>
+                      <button
+                        aria-label="PowerShell terminal"
+                        aria-pressed={showTerminal}
+                        onClick={toggleTerminal}
+                      >
+                        <SquareTerminal size={16} aria-hidden="true" /> Terminal
                       </button>
                       <button
                         title="Show code changes"
@@ -2206,8 +2469,8 @@ export function App() {
                     </div>
                     {editorExpanded && (
                       <button
-                        title="Save (Ctrl+S)"
-                        aria-label="Save code (Ctrl+S)"
+                        title={shortcutTitle("save", "Save")}
+                        aria-label={shortcutTitle("save", "Save code")}
                         onClick={() => save()}
                       >
                         <Save size={16} />
@@ -2226,7 +2489,7 @@ export function App() {
                           : "Expand editor"
                       }
                       aria-expanded={editorExpanded}
-                      onClick={() => setEditorExpanded((expanded) => !expanded)}
+                      onClick={toggleEditor}
                     >
                       {editorExpanded ? (
                         <X size={16} />
@@ -2353,14 +2616,14 @@ export function App() {
                       >
                         <button
                           aria-label="Find"
-                          title="Find (Ctrl+F)"
+                          title={shortcutTitle("find", "Find")}
                           onClick={() => runEditorAction("actions.find")}
                         >
                           <Search size={14} aria-hidden="true" />
                         </button>
                         <button
                           aria-label="Replace"
-                          title="Replace (Ctrl+H)"
+                          title={shortcutTitle("replace", "Replace")}
                           disabled={masterMode || sceneLocked}
                           onClick={() =>
                             runEditorAction(
@@ -2372,7 +2635,7 @@ export function App() {
                         </button>
                         <button
                           aria-label="Go to line"
-                          title="Go to line (Ctrl+G)"
+                          title={shortcutTitle("goToLine")}
                           onClick={() =>
                             runEditorAction("editor.action.gotoLine")
                           }
@@ -2381,7 +2644,7 @@ export function App() {
                         </button>
                         <button
                           aria-label="Command palette"
-                          title="Command palette (F1)"
+                          title={shortcutTitle("commands", "Command palette")}
                           onClick={() =>
                             runEditorAction("editor.action.quickCommand")
                           }
@@ -2533,7 +2796,7 @@ export function App() {
                     editor(tab)
                   )}
                 </div>
-                {(showProblems || showConsole) && (
+                {(showProblems || showConsole || showTerminal) && (
                   <div
                     className="code-bottom-panel"
                     style={{ height: outputHeight }}
@@ -2607,19 +2870,29 @@ export function App() {
                       aria-label="Code output panels"
                     >
                       <button
-                        aria-pressed={!showConsole}
+                        aria-pressed={!showConsole && !showTerminal}
                         onClick={() => {
                           setShowProblems(true);
                           setShowConsole(false);
+                          setShowTerminal(false);
                         }}
                       >
                         Problems{problemCount ? ` (${problemCount})` : ""}
                       </button>
                       <button
                         aria-pressed={showConsole}
-                        onClick={() => setShowConsole(true)}
+                        onClick={() => {
+                          setShowTerminal(false);
+                          setShowConsole(true);
+                        }}
                       >
                         Console
+                      </button>
+                      <button
+                        aria-pressed={showTerminal}
+                        onClick={openTerminal}
+                      >
+                        Terminal
                       </button>
                       <button
                         className="code-bottom-close"
@@ -2627,12 +2900,15 @@ export function App() {
                         onClick={() => {
                           setShowProblems(false);
                           setShowConsole(false);
+                          setShowTerminal(false);
                         }}
                       >
                         <X size={14} />
                       </button>
                     </div>
-                    {showConsole ? (
+                    {showTerminal ? (
+                      <TerminalPanel id={terminalId} />
+                    ) : showConsole ? (
                       <PreviewConsole
                         entries={consoleEntries}
                         onClear={() => setConsoleEntries([])}
@@ -2825,11 +3101,8 @@ export function App() {
             <button
               className="text-button"
               aria-label="Run preview"
-              title="Run preview"
-              onClick={() => {
-                setRun((r) => r + 1);
-                s.setTime(0);
-              }}
+              title={shortcutTitle("run")}
+              onClick={runPreview}
             >
               <Play size={16} />
             </button>
@@ -2886,8 +3159,8 @@ export function App() {
               ))}
             </select>
             <button
-              title="Full screen preview"
-              onClick={() => fullscreenRef.current?.requestFullscreen()}
+              title={shortcutTitle("fullscreen", "Full screen preview")}
+              onClick={toggleFullscreen}
             >
               <Expand size={15} />
             </button>
@@ -2922,6 +3195,9 @@ export function App() {
               onVisual={handleVisual}
               onConsole={appendConsole}
               consoleCommandRef={consoleCommandRef}
+              shortcutKeys={previewKeys}
+              onPreviewShortcut={handlePreviewShortcut}
+              onTextShortcut={handleTextShortcut}
               zoom={zoom}
               rulers={previewRulers}
             />
@@ -3354,6 +3630,8 @@ export function App() {
           }}
         />
         <Timeline
+          actionsRef={timelineActions}
+          splitHint={shortcutTitle("split")}
           onSelectText={(sceneId, textId) => {
             const state = useStudio.getState();
             if (sceneId && state.project.workflow?.selectedId !== sceneId)
@@ -3494,6 +3772,13 @@ export function App() {
           setNotice("Recovery version restored");
         }}
       />
+      {modal === "keyboard-shortcuts" && (
+        <KeyboardShortcuts
+          overrides={shortcutOverrides}
+          onChange={setShortcutOverrides}
+          onClose={() => setModal("")}
+        />
+      )}
       {modal === "services" && (
         <Suspense fallback={<div role="status">Loading services…</div>}>
           <Services
@@ -3756,6 +4041,9 @@ export function App() {
           )}
         </div>
         <div className="modal-actions">
+          <button onClick={() => setModal("keyboard-shortcuts")}>
+            Keyboard shortcuts
+          </button>
           <button onClick={() => setModal("recovery-history")}>
             Recovery history
           </button>

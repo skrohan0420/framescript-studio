@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
 
 const widthKey = "framescript.prompt-width.v1";
 const minimumWidth = 560;
 export function PromptDrawer({
   open,
+  onClose,
   children,
 }: {
   open: boolean;
+  onClose: () => void;
   children: ReactNode;
 }) {
   const [present, setPresent] = useState(open);
@@ -63,10 +66,20 @@ export function PromptDrawer({
       id="prompt-builder-panel"
       className="prompt-drawer"
       data-state={open ? "open" : "closing"}
+      data-flush={available - width < 32}
       aria-label="Prompt builder panel"
       style={{ width }}
       inert={!open}
     >
+      <button
+        type="button"
+        className="prompt-drawer-edge-close"
+        title="Close prompt builder"
+        aria-label="Collapse prompt drawer"
+        onClick={onClose}
+      >
+        <ChevronRight size={15} aria-hidden="true" />
+      </button>
       <div
         role="separator"
         aria-label="Resize prompt builder"

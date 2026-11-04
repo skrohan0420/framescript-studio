@@ -1,6 +1,13 @@
 import { WindowsCredentialStore } from "./credentials";
 import { rpcSchemas, type RpcName } from "../shared/rpc";
 import { StudioDatabase } from "./database";
+import {
+  clearTerminal,
+  runTerminal,
+  stopTerminal,
+  stopTerminals,
+  terminalState,
+} from "./terminal";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { promises as fs, createReadStream } from "node:fs";
 import path from "node:path";
@@ -369,6 +376,14 @@ async function invoke(
       return client.chatgpt.disconnect();
     case "session":
       return true;
+    case "terminalRun":
+      return runTerminal(owner, args[0], args[1]);
+    case "terminalPoll":
+      return terminalState(owner, args[0]);
+    case "terminalStop":
+      return stopTerminal(owner, args[0], args[1]);
+    case "terminalClear":
+      return clearTerminal(owner, args[0]);
     case "hasKey":
       return !!(client.key || process.env.OPENAI_API_KEY);
     case "credentials":
@@ -830,6 +845,18 @@ async function start() {
         const payload = await body(req);
         if (!Array.isArray(payload.args)) throw Error("Invalid arguments");
         const operation = url.pathname.slice("/api/".length);
+        if (
+          operation.startsWith("terminal") &&
+          (req.headers.origin !== "http://" + host ||
+            req.headers["sec-fetch-site"] !== "same-origin")
+        ) {
+          json(
+            res,
+            { error: "Terminal commands require the local studio page." },
+            403,
+          );
+          return;
+        }
         if (!Object.hasOwn(rpcSchemas, operation) || operation === "open")
           throw Error("Unknown operation");
         payload.args = rpcSchemas[operation as RpcName].parse(payload.args);
@@ -921,6 +948,7 @@ async function start() {
     ),
   );
   const stop = () => {
+    stopTerminals();
     for (const client of clients.values()) {
       client.chatgpt.close();
       client.mediaAbort?.abort();

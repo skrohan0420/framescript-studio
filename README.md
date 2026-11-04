@@ -92,7 +92,7 @@ The main workspace now uses a library/player/inspector layout: **Media, Audio, S
 - Startup automatically restores the SQLite workspace. Legacy recovery can appear in a nonblocking banner if no workspace exists. Restore or dismiss it once; the same snapshot stays acknowledged in that browser even after refreshing, while a changed autosave can prompt again. Dismissal preserves the recovery file on disk. Export HTML source downloads a standalone scene with embedded assets and playback runtime.
 - Export MP4/H.264, MKV/H.264, WebM/VP9, GIF, PNG sequences in a ZIP, or one PNG at the current timeline time. Resolution, FPS, duration, speed, CRF, fitting and supported transparency are configurable. The browser handles the download location.
 
-Shortcuts: Ctrl+S saves, Ctrl+Shift+S duplicates, Ctrl+Enter runs preview or generates inside the AI composer, Ctrl+Alt+Z undoes a project change. Monaco retains its normal editor shortcuts.
+Open Project settings → Keyboard shortcuts to search, reassign, clear, or reset shortcuts for project, preview, timeline, and code editor actions. Ctrl+S saves locally, Ctrl+Enter runs the preview, and Space toggles playback by default.
 
 ## Script-to-video workflow
 

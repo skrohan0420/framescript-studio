@@ -29,6 +29,9 @@ export function Preview({
   onVisual,
   onConsole,
   consoleCommandRef,
+  shortcutKeys,
+  onPreviewShortcut,
+  onTextShortcut,
   zoom,
   projectOverride,
   textEditing = true,
@@ -43,6 +46,9 @@ export function Preview({
   onVisual: (s: any) => void;
   onConsole: (entries: PreviewConsoleEntry[]) => void;
   consoleCommandRef: Ref<(command: string) => void>;
+  shortcutKeys: string[];
+  onPreviewShortcut: (chord: string, repeat: boolean) => void;
+  onTextShortcut: (key: string) => void;
   zoom: number;
   projectOverride?: Project;
   textEditing?: boolean;
@@ -185,6 +191,8 @@ export function Preview({
         resolutionScale,
         textEditing,
         compositionProject,
+        undefined,
+        shortcutKeys,
       );
       setFrames((previous) => [
         ...previous.filter((frame) => frame.id === activeId.current),
@@ -202,6 +210,7 @@ export function Preview({
     project.assets,
     textEditing,
     resolutionScale,
+    shortcutKeys,
     compositionProject,
   ]);
   useEffect(() => {
@@ -210,6 +219,12 @@ export function Preview({
       const pending = e.source === candidateRef.current?.contentWindow;
       const visible = e.source === activeRef.current?.contentWindow;
       if (!pending && !visible) return;
+      if (
+        visible &&
+        e.data.type === "preview-shortcut" &&
+        typeof e.data.value?.chord === "string"
+      )
+        onPreviewShortcut(e.data.value.chord, e.data.value.repeat === true);
       if (e.data.type === "preview-console" && Array.isArray(e.data.value)) {
         const payload: Partial<PreviewConsoleEntry>[] = e.data.value;
         const entries = payload
@@ -251,9 +266,7 @@ export function Preview({
           )
         ) {
           state.setSelectedText(value.id);
-          window.dispatchEvent(
-            new KeyboardEvent("keydown", { key: value.key, bubbles: true }),
-          );
+          onTextShortcut(value.key);
         }
       }
       if (visible && textEditing && e.data.type === "text-start") {
@@ -349,6 +362,8 @@ export function Preview({
     onReady,
     onVisual,
     onConsole,
+    onPreviewShortcut,
+    onTextShortcut,
     setError,
     textEditing,
   ]);

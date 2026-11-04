@@ -69,7 +69,7 @@ test("prompt drawer slides, resizes from its left edge and restores width within
       page.evaluate(() => localStorage.getItem("framescript.prompt-width.v1")),
     )
     .toBe("960");
-  await toggle.click();
+  await panel.getByRole("button", { name: "Collapse prompt drawer" }).click();
   await expect(panel).toHaveAttribute("data-state", "closing");
   await expect(panel).toHaveCount(0);
   await toggle.click();
@@ -110,6 +110,13 @@ test("drawer content adapts to narrow, medium and full desktop widths", async ({
   await expect.poll(columns).toBe(2);
   await handle.press("End");
   await expect(handle).toHaveAttribute("aria-valuenow", "1908");
+  const grip = (await handle.locator("span").boundingBox())!;
+  const arrow = (await panel
+    .getByRole("button", { name: "Collapse prompt drawer" })
+    .boundingBox())!;
+  expect(
+    Math.abs(grip.y + grip.height / 2 - (arrow.y + arrow.height / 2)),
+  ).toBeLessThan(1);
   await expect.poll(columns).toBe(4);
   const footer = await panel.locator(".prompt-actions").boundingBox();
   const copy = await panel

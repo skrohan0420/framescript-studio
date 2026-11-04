@@ -1,6 +1,7 @@
 import { documentFor } from "../shared/runtime";
 import { sceneOffset } from "../shared/workflow";
 import type { Project } from "../shared/project";
+import { keyboardChord } from "./shortcuts";
 
 export type PreviewQuality = "auto" | "1080" | "full";
 export type ConsoleData =
@@ -35,8 +36,41 @@ export function previewScale(
 }
 
 // Injected only into editor iframes. Logical scene coordinates remain unchanged.
-function previewRuntime(scale: number) {
+function previewRuntime(
+  scale: number,
+  shortcuts?: string[],
+  chordFor?: typeof keyboardChord,
+) {
   const w = window as any;
+  if (shortcuts && chordFor) {
+    w.__fsWorkspaceKeys = true;
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        if (
+          !event.isTrusted ||
+          event.defaultPrevented ||
+          (event.target as HTMLElement)?.closest?.(
+            "input,textarea,select,[contenteditable]",
+          )
+        )
+          return;
+        const chord = chordFor(event);
+        if (!chord || !shortcuts.includes(chord)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        parent.postMessage(
+          {
+            framescript: true,
+            type: "preview-shortcut",
+            value: { chord, repeat: event.repeat },
+          },
+          "*",
+        );
+      },
+      true,
+    );
+  }
   let messages: PreviewConsoleEntry[] = [];
   let flushTimer = 0;
   const flushConsole = () => {
@@ -377,7 +411,7 @@ function lazyComposition(
     if (event.data.type === "ready") seek(entry[0]);
     if (
       entry[0] === current &&
-      ["error", "preview-console"].includes(event.data.type)
+      ["error", "preview-console", "preview-shortcut"].includes(event.data.type)
     )
       parent.postMessage(event.data, "*");
   });
@@ -389,6 +423,7 @@ export function previewDocument(
   textEditing: boolean,
   composition?: Project,
   sourceOffset?: number,
+  shortcuts?: string[],
 ): string {
   let p = project;
   if (composition?.workflow?.scenes.length) {
@@ -408,6 +443,7 @@ export function previewDocument(
         false,
         undefined,
         scene.sourceOffset,
+        shortcuts,
       ),
     }));
     p = {
@@ -421,7 +457,7 @@ export function previewDocument(
   const source = documentFor(p, { textEditing, sourceOffset });
   // A single line keeps existing user-code line mapping intact.
   const script =
-    `(()=>{const __name=(fn)=>fn;(${previewRuntime.toString()})(${scale});})()`.replace(
+    `(()=>{const __name=(fn)=>fn;(${previewRuntime.toString()})(${scale},${JSON.stringify(shortcuts)},(${keyboardChord.toString()}));})()`.replace(
       /\r?\n/g,
       " ",
     );

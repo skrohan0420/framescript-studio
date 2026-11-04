@@ -7,6 +7,7 @@ export function Modal({
   onClose,
   children,
   headerAction,
+  onEscapeKeyDown,
   wide = false,
 }: {
   title: string;
@@ -14,13 +15,17 @@ export function Modal({
   onClose: () => void;
   children: ReactNode;
   headerAction?: ReactNode;
+  onEscapeKeyDown?: (event: KeyboardEvent) => void;
   wide?: boolean;
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={(v) => !v && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="overlay" />
-        <Dialog.Content className={"modal" + (wide ? " modal-wide" : "")}>
+        <Dialog.Content
+          className={"modal" + (wide ? " modal-wide" : "")}
+          onEscapeKeyDown={onEscapeKeyDown}
+        >
           <div className="modal-head">
             <Dialog.Title>{title}</Dialog.Title>
             <div className="modal-head-actions">

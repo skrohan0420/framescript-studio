@@ -21,6 +21,7 @@ function runtime(
   window.addEventListener("keydown", (event) => {
     if (
       standalone ||
+      w.__fsWorkspaceKeys ||
       event.code !== "Space" ||
       event.ctrlKey ||
       event.metaKey ||

@@ -4,6 +4,8 @@ import {
   useState,
   useRef,
   useLayoutEffect,
+  useImperativeHandle,
+  type Ref,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -40,6 +42,11 @@ import {
   typographyDragType,
 } from "../shared/typography";
 import { resizeVisual, splitVisual } from "../shared/timeline-edit";
+export type TimelineActions = {
+  split: () => void;
+  deleteText: () => void;
+  toggleSnapping: () => void;
+};
 
 export const Timeline = memo(function Timeline({
   masterMode,
@@ -52,6 +59,8 @@ export const Timeline = memo(function Timeline({
   selectedAudio,
   onSelectScene,
   onSelectText,
+  actionsRef,
+  splitHint,
 }: {
   masterMode: boolean;
   timelineHidden: boolean;
@@ -63,6 +72,8 @@ export const Timeline = memo(function Timeline({
   selectedAudio?: string;
   onSelectScene?: (id: string) => void;
   onSelectText?: (sceneId: string | undefined, textId: string) => void;
+  actionsRef?: Ref<TimelineActions>;
+  splitHint?: string;
 }) {
   const playing = useStudio((state) => state.playing);
   const s = useProjectState(),
@@ -447,37 +458,15 @@ export const Timeline = memo(function Timeline({
     setEditMessage("");
     return true;
   };
-  useEffect(() => {
-    const keydown = (event: KeyboardEvent) => {
-      if (
-        event.defaultPrevented ||
-        event.repeat ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.altKey ||
-        document.querySelector('[role="dialog"]')
-      )
-        return;
-      if (
-        (event.target as HTMLElement)?.closest?.(
-          "input, textarea, select, [contenteditable], .monaco-editor",
-        )
-      )
-        return;
-      if (event.key.toLowerCase() === "w") {
-        event.preventDefault();
-        split();
-      } else if (
-        ["Delete", "Backspace"].includes(event.key) &&
-        useStudio.getState().selectedText
-      ) {
-        event.preventDefault();
-        deleteText();
-      }
-    };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
-  }, [masterMode, selection]);
+  const toggleSnapping = () => {
+    setSnapping((value) => !value);
+    setSnapTime(null);
+  };
+  useImperativeHandle(actionsRef, () => ({
+    split,
+    deleteText,
+    toggleSnapping,
+  }));
   useEffect(() => {
     const timeline = timelineRef.current;
     if (!timeline) return;
@@ -944,7 +933,7 @@ export const Timeline = memo(function Timeline({
         </span>
         <span className="toolbar-spacer" />
         <button
-          title="Split at playhead (W)"
+          title={splitHint ?? "Split at playhead"}
           aria-label="Split at playhead"
           onClick={split}
         >
@@ -954,10 +943,7 @@ export const Timeline = memo(function Timeline({
           title="Snapping · hold Alt while dragging to bypass"
           aria-label="Timeline snapping"
           aria-pressed={snapping}
-          onClick={() => {
-            setSnapping((value) => !value);
-            setSnapTime(null);
-          }}
+          onClick={toggleSnapping}
         >
           <Magnet size={16} />
         </button>
