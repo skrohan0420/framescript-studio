@@ -54,9 +54,9 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 
 - **Stage 0 — Done.** Baseline, reusable entry points and test prerequisites recorded below.
 - **Stage 1 — Done.** The versioned Edit fixture, candidate validator and sample ZIP are verified. Stage 2 can wire the outgoing workflow into the editor.
-- **Stage 2 — In verification.** The outgoing editor workflow and saved request are implemented. A fresh AI chat still needs to try the ZIP and prompt together.
+- **Stage 2 — Done.** The outgoing editor workflow and saved request passed the live AI handoff.
 - **Stage 3 — Done.** JSON intake, candidate review, stale-result checks and undoable Apply are verified for the first Edit workflow.
-- **Stage 4 — In verification.** Browser verification uses a fixture patch. The fresh AI chat and first-response import remain open.
+- **Stage 4 — Done.** Automated parity and legacy checks passed. The first live AI patch imported and applied.
 - **Stage 5 — Planned.** Depends on evidence from the first Edit milestone.
 
 ### Stage 0 baseline evidence
@@ -90,7 +90,7 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - New exported requests record the local project identity. Requests saved before project matching was added need a fresh export. The importer checks the original project, clip, request, target, revision, operation and allowed value. Malformed or conflicting inputs can be corrected using the validation message and repair prompt.
 - The candidate opens in the existing side-by-side review at the affected keyframe. Review shows the base and current revisions, value change and interpolation effect. Apply rechecks the current snapshot and uses one project history transaction. A stale result can be inspected, with an action to export from the current source.
 - `node node_modules/typescript/bin/tsc --noEmit`, all 156 Vitest tests and both tests in `tests/structured-edit.spec.ts` passed. The browser test exercised malformed and fenced JSON, paste, upload, matching and conflicting combined inputs, different preview pixels, Discard, Apply, Undo and Redo. It verified that a source change during review disables Apply.
-- Next action is Stage 4 verification. The fresh AI handoff also remains open in Stage 2. Use the editor to export a new task, bring the real response back, and record first-attempt success and preview/export evidence.
+- Next action is Stage 4 verification. The live handoff outcome is recorded under Stage 4. Use the editor to export a new task, bring the real response back, and record first-attempt success and preview/export evidence.
 
 ### Stage 4 verification evidence
 
@@ -100,7 +100,11 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - The structured test uses a fixture response tied to a real editor-exported request. It checks .frame import, exact saved scene data after Apply and Redo, invalid and stale results, identical canvas frames on repeated and backward seeks, and a pixel comparison of the glow region against an editor-exported PNG at 3.2 seconds. The legacy checks cover project save/reopen/import, preview/seek and MP4 export.
 - The outgoing test saves the actual downloaded ZIP and matching prompt in its Playwright output directory. Its request is stored in the isolated test workspace. For a live round trip, export a new task from the same FrameScript browser and project where the AI result will be imported.
 
-### Outstanding live AI check
+### Live AI handoff result
+
+- **4 November 2026.** Claude received the editor ZIP and copied prompt in a fresh chat and reported sampling the packaged PNG. Its first JSON patch matched request `b77c746e-7688-4f64-9b6b-3e7408d60a2c`. FrameScript accepted it without repair, showed glow changing from 0.6 to 0.8 at 3.200 seconds, and advanced the clip from revision 14 to 15 after Apply.
+
+To repeat the check:
 
 1. Open the generated `test-results/structured-edit-fixture/fireworks-galaxy.frame` using **Open .frame file** on the project home. Select the visual clip, open **Edit / Update**, keep the requested value at 0.8, then use **Download ZIP** and **Copy prompt**.
 2. In a fresh AI chat, attach that ZIP and paste the copied prompt in the same message. Record whether the AI could access the included PNG and save its first response before making any corrections.
