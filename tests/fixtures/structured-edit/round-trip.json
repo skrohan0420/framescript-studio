@@ -1,0 +1,49 @@
+{
+  "scene": {
+    "schemaVersion": "1",
+    "sceneId": "fireworks-galaxy",
+    "revision": 14,
+    "title": "Fireworks Galaxy",
+    "width": 640,
+    "height": 360,
+    "fps": 30,
+    "durationFrames": 180,
+    "star": {
+      "id": "star-core",
+      "moduleVersion": "1",
+      "modulePath": "source/modules/star.mjs",
+      "glowIntensity": 0.4,
+      "keyframe": { "id": "glow-peak", "frame": 96, "value": 0.6 }
+    },
+    "label": { "id": "galaxy-label", "text": "Fireworks Galaxy" }
+  },
+  "request": {
+    "contractVersion": "1",
+    "mode": "edit",
+    "requestId": "fireworks-glow-edit-001",
+    "sceneId": "fireworks-galaxy",
+    "baseRevision": 14,
+    "allowedTarget": {
+      "nodeId": "star-core",
+      "property": "glowIntensity",
+      "keyframeId": "glow-peak"
+    },
+    "requestedValue": 0.8
+  },
+  "patch": {
+    "contractVersion": "1",
+    "type": "scene-patch",
+    "requestId": "fireworks-glow-edit-001",
+    "sceneId": "fireworks-galaxy",
+    "baseRevision": 14,
+    "operations": [
+      {
+        "op": "set-keyframe-value",
+        "nodeId": "star-core",
+        "property": "glowIntensity",
+        "keyframeId": "glow-peak",
+        "value": 0.8
+      }
+    ]
+  }
+}

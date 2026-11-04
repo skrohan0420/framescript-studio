@@ -53,7 +53,7 @@ Keep requirements in their numbered files, implementation evidence and status in
 Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. Mark a stage Done when its exit checks have evidence. Record partial checks under the active stage.
 
 - **Stage 0 — Done.** Baseline, reusable entry points and test prerequisites recorded below.
-- **Stage 1 — Planned.** The illustrative patch is documented. The versioned schemas and fixtures are pending.
+- **Stage 1 — Done.** The versioned Edit fixture, candidate validator and sample ZIP are verified. Stage 2 can wire the outgoing workflow into the editor.
 - **Stage 2 — Planned.** Depends on Stage 1's outgoing contract and fixture.
 - **Stage 3 — Planned.** Depends on the expected result and saved task contract.
 - **Stage 4 — Planned.** Depends on the full round trip and a working test environment.
@@ -68,6 +68,14 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - **Clip targeting and undo.** [Timeline actions](../../src/Timeline.tsx#L230) already route visual splits through shared timeline logic. Reuse the [project store history](../../src/store.ts#L191) for undoable edits.
 - **Preview and export.** The [editor preview](../../src/App.tsx#L3186) renders in a [sandboxed iframe](../../src/Preview.tsx#L537), with the [shared runtime](../../shared/runtime.ts#L70) evaluating `renderFrame(time)`. Export starts from the [editor action](../../src/App.tsx#L1195) and reaches the [render worker](../../server/export-worker.ts#L7).
 - **Scope decision.** Use the [first Edit milestone](first-edit-milestone.md) as written. One untrimmed clip at normal speed, a Canvas star, native label and one glow keyframe edit. Stage 1 defines the versioned schema and fixtures. The browser end-to-end and live AI handoff gates belong to Stage 4.
+
+### Stage 1 verification evidence
+
+- **4 November 2026.** Implemented on `codex/structured-ai-edit` from baseline report commit `a3f4825`. [Shared schemas and candidate validator](../../shared/structured-edit.ts) enforce a single scoped keyframe-value operation against the saved request and current scene revision.
+- The fixture uses frame 96 at 30 fps for 3.2 seconds. Its provisional scene format models one Canvas module instance and one native label. The candidate changes only glow from 0.6 to 0.8. The committed project revision is left to the future Apply transaction.
+- `node node_modules/vitest/vitest.mjs run tests/structured-edit.test.ts` passed all 10 tests. Coverage includes stale response and current scene revisions, wrong request and scene, edits to the label or another keyframe, invalid or unrequested values, and attempts to change timing. TypeScript passed with `node node_modules/typescript/bin/tsc --noEmit`.
+- `node node_modules/tsx/dist/cli.mjs scripts/build-structured-edit-fixture.ts` generated the ZIP, copied prompt, saved request and expected result and candidate under `test-results/structured-edit-fixture`. Used host Chromium to render the baseline PNG. Verified that the ZIP contained exactly the listed payload files plus its manifest and that all payload SHA-256 hashes matched.
+- Next action is Stage 2. Reuse the fixture to wire the editor entry point and freeze a real task snapshot. Production capture, persistent request storage, result review and the live AI round trip remain later-stage checks.
 
 ### Progress report template
 
@@ -96,7 +104,7 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 
 ## Open items to track
 
-- Exact FSSF v1 fields, module interface and patch schema. Resolve for the baseline in Stage 1.
+- The narrow Stage 1 fixture contract is defined. Broader FSSF v1 fields, the production module interface and additional patch operations remain open.
 - Rendering and loopback test prerequisites are verified with host access. Use that setup for the applicable Stage 4 checks.
 - Project-to-source time, shared-source fixtures and extension handoff rules for nontrivial clips. Resolve before expanding those workflows.
 - Package budgets and long-scene threshold. Set after measuring representative handoffs and first-result success.
