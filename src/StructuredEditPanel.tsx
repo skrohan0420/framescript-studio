@@ -1,17 +1,12 @@
 import { useState } from "react";
-import type { Project, Scene } from "../shared/project";
+import type { Project } from "../shared/project";
 import type { RpcResults } from "../shared/rpc";
-import { structuredStarCode } from "../shared/structured-star";
 import { bridge, download } from "./bridge";
 import { Modal } from "./components";
-
-function matchesSource(scene: Scene | undefined) {
-  if (!scene?.structuredEdit) return false;
-  const code = structuredStarCode(scene.structuredEdit);
-  return (
-    scene.html === code.html && scene.css === code.css && scene.js === code.js
-  );
-}
+import {
+  StructuredEditResult,
+  supportsStructuredClip,
+} from "./StructuredEditResult";
 
 export function StructuredEditPanel({
   project,
@@ -33,6 +28,7 @@ export function StructuredEditPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [intake, setIntake] = useState(false);
   const [exported, setExported] = useState<{
     snapshot: string;
     result: RpcResults["structuredEditPackage"];
@@ -45,19 +41,7 @@ export function StructuredEditPanel({
       clip.js !== applied.js);
   const source = pending && useApplied ? applied : clip;
   const scene = source?.structuredEdit;
-  const duration = scene ? scene.durationFrames / scene.fps : 0;
-  const supported =
-    !!scene &&
-    !!clip &&
-    !clip.locked &&
-    !clip.sourceOffset &&
-    clip.duration === duration &&
-    project.settings.speed === 1 &&
-    project.settings.width === scene.width &&
-    project.settings.height === scene.height &&
-    project.settings.fps === scene.fps &&
-    project.settings.timing === "seek" &&
-    matchesSource(source);
+  const supported = supportsStructuredClip(project, clip, source);
   const snapshot = JSON.stringify({
     scene,
     clip,
@@ -94,6 +78,15 @@ export function StructuredEditPanel({
       setBusy(false);
     }
   };
+  if (intake)
+    return (
+      <StructuredEditResult
+        project={project}
+        clipId={clipId}
+        onBack={() => setIntake(false)}
+        onApplied={onClose}
+      />
+    );
   return (
     <Modal title="Edit / Update" open onClose={onClose}>
       <p>{clip?.title ?? "The selected clip is no longer available."}</p>
@@ -151,6 +144,7 @@ export function StructuredEditPanel({
       {error && <p role="alert">{error}</p>}
       <div className="modal-actions">
         <button onClick={onClose}>Close</button>
+        <button onClick={() => setIntake(true)}>Import AI result</button>
         <button
           disabled={!ready || !validValue || busy}
           onClick={() => void exportZip()}

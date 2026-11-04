@@ -167,6 +167,7 @@ export interface RpcResults {
     url: string;
   };
   structuredEditRequest: {
+    projectId: string | null;
     clipId: string;
     scope: "clip";
     request: z.infer<typeof editRequestSchema>;

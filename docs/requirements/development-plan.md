@@ -55,7 +55,7 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - **Stage 0 — Done.** Baseline, reusable entry points and test prerequisites recorded below.
 - **Stage 1 — Done.** The versioned Edit fixture, candidate validator and sample ZIP are verified. Stage 2 can wire the outgoing workflow into the editor.
 - **Stage 2 — In verification.** The outgoing editor workflow and saved request are implemented. A fresh AI chat still needs to try the ZIP and prompt together.
-- **Stage 3 — Planned.** Depends on the expected result and saved task contract.
+- **Stage 3 — Done.** JSON intake, candidate review, stale-result checks and undoable Apply are verified for the first Edit workflow.
 - **Stage 4 — Planned.** Depends on the full round trip and a working test environment.
 - **Stage 5 — Planned.** Depends on evidence from the first Edit milestone.
 
@@ -83,6 +83,14 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - **Download ZIP** captures the keyframe with FrameScript's PNG renderer using the same built-in scene projection as the preview. The ZIP, copied prompt and locally saved request are built from the same inputs. The saved request includes the clip and scope, source scene, manifest and prompt. Changes to the requested value require a fresh ZIP before Copy prompt is available.
 - TypeScript and all 156 Vitest tests passed. The Stage 2 Playwright test verified the clip entry point, download, clipboard contents, prompt invalidation and request lookup after reload with the local server. The generated sample ZIP contained all six declared payloads with matching SHA-256 hashes.
 - Outstanding handoff check. In a fresh AI chat, attach `test-results/structured-edit-fixture/fireworks-glow-edit.zip` and paste `copied-prompt.txt` from the same directory. Check that the AI can inspect the PNG and returns the requested keyframe patch. Compare the result with `expected-result.json` and record the outcome. Stage 3 handles editor-side result intake and review.
+
+### Stage 3 verification evidence
+
+- **4 November 2026.** Implemented on `codex/structured-ai-edit` from `69cd1e3`. In **Edit / Update**, open **Import AI result** and paste a JSON patch, upload a JSON file or provide matching copies. The first contract is self-contained and has a 64 KB input limit. Supporting files and result ZIPs are follow-up work for contracts that need dependencies.
+- New exported requests record the local project identity. Requests saved before project matching was added need a fresh export. The importer checks the original project, clip, request, target, revision, operation and allowed value. Malformed or conflicting inputs can be corrected using the validation message and repair prompt.
+- The candidate opens in the existing side-by-side review at the affected keyframe. Review shows the base and current revisions, value change and interpolation effect. Apply rechecks the current snapshot and uses one project history transaction. A stale result can be inspected, with an action to export from the current source.
+- `node node_modules/typescript/bin/tsc --noEmit`, all 156 Vitest tests and both tests in `tests/structured-edit.spec.ts` passed. The browser test exercised malformed and fenced JSON, paste, upload, matching and conflicting combined inputs, different preview pixels, Discard, Apply, Undo and Redo. It verified that a source change during review disables Apply.
+- Next action is Stage 4 verification. The fresh AI handoff also remains open in Stage 2. Use the editor to export a new task, bring the real response back, and record first-attempt success and preview/export evidence.
 
 ### Progress report template
 

@@ -20,6 +20,8 @@ Keep the exported task snapshot linked to its request ID. If the scene advances 
 
 The creator can paste the result, upload it as a file, or combine pasted result text with supporting uploads. The first Edit fixture is self-contained JSON. The result echoes the request ID so FrameScript can find the saved task and validate its scope.
 
+For the first editor workflow, use **Edit / Update → Import AI result**. Paste the JSON (a single Markdown JSON fence also works), upload its `.json` file, or provide matching copies. Export a fresh task from the editor if the request was saved before project matching was added. Use the request ID from that export for the live handoff. The standalone example's request ID is for fixture validation.
+
 Allow one operation in this fixture. Update the value of an existing keyframe identified by stable ID. Use the timestamp as task context. Resolve the edit against the declared scene, revision, instance, property and keyframe IDs.
 
 ```json

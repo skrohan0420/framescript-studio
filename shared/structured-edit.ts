@@ -60,6 +60,27 @@ export const editPatchSchema = z.strictObject({
   ]),
 });
 
+export function parseEditResult(text: string) {
+  const trimmed = text.trim();
+  const fenced = /^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i.exec(trimmed);
+  let value: unknown;
+  try {
+    value = JSON.parse(fenced?.[1] ?? trimmed);
+  } catch {
+    throw Error(
+      "The result must contain one JSON patch. Paste or upload the complete JSON.",
+    );
+  }
+  const result = editPatchSchema.safeParse(value);
+  if (!result.success)
+    throw Error(
+      result.error.issues
+        .map((issue) => `${issue.path.join(".") || "Result"}: ${issue.message}`)
+        .join("\n"),
+    );
+  return result.data;
+}
+
 // Produce a review candidate without mutating or advancing the saved scene.
 export function prepareEditCandidate(
   sceneInput: unknown,

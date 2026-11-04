@@ -21,6 +21,7 @@ export async function writeStructuredEditPackage(
   destination: string,
   requestFile: string,
   clipId: string,
+  projectId: string | null = null,
 ) {
   const request = editRequestSchema.parse({
     contractVersion: "1",
@@ -133,7 +134,15 @@ export async function writeStructuredEditPackage(
     try {
       await atomicWrite(
         requestFile,
-        json({ request, scene, manifest, prompt, clipId, scope: "clip" }),
+        json({
+          request,
+          scene,
+          manifest,
+          prompt,
+          clipId,
+          scope: "clip",
+          projectId,
+        }),
       );
     } catch (error) {
       await fs.rm(destination, { force: true });

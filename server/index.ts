@@ -1,5 +1,5 @@
 import { WindowsCredentialStore } from "./credentials";
-import { rpcSchemas, type RpcName } from "../shared/rpc";
+import { rpcSchemas, type RpcName, type RpcResults } from "../shared/rpc";
 import { StudioDatabase } from "./database";
 import {
   clearTerminal,
@@ -197,6 +197,7 @@ async function invoke(
         destination,
         path.join(dataDir, "structured-edit", owner, requestId + ".json"),
         args[2],
+        client.current ?? null,
       );
       return {
         ...saved,
@@ -207,11 +208,20 @@ async function invoke(
         ),
       };
     }
-    case "structuredEditRequest":
-      return readJson(
+    case "structuredEditRequest": {
+      const saved = (await readJson(
         path.join("structured-edit", owner, args[0] + ".json"),
         null,
-      );
+      )) as RpcResults["structuredEditRequest"];
+      if (!saved) return null;
+      if (saved.projectId === undefined)
+        throw Error(
+          "This task predates project matching. Export a fresh task.",
+        );
+      if (saved.projectId !== (client.current ?? null))
+        throw Error("This request belongs to a different project.");
+      return saved;
+    }
     case "exportStorage":
       return inspectExports();
     case "clearExportFiles":
