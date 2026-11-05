@@ -39,6 +39,8 @@ The [AI Prompt Package](07-ai-prompt-package.md) carries the task and its expect
 
 ## Time and rendering
 
+The first built-in star continuation declares a start frame, end frame and final glow value. The runtime computes its starting glow from the original animation at the handoff. Times before the start frame use the original evaluation. At and after the start, the glow interpolates to the declared target and holds afterward. The current implementation supports one continuation per source and retains legacy source projection when the field is absent. This is a narrow initial contract for testing the complete Extend workflow.
+
 - Use the authoritative [timeline timebase](04-unified-timeline.md). Convert project time to scene-local time using clip placement, source offset, trim and speed. Specify rounding, cut ownership and endpoint handling in the shared timing contract.
 - Use the same evaluation rules in preview and export. Resolve native values, keyframes and procedural parameters at the requested time, then render with the declared assets and layer order.
 - Test seek determinism by comparing the same timestamps reached in different orders. Test preview and export parity separately using the same scene, runtime, assets, fonts and frame settings. Define comparison tolerances for each supported backend and compare frames before lossy encoding where practical.

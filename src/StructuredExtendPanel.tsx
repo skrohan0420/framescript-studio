@@ -4,6 +4,7 @@ import { structuredExtensionTiming } from "../shared/structured-edit-timing";
 import { resizeVisual } from "../shared/timeline-edit";
 import { Modal } from "./components";
 import { useStudio } from "./store";
+import { StructuredContinuationPanel } from "./StructuredContinuationPanel";
 
 export function StructuredExtendPanel({
   project,
@@ -18,6 +19,7 @@ export function StructuredExtendPanel({
   const [seconds, setSeconds] = useState("");
   const [confirmed, setConfirmed] = useState("");
   const [error, setError] = useState("");
+  const [continuation, setContinuation] = useState(false);
   const added = Number(seconds);
   const valid = !!timing && added > 0 && added <= timing.available + 1e-9;
   const following = timing?.following ?? [];
@@ -50,6 +52,15 @@ export function StructuredExtendPanel({
     }
     onClose();
   };
+  if (continuation)
+    return (
+      <StructuredContinuationPanel
+        project={project}
+        clipId={clipId}
+        onBack={() => setContinuation(false)}
+        onApplied={onClose}
+      />
+    );
   return (
     <Modal title="Extend clip" open onClose={onClose}>
       {timing ? (
@@ -99,9 +110,9 @@ export function StructuredExtendPanel({
             </label>
           )}
           <h3>Generate new animation</h3>
-          <p>
-            AI continuation packages are planned for the next Extend increment.
-          </p>
+          <button onClick={() => setContinuation(true)}>
+            Generate continuation
+          </button>
         </>
       ) : (
         <p role="alert">

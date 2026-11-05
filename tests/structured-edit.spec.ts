@@ -5,6 +5,117 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resizeVisual, splitVisual } from "../shared/timeline-edit";
 import { activateScene, selectedScene } from "../shared/workflow";
 
+test("continues a trimmed clip from its handoff and restores the original with Undo", async ({
+  page,
+}) => {
+  const base = structuredEditFixtureProject();
+  const split = { ...base, ...splitVisual(base, base.workflow!.selectedId, 2) };
+  const [left, right] = split.workflow!.scenes;
+  await openFixture(page, split);
+  await page
+    .getByRole("dialog", { name: "Edit / Update" })
+    .getByRole("button", { name: "Close", exact: true })
+    .first()
+    .click();
+  await page.getByRole("button", { name: "Extend", exact: true }).click();
+  await page.getByRole("button", { name: "Generate continuation" }).click();
+  const panel = page.getByRole("dialog", { name: "Generate continuation" });
+  const responsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/api/structuredExtendPackage"),
+  );
+  const zip = page.waitForEvent("download");
+  await panel.getByRole("button", { name: "Download Extend ZIP" }).click();
+  const response = await responsePromise;
+  expect(response.ok(), await response.text()).toBe(true);
+  const { result } = await response.json();
+  expect(await (await zip).failure()).toBeNull();
+  const extension = {
+    contractVersion: "1",
+    type: "scene-extension",
+    requestId: result.requestId,
+    sceneId: left.structuredEdit!.sceneId,
+    baseRevision: 14,
+    startFrame: 60,
+    endFrame: 90,
+    value: 0.9,
+  };
+  await panel
+    .getByLabel("Paste AI extension")
+    .fill(JSON.stringify({ ...extension, startFrame: 59 }));
+  await panel.getByRole("button", { name: "Review extension" }).click();
+  await expect(panel.getByRole("alert")).toContainText(
+    "must match the saved request",
+  );
+  await panel.getByLabel("Paste AI extension").fill(JSON.stringify(extension));
+  await panel.getByRole("button", { name: "Review extension" }).click();
+  const review = page.getByRole("dialog", { name: "Review AI changes" });
+  await expect(review).toContainText("Continue from 2.000s to 3.000s");
+  expect(
+    await review.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth + 1,
+    ),
+  ).toBe(true);
+  const before = page
+    .frameLocator('iframe[title="Current scene"]')
+    .locator("canvas");
+  const after = page
+    .frameLocator('iframe[title="Proposed scene"]')
+    .locator("canvas");
+  const frame = (canvas: HTMLCanvasElement) => canvas.toDataURL();
+  const slider = review.getByRole("slider", { name: "Comparison time" });
+  await slider.fill("1");
+  for (const canvas of [before, after]) {
+    await expect
+      .poll(() =>
+        canvas.evaluate(
+          () =>
+            (window as Window & { __fsTime?: () => number }).__fsTime?.() ?? -1,
+        ),
+      )
+      .toBeCloseTo(1, 5);
+  }
+  await expect
+    .poll(
+      async () =>
+        (await before.evaluate(frame)) === (await after.evaluate(frame)),
+    )
+    .toBe(true);
+  await slider.fill("2.9");
+  await expect
+    .poll(
+      async () =>
+        (await before.evaluate(frame)) !== (await after.evaluate(frame)),
+    )
+    .toBe(true);
+  const apply = review.getByRole("button", { name: "Apply changes" });
+  await expect(apply).toBeDisabled();
+  await review
+    .getByRole("checkbox", { name: /Move following clips later by 1.000s/ })
+    .check();
+  await apply.click();
+  const savedClips = async () => {
+    const response = await page.request.post("/api/workspaceGet", {
+      headers: { "X-FrameScript": "1" },
+      data: { args: [] },
+    });
+    return (await response.json()).result.workflow.scenes;
+  };
+  await expect.poll(savedClips).toEqual([
+    expect.objectContaining({
+      id: left.id,
+      duration: 3,
+      structuredEdit: expect.objectContaining({
+        sceneId: result.requestId,
+        revision: 15,
+        continuation: { startFrame: 60, endFrame: 90, value: 0.9 },
+      }),
+    }),
+    right,
+  ]);
+  await page.getByRole("button", { name: "Undo project change" }).click();
+  await expect.poll(savedClips).toEqual([left, right]);
+});
+
 test("generates an editable scene through the Prompt Builder and undoes the addition", async ({
   page,
 }) => {

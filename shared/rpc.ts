@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { extendInputSchema, type ExtendTask } from "./structured-extend";
 import {
   generateInputSchema,
   type GenerateRequest,
@@ -41,6 +42,8 @@ export type TerminalState = {
   exitCode: number | null;
 };
 export const rpcSchemas = {
+  structuredExtendPackage: z.tuple([extendInputSchema]),
+  structuredExtendRequest: z.tuple([z.string().uuid()]),
   structuredGeneratePackage: z.tuple([generateInputSchema]),
   structuredGenerateRequest: z.tuple([z.string().uuid()]),
   structuredEditPackage: z.tuple([
@@ -173,6 +176,13 @@ export type ChatGPTStatus = {
   error?: string;
 };
 export interface RpcResults {
+  structuredExtendPackage: {
+    requestId: string;
+    prompt: string;
+    name: string;
+    url: string;
+  };
+  structuredExtendRequest: ExtendTask | null;
   structuredGeneratePackage: {
     requestId: string;
     prompt: string;

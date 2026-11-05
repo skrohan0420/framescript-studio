@@ -27,6 +27,8 @@ A package is self-contained when an AI can understand the task and produce the r
 
 ### Extend an existing scene
 
+The first built-in star workflow uses **Extend → Generate continuation**. Export the task ZIP and matching prompt, then paste or upload a JSON extension. The ZIP includes a frame evaluated at the exact source handoff and declares the frame interval. The initial response can choose the ending glow. FrameScript creates a separate source for the selected clip and requires confirmation before shifting later clips. Broader procedural continuation remains planned work.
+
 - **Panel:** Show the selected target, actual handoff timestamp, requested added duration and the segment that will be preserved. If a clip is trimmed, distinguish revealing existing source time from generating new animation. Package an AI extension when the creator chooses to generate new material.
 - **Package:** Target scene ID and exact base revision, current source and runtime dependencies, original duration, requested added duration, continuation brief and narration cues where supplied. Include a handoff frame from the packaged revision and relevant object, camera and motion state when available. A frame shortly before the handoff can show motion direction.
 - **Result:** An extension to the same scene with the new duration and any declared changes at the handoff. Preserve the existing segment by default. Any requested changes to the existing segment must be in scope and visible in review.

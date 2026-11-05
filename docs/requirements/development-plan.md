@@ -57,7 +57,7 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - **Stage 2 — Done.** The outgoing editor workflow and saved request passed the live AI handoff.
 - **Stage 3 — Done.** JSON intake, candidate review, stale-result checks and undoable Apply are verified for the first Edit workflow.
 - **Stage 4 — Done.** Automated parity and legacy checks passed. The first live AI patch imported and applied.
-- **Stage 5 — In progress.** Clip-only and shared-source Edit support trimmed and split structured clips. Extend can reveal unused source time. The first Generate workflow supports a built-in star scene. Live Generate verification, broader scene support and AI continuation remain open.
+- **Stage 5 — In progress.** Edit, Generate and Extend have their first built-in star workflows. Live Extend verification and broader scene support remain open.
 
 ### Stage 0 baseline evidence
 
@@ -128,6 +128,17 @@ To repeat the check:
 - Download ZIP saves a project-scoped request and generates its copied prompt from the same brief. The ZIP contains the task, manifest, result schema, output contract and built-in module reference. Paste or upload a JSON result, review the scene, then append it as one undoable clip addition.
 - The browser fixture uses a local JSON response to verify request matching, rejection of changed dimensions and the path from Generate to Edit. The live prompt-only Generate handoff has its own remaining verification.
 - **Live Generate verified on 5 November 2026.** Claude's first response to request `25ee6305-5191-40b8-bb4f-8d24034f5de7` passed import validation without repair. Applied **New Galaxy** as a new 1037-frame clip at 30 fps. The clip's Edit / Update panel exposed revision 1 and its glow keyframe at source frame 1036 (34.533s). The live Generate handoff is complete for the current built-in star contract.
+
+### Stage 5 AI continuation
+
+- **5 November 2026.** Started from `5091a52`. Extend now opens **Generate continuation** to export a task ZIP with the source, module reference, output schema, source-frame handoff metadata and a PNG evaluated at the exact boundary.
+- The first result contract returns only the ending glow for a declared interval. FrameScript derives the starting glow from the existing source, preserves the earlier evaluation and forks the selected clip's source on Apply. This version supports one continuation per source at a frame-aligned handoff.
+- Review starts at the source handoff and permits scrubbing through the added interval. Moving following clips requires confirmation. Apply rechecks the saved source and trim and commits the source fork and duration as one undoable change.
+- The browser fixture extends a clip ending at source frame 60 through frame 90. It covers wrong-interval rejection, preserved prefix frames, changed continuation frames, timeline movement confirmation and Undo. Live AI Extend verification remains open.
+- TypeScript, all 157 Vitest tests and all seven structured workflow browser tests passed. The final targeted continuation rerun also passed after adding explicit seek synchronization before comparing preserved frames.
+- **Live Extend verified on 5 November 2026.** Exported request `feb13773-067c-404f-8485-d05ae2e5e696` from New Galaxy and sent the exact ZIP and copied prompt to a fresh Claude chat. Claude reported reading the handoff PNG and returned its first valid extension from source frame 1037 through 1067 with ending glow 0.6. Imported without repair, scrubbed through the continuation, applied, and verified duration 35.56666666666667 seconds. Undo restored 34.56666666666667 seconds and Redo restored the extension. Left the applied continuation open and saved screenshot evidence at `test-results/live-extend-verified.png`.
+- Test setup required restarting the local development backend after it returned **Unknown operation** for the newly added endpoint. The restarted server loaded the endpoint and restored the saved workspace.
+- Fixed review sizing after the live test. The grid uses shrinking columns and positioned iframes so source dimensions cannot force the modal wider. TypeScript and the continuation browser test passed, including a modal overflow assertion.
 
 ### Progress report template
 

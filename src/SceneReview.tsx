@@ -65,6 +65,7 @@ export function SceneReview({
   initialTime = 0,
   applyDisabled = false,
   actions,
+  comparisonDuration,
 }: {
   before?: Project;
   after: Project;
@@ -74,6 +75,7 @@ export function SceneReview({
   initialTime?: number;
   applyDisabled?: boolean;
   actions?: ReactNode;
+  comparisonDuration?: number;
 }) {
   const [time, setTime] = useState(initialTime);
   return (
@@ -91,10 +93,13 @@ export function SceneReview({
           aria-label="Comparison time"
           type="range"
           min={0}
-          max={Math.min(
-            before?.settings.duration ?? after.settings.duration,
-            after.settings.duration,
-          )}
+          max={
+            comparisonDuration ??
+            Math.min(
+              before?.settings.duration ?? after.settings.duration,
+              after.settings.duration,
+            )
+          }
           step={0.05}
           value={time}
           onChange={(e) => setTime(Number(e.target.value))}

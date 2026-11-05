@@ -23,7 +23,7 @@ export const starModuleSource = renderer + "\nexport { renderStar };\n";
 
 export function structuredStarCode(scene: StructuredEditScene) {
   const keyframe = scene.star.keyframe;
-  return {
+  const code = {
     html: `<canvas width="${scene.width}" height="${scene.height}"></canvas><span id="galaxy-label"></span>`,
     css: "body{margin:0}span{position:absolute;bottom:24px;width:100%;text-align:center;color:white;font:24px sans-serif}",
     js: `${renderer}
@@ -34,4 +34,22 @@ window.renderFrame = seconds => {
   renderStar(context, { glowIntensity: ${keyframe.frame === 0 ? keyframe.value : `${scene.star.glowIntensity} + (${keyframe.value} - ${scene.star.glowIntensity}) * position`} });
 };`,
   };
+  const extension = scene.continuation;
+  if (extension) {
+    const from =
+      keyframe.frame === 0
+        ? keyframe.value
+        : scene.star.glowIntensity +
+          (keyframe.value - scene.star.glowIntensity) *
+            Math.min(1, extension.startFrame / keyframe.frame);
+    code.js += `\nconst originalFrame = window.renderFrame;
+window.renderFrame = seconds => {
+  originalFrame(seconds);
+  if (seconds * ${scene.fps} >= ${extension.startFrame}) {
+    const progress = Math.max(0, Math.min(1, (seconds * ${scene.fps} - ${extension.startFrame}) / ${extension.endFrame - extension.startFrame}));
+    renderStar(context, { glowIntensity: ${from} + (${extension.value} - ${from}) * progress });
+  }
+};`;
+  }
+  return code;
 }

@@ -26,6 +26,13 @@ export const editSceneSchema = z
     height: z.number().int().min(64).max(4320),
     fps: z.number().int().min(1).max(120),
     durationFrames: z.number().int().positive(),
+    continuation: z
+      .strictObject({
+        startFrame: z.number().int().nonnegative(),
+        endFrame: z.number().int().positive(),
+        value: glow,
+      })
+      .optional(),
     star: z.strictObject({
       id,
       moduleVersion: version,
@@ -42,6 +49,13 @@ export const editSceneSchema = z
       scene.durationFrames / scene.fps >= 0.1 &&
       scene.durationFrames / scene.fps <= 600,
     "Node IDs must differ and the keyframe must fall within the scene",
+  )
+  .refine(
+    (scene) =>
+      !scene.continuation ||
+      (scene.continuation.startFrame < scene.continuation.endFrame &&
+        scene.continuation.endFrame <= scene.durationFrames),
+    "Invalid continuation interval",
   );
 
 export const editRequestSchema = z.strictObject({

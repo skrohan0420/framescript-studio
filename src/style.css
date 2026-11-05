@@ -2324,9 +2324,10 @@ select {
 .recovery-list article { display: grid; gap: 6px; padding: 12px 0; border-top: 1px solid var(--border); }
 .recovery-list article span { color: var(--secondary); font-size: 12px; }
 .recovery-list article button { justify-self: start; }
-.scene-review-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.scene-review-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.scene-review-grid > div { min-width: 0; }
 .scene-review-frame { position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: var(--raised); }
-.scene-review-frame iframe { border: 0; transform-origin: top left; }
+.scene-review-frame iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: top left; }
 @media (max-width: 850px) { .scene-review-grid { grid-template-columns: 1fr; } }
 
 .audio-import-section { margin: 18px 0; }

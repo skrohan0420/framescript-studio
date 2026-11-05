@@ -18,6 +18,8 @@ import { ExportRetention } from "./export-retention";
 import { archiveSequence } from "./archive";
 import { writeStructuredEditPackage } from "./structured-edit-package";
 import { writeGeneratePackage } from "./structured-generate-package";
+import { writeExtendPackage } from "./structured-extend-package";
+import type { ExtendTask } from "../shared/structured-extend";
 import type { GenerateRequest } from "../shared/structured-generate";
 import { projectSchema, exportSchema } from "../shared/project";
 import { documentFor } from "../shared/runtime";
@@ -189,6 +191,34 @@ async function invoke(
   owner: string,
 ) {
   switch (name) {
+    case "structuredExtendPackage": {
+      const requestId = randomUUID();
+      const destination = path.join(exportsDir, requestId + ".zip");
+      const prompt = await writeExtendPackage(
+        { requestId, input: args[0] },
+        client.current ?? null,
+        destination,
+        path.join(dataDir, "structured-extend", owner, requestId + ".json"),
+      );
+      return {
+        requestId,
+        prompt,
+        ...download(
+          destination,
+          "framescript-extend-" + requestId + ".zip",
+          owner,
+        ),
+      };
+    }
+    case "structuredExtendRequest": {
+      const saved = (await readJson(
+        path.join("structured-extend", owner, args[0] + ".json"),
+        null,
+      )) as { task: ExtendTask; projectId: string | null } | null;
+      if (saved && saved.projectId !== (client.current ?? null))
+        throw Error("This request belongs to a different project.");
+      return saved?.task ?? null;
+    }
     case "structuredGeneratePackage": {
       const requestId = randomUUID();
       const destination = path.join(exportsDir, requestId + ".zip");
