@@ -136,10 +136,12 @@ export function PromptTemplates({
   onPaste,
   master = false,
   onClose,
+  onGenerateScene,
 }: {
   onPaste: () => void;
   master?: boolean;
   onClose?: () => void;
+  onGenerateScene?: (brief: string, duration: number) => void;
 }) {
   const { project } = useProjectState();
   const defaults: PromptDraft = {
@@ -1050,6 +1052,21 @@ export function PromptTemplates({
           </span>
         </div>
         <div className="prompt-action-buttons">
+          {onGenerateScene && (
+            <button
+              onClick={() =>
+                onGenerateScene(
+                  [draft.visuals, draft.timedNarration || draft.script]
+                    .filter(Boolean)
+                    .join("\n\n")
+                    .slice(0, 12000),
+                  draft.duration,
+                )
+              }
+            >
+              Generate structured scene
+            </button>
+          )}
           <button
             className="primary"
             title="Copy prompt"

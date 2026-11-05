@@ -66,6 +66,14 @@ export const editPatchSchema = z.strictObject({
 });
 
 export function parseEditResult(text: string) {
+  return parseStructuredResult(text, editPatchSchema, "patch");
+}
+
+export function parseStructuredResult<T>(
+  text: string,
+  schema: z.ZodType<T>,
+  name: string,
+) {
   const trimmed = text.trim();
   const fenced = /^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i.exec(trimmed);
   let value: unknown;
@@ -73,10 +81,10 @@ export function parseEditResult(text: string) {
     value = JSON.parse(fenced?.[1] ?? trimmed);
   } catch {
     throw Error(
-      "The result must contain one JSON patch. Paste or upload the complete JSON.",
+      `The result must contain one JSON ${name}. Paste or upload the complete JSON.`,
     );
   }
-  const result = editPatchSchema.safeParse(value);
+  const result = schema.safeParse(value);
   if (!result.success)
     throw Error(
       result.error.issues

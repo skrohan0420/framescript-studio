@@ -17,6 +17,8 @@ import { ExportQueue } from "./export-queue";
 import { ExportRetention } from "./export-retention";
 import { archiveSequence } from "./archive";
 import { writeStructuredEditPackage } from "./structured-edit-package";
+import { writeGeneratePackage } from "./structured-generate-package";
+import type { GenerateRequest } from "../shared/structured-generate";
 import { projectSchema, exportSchema } from "../shared/project";
 import { documentFor } from "../shared/runtime";
 import { atomicWrite, saveProject, loadProject } from "./storage";
@@ -187,6 +189,34 @@ async function invoke(
   owner: string,
 ) {
   switch (name) {
+    case "structuredGeneratePackage": {
+      const requestId = randomUUID();
+      const destination = path.join(exportsDir, requestId + ".zip");
+      const prompt = await writeGeneratePackage(
+        { requestId, input: args[0] },
+        client.current ?? null,
+        destination,
+        path.join(dataDir, "structured-generate", owner, requestId + ".json"),
+      );
+      return {
+        requestId,
+        prompt,
+        ...download(
+          destination,
+          "framescript-generate-" + requestId + ".zip",
+          owner,
+        ),
+      };
+    }
+    case "structuredGenerateRequest": {
+      const saved = (await readJson(
+        path.join("structured-generate", owner, args[0] + ".json"),
+        null,
+      )) as { task: GenerateRequest; projectId: string | null } | null;
+      if (saved && saved.projectId !== (client.current ?? null))
+        throw Error("This request belongs to a different project.");
+      return saved?.task ?? null;
+    }
     case "structuredEditPackage": {
       const requestId = randomUUID();
       const destination = path.join(exportsDir, requestId + ".zip");

@@ -57,7 +57,7 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - **Stage 2 — Done.** The outgoing editor workflow and saved request passed the live AI handoff.
 - **Stage 3 — Done.** JSON intake, candidate review, stale-result checks and undoable Apply are verified for the first Edit workflow.
 - **Stage 4 — Done.** Automated parity and legacy checks passed. The first live AI patch imported and applied.
-- **Stage 5 — In progress.** Clip-only and shared-source Edit support trimmed and split structured clips at non-default playback speed. Extend can reveal unused source time with explicit confirmation before shifting later clips. AI continuation and Generate remain open.
+- **Stage 5 — In progress.** Clip-only and shared-source Edit support trimmed and split structured clips. Extend can reveal unused source time. The first Generate workflow supports a built-in star scene. Live Generate verification, broader scene support and AI continuation remain open.
 
 ### Stage 0 baseline evidence
 
@@ -121,6 +121,12 @@ To repeat the check:
 - TypeScript and all four structured Edit browser tests passed after adding shared scope. The split fixture verifies that shared Apply updates both clips, preserves their trims and restores both with one Undo.
 - The Extend panel shows the source and project handoffs and available source time. Reveal reuses the existing placement edit and requires consent to move later clips. The browser fixture covers source limits, consent invalidation when the duration changes, Apply and Undo.
 - Next action is the AI continuation package and result contract, including forking at an interior handoff and reviewing the placement impact before Apply.
+
+### Stage 5 first Generate workflow
+
+- **5 November 2026.** Started after `b1229b7`. The existing Prompt Builder opens **Generate structured scene**, with the current visuals and script as a starting brief and the project's dimensions and frame rate. The first contract supports one built-in Canvas star, native title and editable glow keyframe. Custom modules and reference attachments remain follow-up work.
+- Download ZIP saves a project-scoped request and generates its copied prompt from the same brief. The ZIP contains the task, manifest, result schema, output contract and built-in module reference. Paste or upload a JSON result, review the scene, then append it as one undoable clip addition.
+- The browser fixture uses a local JSON response to verify request matching, rejection of changed dimensions and the path from Generate to Edit. The live prompt-only Generate handoff has its own remaining verification.
 
 ### Progress report template
 

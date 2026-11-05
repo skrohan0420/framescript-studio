@@ -12,6 +12,8 @@ import type { CodeSnapshot } from "../shared/rpc";
 import type { editor as Monaco } from "monaco-editor";
 import { PromptTemplates } from "./PromptTemplates";
 import { PromptDrawer } from "./PromptDrawer";
+import { StructuredGeneratePanel } from "./StructuredGeneratePanel";
+import type { GenerateInput } from "../shared/structured-generate";
 import { readEditorTabs, saveEditorTabs } from "./editor-tabs";
 import { ClipsPanel } from "./ClipsPanel";
 import { TypographyPanel } from "./TypographyPanel";
@@ -206,6 +208,7 @@ export function App() {
   const [productionMode, setProductionMode] = useState(true);
   const [leftView, setLeftView] = useState("code");
   const [promptsOpen, setPromptsOpen] = useState(false);
+  const [generateScene, setGenerateScene] = useState<GenerateInput>();
   const [previewRulers, setPreviewRulers] = useState(() => {
     try {
       return localStorage.getItem("framescript.preview-rulers.v1") !== "false";
@@ -2186,6 +2189,20 @@ export function App() {
         <PromptDrawer open={promptsOpen} onClose={() => setPromptsOpen(false)}>
           <PromptTemplates
             master={masterMode}
+            onGenerateScene={(brief, duration) => {
+              const { width, height, fps } = p.settings;
+              setPromptsOpen(false);
+              setGenerateScene({
+                brief,
+                width,
+                height,
+                fps,
+                durationFrames: Math.max(
+                  Math.ceil(fps / 10),
+                  Math.round(duration * fps),
+                ),
+              });
+            }}
             onClose={() => setPromptsOpen(false)}
             onPaste={() => {
               selectLeftView("code");
@@ -3830,6 +3847,20 @@ export function App() {
           project={p}
           appliedProject={executionProject}
           onClose={() => setStructuredEditClip(undefined)}
+        />
+      )}
+      {generateScene && (
+        <StructuredGeneratePanel
+          key={s.session}
+          initial={generateScene}
+          onClose={() => setGenerateScene(undefined)}
+          onApplied={() => {
+            useStudio.getState().setPlaying(false);
+            useStudio.getState().setTime(0);
+            setMasterMode(false);
+            setGenerateScene(undefined);
+            setNotice("Generated scene added · Undo available");
+          }}
         />
       )}
       {structuredExtendClip && (

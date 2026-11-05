@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  generateInputSchema,
+  type GenerateRequest,
+} from "./structured-generate";
 import type { TranscriptWord } from "./transcript";
 import { projectSchema, exportSchema, aiSchema, type Project } from "./project";
 import { storyboardSchema } from "./workflow";
@@ -37,6 +41,8 @@ export type TerminalState = {
   exitCode: number | null;
 };
 export const rpcSchemas = {
+  structuredGeneratePackage: z.tuple([generateInputSchema]),
+  structuredGenerateRequest: z.tuple([z.string().uuid()]),
   structuredEditPackage: z.tuple([
     editSceneSchema,
     z.number().min(0).max(1),
@@ -167,6 +173,13 @@ export type ChatGPTStatus = {
   error?: string;
 };
 export interface RpcResults {
+  structuredGeneratePackage: {
+    requestId: string;
+    prompt: string;
+    name: string;
+    url: string;
+  };
+  structuredGenerateRequest: GenerateRequest | null;
   structuredEditPackage: {
     requestId: string;
     prompt: string;

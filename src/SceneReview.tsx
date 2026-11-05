@@ -66,7 +66,7 @@ export function SceneReview({
   applyDisabled = false,
   actions,
 }: {
-  before: Project;
+  before?: Project;
   after: Project;
   explanation: ReactNode;
   onApply: () => void;
@@ -79,8 +79,10 @@ export function SceneReview({
   return (
     <Modal title="Review AI changes" wide open onClose={onDiscard}>
       <div>{explanation}</div>
-      <div className="scene-review-grid">
-        <ReviewFrame project={before} time={time} title="Current scene" />
+      <div className={before ? "scene-review-grid" : undefined}>
+        {before && (
+          <ReviewFrame project={before} time={time} title="Current scene" />
+        )}
         <ReviewFrame project={after} time={time} title="Proposed scene" />
       </div>
       <label className="field">
@@ -89,7 +91,10 @@ export function SceneReview({
           aria-label="Comparison time"
           type="range"
           min={0}
-          max={Math.min(before.settings.duration, after.settings.duration)}
+          max={Math.min(
+            before?.settings.duration ?? after.settings.duration,
+            after.settings.duration,
+          )}
           step={0.05}
           value={time}
           onChange={(e) => setTime(Number(e.target.value))}

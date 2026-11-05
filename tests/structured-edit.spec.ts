@@ -5,6 +5,120 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resizeVisual, splitVisual } from "../shared/timeline-edit";
 import { activateScene, selectedScene } from "../shared/workflow";
 
+test("generates an editable scene through the Prompt Builder and undoes the addition", async ({
+  page,
+}) => {
+  const { scene } = await openFixture(page);
+  await page
+    .getByRole("dialog", { name: "Edit / Update" })
+    .getByRole("button", { name: "Close", exact: true })
+    .first()
+    .click();
+  await page
+    .getByRole("button", { name: "Prompts panel", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Generate structured scene" }).click();
+  const panel = page.getByRole("dialog", { name: "Generate structured scene" });
+  await panel
+    .getByLabel("Scene brief")
+    .fill("Create a star titled New Galaxy.");
+  const response = page.waitForResponse((item) =>
+    item.url().endsWith("/api/structuredGeneratePackage"),
+  );
+  const zip = page.waitForEvent("download");
+  await panel.getByRole("button", { name: "Download ZIP" }).click();
+  const packaged = await response;
+  expect(packaged.ok(), await packaged.text()).toBe(true);
+  const { result } = await packaged.json();
+  expect(await (await zip).failure()).toBeNull();
+  await expect(panel.getByLabel("Exported Generate prompt")).toContainText(
+    "Create a star titled New Galaxy.",
+  );
+  const saved = await page.request.post("/api/structuredGenerateRequest", {
+    headers: { "X-FrameScript": "1" },
+    data: { args: [result.requestId] },
+  });
+  const { input } = (await saved.json()).result;
+  const generated = {
+    ...scene,
+    sceneId: result.requestId,
+    revision: 1,
+    title: "New Galaxy",
+    width: input.width,
+    height: input.height,
+    fps: input.fps,
+    durationFrames: input.durationFrames,
+    label: { ...scene.label, text: "New Galaxy" },
+  };
+  const resultText = panel.getByLabel("Paste AI scene result");
+  const submit = panel.getByRole("button", { name: "Review scene result" });
+  const responseFor = (width: number) =>
+    JSON.stringify({
+      contractVersion: "1",
+      type: "new-scene",
+      requestId: result.requestId,
+      scene: { ...generated, width },
+    });
+  await resultText.fill(responseFor(generated.width + 2));
+  await submit.click();
+  await expect(panel.getByRole("alert")).toContainText(
+    "must match the saved request",
+  );
+  await resultText.fill(responseFor(generated.width));
+  await submit.click();
+  const review = page.getByRole("dialog", { name: "Review AI changes" });
+  await expect(review).toContainText("New timeline clip");
+  await expect(
+    page.frameLocator('iframe[title="Proposed scene"]').getByText("New Galaxy"),
+  ).toBeVisible();
+  await review.getByRole("button", { name: "Apply changes" }).click();
+  await page
+    .locator(".track-clip")
+    .getByText("New Galaxy", { exact: true })
+    .click();
+  await page.getByRole("button", { name: "Edit / Update" }).click();
+  const edit = page.getByRole("dialog", { name: "Edit / Update" });
+  await expect(edit).toContainText("Source revision 1");
+  await expect(
+    edit.getByRole("button", { name: "Download ZIP" }),
+  ).toBeEnabled();
+  const editResponse = page.waitForResponse((item) =>
+    item.url().endsWith("/api/structuredEditPackage"),
+  );
+  await edit.getByRole("button", { name: "Download ZIP" }).click();
+  const editPackage = await editResponse;
+  expect(editPackage.ok(), await editPackage.text()).toBe(true);
+  const { result: editTask } = await editPackage.json();
+  await edit.getByRole("button", { name: "Import AI result" }).click();
+  const intake = page.getByRole("dialog", { name: "Import AI result" });
+  await intake.getByLabel("Paste AI result").fill(
+    JSON.stringify({
+      contractVersion: "1",
+      type: "scene-patch",
+      requestId: editTask.requestId,
+      sceneId: generated.sceneId,
+      baseRevision: 1,
+      operations: [
+        {
+          op: "set-keyframe-value",
+          nodeId: generated.star.id,
+          property: "glowIntensity",
+          keyframeId: generated.star.keyframe.id,
+          value: 0.8,
+        },
+      ],
+    }),
+  );
+  await intake.getByRole("button", { name: "Review result" }).click();
+  await expect(review).toContainText("Glow at 3.200s: 0.6 → 0.8");
+  await review.getByRole("button", { name: "Apply changes" }).click();
+  const undo = page.getByRole("button", { name: "Undo project change" });
+  await undo.click();
+  await expect(page.locator(".track-clip")).toContainText("New Galaxy");
+  await undo.click();
+  await expect(page.locator(".track-clip")).toContainText(scene.title);
+});
+
 test("reveals existing source only after confirming later clip movement", async ({
   page,
 }) => {
