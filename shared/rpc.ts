@@ -13,6 +13,7 @@ import {
   editRequestSchema,
   editPlacementSchema,
   editScopeSchema,
+  editTargetSchema,
 } from "./structured-edit";
 
 const config = z.object({ provider: z.string(), model: z.string() });
@@ -48,10 +49,11 @@ export const rpcSchemas = {
   structuredGenerateRequest: z.tuple([z.string().uuid()]),
   structuredEditPackage: z.tuple([
     editSceneSchema,
-    z.number().min(0).max(1),
+    z.number().min(-10000).max(10000),
     z.string().min(1).max(128),
     editPlacementSchema.optional(),
     editScopeSchema.optional(),
+    editTargetSchema.optional(),
   ]),
   structuredEditRequest: z.tuple([z.string().uuid()]),
   session: empty,

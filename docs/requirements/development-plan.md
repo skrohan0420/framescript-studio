@@ -57,7 +57,7 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - **Stage 2 — Done.** The outgoing editor workflow and saved request passed the live AI handoff.
 - **Stage 3 — Done.** JSON intake, candidate review, stale-result checks and undoable Apply are verified for the first Edit workflow.
 - **Stage 4 — Done.** Automated parity and legacy checks passed. The first live AI patch imported and applied.
-- **Stage 5 — In progress.** Edit, Generate and Extend have their first built-in star workflows. Live Extend verification and broader scene support remain open.
+- **Stage 5 — In progress.** Edit, Generate and Extend have verified live built-in star workflows. Generate now supports optional references and basic native shapes; broader modules, focused long-scene context and release checks remain open.
 
 ### Stage 0 baseline evidence
 
@@ -139,6 +139,14 @@ To repeat the check:
 - **Live Extend verified on 5 November 2026.** Exported request `feb13773-067c-404f-8485-d05ae2e5e696` from New Galaxy and sent the exact ZIP and copied prompt to a fresh Claude chat. Claude reported reading the handoff PNG and returned its first valid extension from source frame 1037 through 1067 with ending glow 0.6. Imported without repair, scrubbed through the continuation, applied, and verified duration 35.56666666666667 seconds. Undo restored 34.56666666666667 seconds and Redo restored the extension. Left the applied continuation open and saved screenshot evidence at `test-results/live-extend-verified.png`.
 - Test setup required restarting the local development backend after it returned **Unknown operation** for the newly added endpoint. The restarted server loaded the endpoint and restored the saved workspace.
 - Fixed review sizing after the live test. The grid uses shrinking columns and positioned iframes so source dimensions cannot force the modal wider. TypeScript and the continuation browser test passed, including a modal overflow assertion.
+
+### Stage 5 reference and native shape increment
+
+- **5 November 2026.** Committed the verified Extend workflow and review sizing fix as `1030f69`. Added optional image/example-code attachments to Generate and declared native circles/rectangles to the existing scene contract.
+- Generate accepts up to six PNG/JPEG/WebP or JS/CSS/HTML/JSON/TXT references, at most 2 MiB per file and a 6 MiB total encoded-data budget equivalent. Files are included in the ZIP under numbered safe paths, with original names, roles and SHA-256 hashes in the manifest. The copied prompt identifies their paths. They guide the AI and are not executed or imported as runtime assets. Adding/removing references invalidates the exported prompt.
+- The scene supports up to 20 circles/rectangles, each with base position, size, color and opacity, plus one keyframe per declared x/y/opacity track. Edit / Update selects a declared property and validates the patch against its exact node, property and keyframe. Existing clip/shared scope, timing, revision checks and undo behavior apply.
+- Verified TypeScript, all 158 tests across 38 Vitest files and all seven structured workflow browser tests. The Generate browser case packages an image and example code, imports two shapes, edits the circle's x track and undoes both changes. A targeted rerun additionally verifies circle/rectangle preview pixels. Sandbox browser-cache and loopback restrictions required the established host test setup.
+- Remaining: live external AI handoff using references and shapes; broader scene/module types and inspector support; reference captures and attachment selection for Edit/Extend; long-scene context budgets and dependency closure. This increment does not complete Requirements 7 or 8.
 
 ### Progress report template
 

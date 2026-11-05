@@ -137,6 +137,12 @@ Use one review screen for Generate, Edit and Extend, with a summary specific to 
 - Define the incoming scene or patch, optional modules and assets, and continuity or generation metadata. Validate manifest type and version, dependencies, paths, hashes and formats before applying changes.
 - Set archive, expanded-size and context limits. Check for traversal, ZIP bombs, malformed manifests and exposed secrets. Keep reference files outside the execution path. Present import diagnostics and allow human review.
 
+## Current Generate reference support
+
+The Stage 5 Generate panel accepts optional PNG/JPEG/WebP images and JS/CSS/HTML/JSON/TXT example code. The ZIP places these under `references/images/<number>.<type>` and `references/example-code/<number>.txt`. The manifest retains original names, roles and hashes; TASK.md and the copied prompt list the same paths. No extra manual image attachment is needed when the receiving AI can inspect the ZIP.
+
+Limits are six files, 2 MiB per file and 8,388,608 base64 characters total (approximately 6 MiB decoded). Changing the brief or reference list invalidates the prior prompt. References provide guidance within the supported renderer capabilities; they are not runtime assets or executable modules. Automated coverage includes an image and example code in the Generate handoff. A live external AI test of this expanded package remains outstanding. Edit/Extend reference selection and focused long-scene packaging remain planned.
+
 ## Deliverables and acceptance
 
 The [first structured AI edit milestone](first-edit-milestone.md) records the proposed initial package, pasted prompt and expected result.

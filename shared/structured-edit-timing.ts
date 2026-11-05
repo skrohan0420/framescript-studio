@@ -1,6 +1,8 @@
 import type { Project, Scene } from "./project";
 import { sceneOffset, totalDuration } from "./workflow";
 import { structuredStarCode } from "./structured-star";
+import { sceneEditTargets, type editTargetSchema } from "./structured-edit";
+import type { z } from "zod";
 
 export function structuredExtensionTiming(project: Project, clipId: string) {
   const clips = project.workflow?.scenes ?? [];
@@ -31,12 +33,21 @@ export function structuredExtensionTiming(project: Project, clipId: string) {
 // elapsed playback time, not the position sent to renderFrame.
 export function structuredClipTiming(
   clip: Pick<Scene, "structuredEdit" | "sourceOffset" | "duration">,
+  target?: z.infer<typeof editTargetSchema>,
 ) {
   const scene = clip.structuredEdit;
   if (!scene) return;
   const sourceOffset = clip.sourceOffset ?? 0;
   const sourceEnd = sourceOffset + clip.duration;
-  const sourceTime = scene.star.keyframe.frame / scene.fps;
+  const selected = sceneEditTargets(scene).find(
+    (item) =>
+      !target ||
+      (item.nodeId === target.nodeId &&
+        item.property === target.property &&
+        item.keyframeId === target.keyframeId),
+  );
+  if (!selected) return;
+  const sourceTime = selected.frame / scene.fps;
   const epsilon = 1e-9;
   if (
     sourceEnd > scene.durationFrames / scene.fps + epsilon ||

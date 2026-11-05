@@ -4,6 +4,7 @@ import type { RpcResults } from "../shared/rpc";
 import { bridge, download } from "./bridge";
 import { Modal } from "./components";
 import { structuredClipTiming } from "../shared/structured-edit-timing";
+import { sceneEditTargets } from "../shared/structured-edit";
 import {
   StructuredEditResult,
   supportsStructuredClip,
@@ -25,6 +26,7 @@ export function StructuredEditPanel({
     (scene) => scene.id === clipId,
   );
   const [value, setValue] = useState("0.8");
+  const [targetIndex, setTargetIndex] = useState(0);
   const [scope, setScope] = useState<"clip" | "shared">("clip");
   const [useApplied, setUseApplied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -43,8 +45,11 @@ export function StructuredEditPanel({
       clip.js !== applied.js);
   const source = pending && useApplied ? applied : clip;
   const scene = source?.structuredEdit;
-  const timing = clip && structuredClipTiming(clip);
-  const supported = supportsStructuredClip(project, clip, source);
+  const targets = scene ? sceneEditTargets(scene) : [];
+  const target = targets[targetIndex] ?? targets[0];
+  const timing = clip && target && structuredClipTiming(clip, target);
+  const supported =
+    !!target && supportsStructuredClip(project, clip, source, target);
   const snapshot = JSON.stringify({
     scene,
     clip,
@@ -52,10 +57,14 @@ export function StructuredEditPanel({
     value,
     useApplied,
     scope,
+    target,
   });
   const ready = supported && (!pending || useApplied);
   const validValue =
-    value.trim() !== "" && Number(value) >= 0 && Number(value) <= 1;
+    !!target &&
+    value.trim() !== "" &&
+    Number(value) >= target.min &&
+    Number(value) <= target.max;
   const canCopy = ready && exported?.snapshot === snapshot;
   const resetExport = () => {
     setExported(undefined);
@@ -74,6 +83,11 @@ export function StructuredEditPanel({
         clipId,
         { sourceOffset: timing.sourceOffset, duration: timing.duration },
         scope,
+        target && {
+          nodeId: target.nodeId,
+          property: target.property,
+          keyframeId: target.keyframeId,
+        },
       );
       setExported({ snapshot, result });
       download(result);
@@ -116,6 +130,27 @@ export function StructuredEditPanel({
               <option value="shared">All clips using this scene</option>
             </select>
           </label>
+          {targets.length > 1 && (
+            <label className="field">
+              <span>Editable property</span>
+              <select
+                value={targetIndex}
+                disabled={busy}
+                onChange={(event) => {
+                  const index = Number(event.target.value);
+                  setTargetIndex(index);
+                  setValue(String(targets[index].value));
+                  resetExport();
+                }}
+              >
+                {targets.map((item, index) => (
+                  <option key={index} value={index}>
+                    {item.nodeId}.{item.property}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {timing && timing.sourceOffset > 0 && (
             <p>
               Source keyframe at {timing.sourceTime.toFixed(3)}s ·{" "}
@@ -123,11 +158,14 @@ export function StructuredEditPanel({
             </p>
           )}
           <label>
-            Glow at {(scene.star.keyframe.frame / scene.fps).toFixed(3)}s
+            {target?.property === "glowIntensity"
+              ? "Glow"
+              : target?.nodeId + "." + target?.property}{" "}
+            at {((target?.frame ?? 0) / scene.fps).toFixed(3)}s
             <input
               type="number"
-              min="0"
-              max="1"
+              min={target?.min}
+              max={target?.max}
               step="any"
               value={value}
               disabled={busy}

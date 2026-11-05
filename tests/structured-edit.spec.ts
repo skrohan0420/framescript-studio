@@ -136,6 +136,22 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
   const response = page.waitForResponse((item) =>
     item.url().endsWith("/api/structuredGeneratePackage"),
   );
+  await panel.getByLabel("Reference images and example code").setInputFiles([
+    {
+      name: "look.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9WQAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    },
+    {
+      name: "example.js",
+      mimeType: "text/javascript",
+      buffer: Buffer.from("// Motion reference"),
+    },
+  ]);
+  await expect(panel).toContainText("example.js");
   const zip = page.waitForEvent("download");
   await panel.getByRole("button", { name: "Download ZIP" }).click();
   const packaged = await response;
@@ -150,6 +166,9 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
     data: { args: [result.requestId] },
   });
   const { input } = (await saved.json()).result;
+  expect(input.references).toHaveLength(2);
+  expect(result.prompt).toContain("references/images/1.png");
+  expect(result.prompt).toContain("references/example-code/2.txt");
   const generated = {
     ...scene,
     sceneId: result.requestId,
@@ -160,6 +179,37 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
     fps: input.fps,
     durationFrames: input.durationFrames,
     label: { ...scene.label, text: "New Galaxy" },
+    objects: [
+      {
+        id: "planet",
+        kind: "circle",
+        x: 20,
+        y: 40,
+        width: 60,
+        height: 60,
+        color: "#0088ff",
+        opacity: 1,
+        tracks: [
+          { property: "x", keyframe: { id: "move", frame: 30, value: 100 } },
+        ],
+      },
+      {
+        id: "panel",
+        kind: "rectangle",
+        x: 80,
+        y: 120,
+        width: 100,
+        height: 40,
+        color: "#ff8800",
+        opacity: 0,
+        tracks: [
+          {
+            property: "opacity",
+            keyframe: { id: "fade", frame: 60, value: 1 },
+          },
+        ],
+      },
+    ],
   };
   const resultText = panel.getByLabel("Paste AI scene result");
   const submit = panel.getByRole("button", { name: "Review scene result" });
@@ -182,6 +232,31 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
   await expect(
     page.frameLocator('iframe[title="Proposed scene"]').getByText("New Galaxy"),
   ).toBeVisible();
+  const proposedCanvas = page
+    .frameLocator('iframe[title="Proposed scene"]')
+    .locator("canvas");
+  await expect
+    .poll(() =>
+      proposedCanvas.evaluate((canvas) =>
+        Array.from(
+          (canvas as HTMLCanvasElement)
+            .getContext("2d")!
+            .getImageData(100, 40, 1, 1).data,
+        ),
+      ),
+    )
+    .toEqual([0, 136, 255, 255]);
+  await expect
+    .poll(() =>
+      proposedCanvas.evaluate((canvas) =>
+        Array.from(
+          (canvas as HTMLCanvasElement)
+            .getContext("2d")!
+            .getImageData(90, 130, 1, 1).data,
+        ),
+      ),
+    )
+    .toEqual([255, 136, 0, 255]);
   await review.getByRole("button", { name: "Apply changes" }).click();
   await page
     .locator(".track-clip")
@@ -190,6 +265,8 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
   await page.getByRole("button", { name: "Edit / Update" }).click();
   const edit = page.getByRole("dialog", { name: "Edit / Update" });
   await expect(edit).toContainText("Source revision 1");
+  await edit.getByLabel("Editable property").selectOption("1");
+  await edit.getByLabel("planet.x at 1.000s").fill("320");
   await expect(
     edit.getByRole("button", { name: "Download ZIP" }),
   ).toBeEnabled();
@@ -212,16 +289,16 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
       operations: [
         {
           op: "set-keyframe-value",
-          nodeId: generated.star.id,
-          property: "glowIntensity",
-          keyframeId: generated.star.keyframe.id,
-          value: 0.8,
+          nodeId: "planet",
+          property: "x",
+          keyframeId: "move",
+          value: 320,
         },
       ],
     }),
   );
   await intake.getByRole("button", { name: "Review result" }).click();
-  await expect(review).toContainText("Glow at 3.200s: 0.6 → 0.8");
+  await expect(review).toContainText("planet.x at 1.000s: 100 → 320");
   await review.getByRole("button", { name: "Apply changes" }).click();
   const undo = page.getByRole("button", { name: "Undo project change" });
   await undo.click();

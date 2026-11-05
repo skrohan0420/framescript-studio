@@ -81,6 +81,14 @@ This example illustrates what the AI and editor exchange. Field names and units 
 - Isolate generated code and constrain network, filesystem access, execution time and resource usage. Specify reproducibility inputs such as random seeds, runtime versions, assets, fonts and renderer behavior.
 - Build a shared evaluation model for preview and export, with a legacy adapter and compatibility fixtures.
 
+## Current native shape increment
+
+The initial version 1 scene contract retains its required built-in star and title and adds an optional `objects` array of up to 20 circles or rectangles. Each object has a unique stable ID, x/y coordinates, width/height, six-digit hex color and opacity. Positions and dimensions use source pixels. Circle x/y identify its center; rectangle x/y identify its top-left. Objects draw in array order over the star; the title remains above the canvas.
+
+Each shape may declare one keyframe for each of x, y and opacity. Values interpolate linearly from the base value to that keyframe and hold afterward; a frame-zero keyframe applies immediately. Coordinates and position keyframe values are bounded to -10,000 through 10,000; opacity is 0–1. Shape dimensions are positive and at most 10,000 pixels. Keyframes must fall within the source duration. Duplicate node IDs, duplicate track properties/keyframe IDs within an object and invalid opacity values are rejected.
+
+Edit / Update exposes declared tracks and reuses the scoped `set-keyframe-value` operation. Only the saved target can change; validation preserves unrelated objects, base values and timing. The canonical renderer is shared by preview/export, while old scenes without objects retain their original generated code. This remains a narrow additive contract: arbitrary modules, multiple keyframes per track, general layers, transforms, runtime image assets and a full inspector remain future work. Extend currently generates the star's glow continuation; native shape tracks continue evaluating normally and are not newly authored by that result contract.
+
 ## Deliverables and acceptance
 
 Deliver versioned schemas, a module contract, reference renderer, legacy adapter, inspector and patch APIs, migration fixtures and representative examples. Verify repeated and backward seeks, preview/export equivalence under defined conditions, targeted edits and exact undo/redo. Reject invalid packages with actionable diagnostics. Verify that legacy projects still import, play and export.

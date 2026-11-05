@@ -51,5 +51,28 @@ window.renderFrame = seconds => {
   }
 };`;
   }
+  if (scene.objects?.length)
+    code.js += `\nconst nativeObjects = ${JSON.stringify(scene.objects).replaceAll("<", "\\u003c")};
+const frameBeforeObjects = window.renderFrame;
+window.renderFrame = seconds => {
+  frameBeforeObjects(seconds);
+  for (const object of nativeObjects) {
+    const values = { x: object.x, y: object.y, opacity: object.opacity };
+    for (const track of object.tracks) {
+      const progress = track.keyframe.frame === 0 ? 1 : Math.max(0, Math.min(1, seconds * ${scene.fps} / track.keyframe.frame));
+      values[track.property] += (track.keyframe.value - values[track.property]) * progress;
+    }
+    context.save();
+    context.globalAlpha = values.opacity;
+    context.fillStyle = object.color;
+    if (object.kind === "rectangle") context.fillRect(values.x, values.y, object.width, object.height);
+    else {
+      context.beginPath();
+      context.ellipse(values.x, values.y, object.width / 2, object.height / 2, 0, 0, Math.PI * 2);
+      context.fill();
+    }
+    context.restore();
+  }
+};`;
   return code;
 }

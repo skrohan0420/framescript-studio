@@ -3,6 +3,7 @@ import { editSceneSchema, parseStructuredResult } from "./structured-edit";
 import { structuredStarCode } from "./structured-star";
 import type { Project } from "./project";
 import { activateScene, initialWorkflow, totalDuration } from "./workflow";
+import { promptReferencesSchema } from "./prompt-references";
 
 export const generateInputSchema = z
   .strictObject({
@@ -11,6 +12,7 @@ export const generateInputSchema = z
     height: z.number().int().min(64).max(4320),
     fps: z.number().int().min(1).max(120),
     durationFrames: z.number().int().positive(),
+    references: promptReferencesSchema.optional(),
   })
   .refine(
     (input) =>

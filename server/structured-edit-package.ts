@@ -4,7 +4,12 @@ import path from "node:path";
 import ffmpeg from "ffmpeg-static";
 import { z } from "zod";
 import { newProject } from "../shared/project";
-import { editPatchSchema, editRequestSchema } from "../shared/structured-edit";
+import {
+  editPatchSchema,
+  editRequestSchema,
+  sceneEditTargets,
+  type editTargetSchema,
+} from "../shared/structured-edit";
 import {
   starModuleSource,
   structuredStarCode,
@@ -25,10 +30,24 @@ export async function writeStructuredEditPackage(
   projectId: string | null = null,
   placement?: { sourceOffset: number; duration: number },
   scope: "clip" | "shared" = "clip",
+  target?: z.infer<typeof editTargetSchema>,
 ) {
+  const selected = sceneEditTargets(scene).find(
+    (item) =>
+      !target ||
+      (item.nodeId === target.nodeId &&
+        item.property === target.property &&
+        item.keyframeId === target.keyframeId),
+  );
+  if (
+    !selected ||
+    requestedValue < selected.min ||
+    requestedValue > selected.max
+  )
+    throw Error("Choose a declared target and a value in its supported range.");
   if (
     placement &&
-    !structuredClipTiming({ ...placement, structuredEdit: scene })
+    !structuredClipTiming({ ...placement, structuredEdit: scene }, selected)
   )
     throw Error("The source keyframe must be inside the selected clip.");
   const request = editRequestSchema.parse({
@@ -38,18 +57,18 @@ export async function writeStructuredEditPackage(
     sceneId: scene.sceneId,
     baseRevision: scene.revision,
     allowedTarget: {
-      nodeId: scene.star.id,
-      property: "glowIntensity",
-      keyframeId: scene.star.keyframe.id,
+      nodeId: selected.nodeId,
+      property: selected.property,
+      keyframeId: selected.keyframeId,
     },
     requestedValue,
   });
-  const frame = scene.star.keyframe.frame;
+  const frame = selected.frame;
   const time = frame / scene.fps;
   const seconds = time.toFixed(3);
   const framePath = `references/preview-frames/glow-${seconds}s.png`;
   const json = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
-  const brief = `Edit ${scene.title}, revision ${scene.revision}. Set the star's glow at ${seconds}s to ${requestedValue}. Preserve the keyframe time, label and unrelated content.`;
+  const brief = `Edit ${scene.title}, revision ${scene.revision}. Set ${selected.nodeId}.${selected.property} at ${seconds}s to ${requestedValue}. Preserve the keyframe time, label and unrelated content.`;
   const prompt = `${brief}\n\nOpen the attached ZIP and read TASK.md first. Inspect ${framePath} and return JSON following OUTPUT_CONTRACT.md. If you cannot access a required file, name it before proceeding.\n`;
   await fs.mkdir(path.dirname(destination), { recursive: true });
   const temporary = await fs.mkdtemp(
@@ -97,12 +116,12 @@ export async function writeStructuredEditPackage(
       {
         path: "TASK.md",
         role: "task",
-        content: `${prompt}\nTarget \`${scene.star.id}.glowIntensity\` keyframe \`${scene.star.keyframe.id}\` at frame ${frame}. Read \`source/scene.json\` for the current value and use the preview PNG as evidence of the current appearance.\n`,
+        content: `${prompt}\nTarget \`${selected.nodeId}.${selected.property}\` keyframe \`${selected.keyframeId}\` at frame ${frame}. Read \`source/scene.json\` for the current value and use the preview PNG as evidence of the current appearance.\n`,
       },
       {
         path: "OUTPUT_CONTRACT.md",
         role: "contract",
-        content: `Return one JSON object conforming to \`schemas/edit-result.schema.json\`. Echo request ID \`${request.requestId}\`, scene ID \`${scene.sceneId}\` and base revision ${scene.revision}. The only allowed operation is \`set-keyframe-value\` on \`${scene.star.id}.glowIntensity\`, keyframe \`${scene.star.keyframe.id}\`, with value ${requestedValue}.\n`,
+        content: `Return one JSON object conforming to \`schemas/edit-result.schema.json\`. Echo request ID \`${request.requestId}\`, scene ID \`${scene.sceneId}\` and base revision ${scene.revision}. The only allowed operation is \`set-keyframe-value\` on \`${selected.nodeId}.${selected.property}\`, keyframe \`${selected.keyframeId}\`, with value ${requestedValue}.\n`,
       },
       { path: "source/scene.json", role: "scene-source", content: json(scene) },
       {

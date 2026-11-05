@@ -4,6 +4,8 @@ import type { RpcResults } from "../shared/rpc";
 import {
   parseEditResult,
   prepareEditCandidate,
+  sceneEditTargets,
+  type editTargetSchema,
 } from "../shared/structured-edit";
 import {
   structuredStarCode,
@@ -15,6 +17,7 @@ import { SceneReview } from "./SceneReview";
 import { useStudio } from "./store";
 import { structuredClipTiming } from "../shared/structured-edit-timing";
 import { sceneOffset } from "../shared/workflow";
+import type { z } from "zod";
 
 type SavedTask = NonNullable<RpcResults["structuredEditRequest"]>;
 type Review = {
@@ -31,9 +34,10 @@ export function supportsStructuredClip(
   project: Project,
   clip?: Scene,
   source = clip,
+  target?: z.infer<typeof editTargetSchema>,
 ) {
   const scene = source?.structuredEdit;
-  if (!scene || !clip || clip.locked || !structuredClipTiming(clip))
+  if (!scene || !clip || clip.locked || !structuredClipTiming(clip, target))
     return false;
   const { width, height, fps, timing } = project.settings;
   const code = structuredStarCode(scene);
@@ -86,7 +90,7 @@ function taskConflict(project: Project, clipId: string, task: SavedTask) {
     placement.duration !== clip.duration
   )
     return "The clip trim changed after this task was exported.";
-  if (!supportsStructuredClip(project, clip))
+  if (!supportsStructuredClip(project, clip, clip, task.request.allowedTarget))
     return "The clip source, lock or playback settings changed after export.";
   if (task.scope === "shared") {
     const code = structuredStarCode(task.scene);
@@ -301,10 +305,20 @@ export function StructuredEditResult({
 
   if (review) {
     const { scene } = review.task;
-    const time = scene.star.keyframe.frame / scene.fps;
+    const selected = sceneEditTargets(scene).find(
+      (item) =>
+        item.nodeId === review.task.request.allowedTarget.nodeId &&
+        item.property === review.task.request.allowedTarget.property &&
+        item.keyframeId === review.task.request.allowedTarget.keyframeId,
+    )!;
+    const changed = sceneEditTargets(review.candidate).find(
+      (item) =>
+        item.nodeId === selected.nodeId && item.property === selected.property,
+    )!;
+    const time = selected.frame / scene.fps;
     const lastTime = (scene.durationFrames - 1) / scene.fps;
     const clip = project.workflow?.scenes.find((item) => item.id === clipId);
-    const timing = clip && structuredClipTiming(clip);
+    const timing = clip && structuredClipTiming(clip, selected);
     const siblings =
       project.workflow?.scenes.filter(
         (item) =>
@@ -327,8 +341,10 @@ export function StructuredEditResult({
               {currentRevision ?? "unavailable"}
             </p>
             <p>
-              Glow at {time.toFixed(3)}s: {scene.star.keyframe.value} →{" "}
-              {review.candidate.star.keyframe.value}
+              {selected.property === "glowIntensity"
+                ? "Glow"
+                : selected.nodeId + "." + selected.property}{" "}
+              at {time.toFixed(3)}s: {selected.value} → {changed.value}
             </p>
             {timing && (
               <p>
@@ -361,8 +377,8 @@ export function StructuredEditResult({
               )
             )}
             <p>
-              Glow interpolates up to the keyframe and holds afterward. Rendered
-              frames may change through {lastTime.toFixed(3)}s.
+              The property interpolates up to the keyframe and holds afterward.
+              Rendered frames may change through {lastTime.toFixed(3)}s.
             </p>
             {(conflict || impactChanged || error) && (
               <p role="alert">

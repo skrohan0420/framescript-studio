@@ -4,6 +4,51 @@ import fixture from "./fixtures/structured-edit/round-trip.json";
 import { editSceneSchema } from "../shared/structured-edit";
 import { structuredClipTiming } from "../shared/structured-edit-timing";
 
+it("edits a declared shape track without changing other scene content", () => {
+  const scene = editSceneSchema.parse({
+    ...fixture.scene,
+    objects: [
+      {
+        id: "planet",
+        kind: "circle",
+        x: 20,
+        y: 40,
+        width: 60,
+        height: 60,
+        color: "#0088ff",
+        opacity: 1,
+        tracks: [
+          { property: "x", keyframe: { id: "move", frame: 30, value: 100 } },
+        ],
+      },
+    ],
+  });
+  const target = { nodeId: "planet", property: "x", keyframeId: "move" };
+  const request = {
+    ...fixture.request,
+    allowedTarget: target,
+    requestedValue: 320,
+  };
+  const patch = {
+    ...fixture.patch,
+    operations: [{ ...target, op: "set-keyframe-value", value: 320 }],
+  };
+  const candidate = prepareEditCandidate(scene, request, patch);
+  expect(candidate.objects![0].tracks[0].keyframe.value).toBe(320);
+  expect(scene.objects![0].tracks[0].keyframe.value).toBe(100);
+  expect(candidate.star).toEqual(scene.star);
+  expect(candidate.label).toEqual(scene.label);
+  expect(
+    editSceneSchema.safeParse({
+      ...scene,
+      objects: [scene.objects![0], scene.objects![0]],
+    }).success,
+  ).toBe(false);
+  const invalid = structuredClone(scene);
+  invalid.objects![0].tracks[0].property = "opacity";
+  expect(editSceneSchema.safeParse(invalid).success).toBe(false);
+});
+
 it("assigns a keyframe at a split boundary to the right clip only", () => {
   const structuredEdit = editSceneSchema.parse(fixture.scene);
   expect(

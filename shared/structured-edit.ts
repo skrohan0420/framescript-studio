@@ -12,8 +12,31 @@ export const editPlacementSchema = z.strictObject({
 export const editScopeSchema = z.enum(["clip", "shared"]);
 const target = z.strictObject({
   nodeId: id,
-  property: z.literal("glowIntensity"),
+  property: z.enum(["glowIntensity", "x", "y", "opacity"]),
   keyframeId: id,
+});
+export const editTargetSchema = target;
+const shapeSchema = z.strictObject({
+  id,
+  kind: z.enum(["circle", "rectangle"]),
+  x: z.number().min(-10000).max(10000),
+  y: z.number().min(-10000).max(10000),
+  width: z.number().positive().max(10000),
+  height: z.number().positive().max(10000),
+  color: z.string().regex(/^#[0-9a-f]{6}$/i),
+  opacity: glow,
+  tracks: z
+    .array(
+      z.strictObject({
+        property: z.enum(["x", "y", "opacity"]),
+        keyframe: z.strictObject({
+          id,
+          frame,
+          value: z.number().min(-10000).max(10000),
+        }),
+      }),
+    )
+    .max(3),
 });
 
 export const editSceneSchema = z
@@ -26,6 +49,7 @@ export const editSceneSchema = z
     height: z.number().int().min(64).max(4320),
     fps: z.number().int().min(1).max(120),
     durationFrames: z.number().int().positive(),
+    objects: z.array(shapeSchema).max(20).optional(),
     continuation: z
       .strictObject({
         startFrame: z.number().int().nonnegative(),
@@ -56,7 +80,55 @@ export const editSceneSchema = z
       (scene.continuation.startFrame < scene.continuation.endFrame &&
         scene.continuation.endFrame <= scene.durationFrames),
     "Invalid continuation interval",
-  );
+  )
+  .refine((scene) => {
+    const ids = [
+      scene.star.id,
+      scene.label.id,
+      ...(scene.objects ?? []).map((item) => item.id),
+    ];
+    return (
+      new Set(ids).size === ids.length &&
+      (scene.objects ?? []).every(
+        (item) =>
+          new Set(item.tracks.map((track) => track.property)).size ===
+            item.tracks.length &&
+          new Set(item.tracks.map((track) => track.keyframe.id)).size ===
+            item.tracks.length &&
+          item.tracks.every(
+            (track) =>
+              track.keyframe.frame < scene.durationFrames &&
+              (track.property !== "opacity" ||
+                (track.keyframe.value >= 0 && track.keyframe.value <= 1)),
+          ),
+      )
+    );
+  }, "Duplicate IDs, invalid tracks or out-of-range keyframes");
+
+export function sceneEditTargets(scene: z.infer<typeof editSceneSchema>) {
+  return [
+    {
+      nodeId: scene.star.id,
+      property: "glowIntensity" as const,
+      keyframeId: scene.star.keyframe.id,
+      frame: scene.star.keyframe.frame,
+      value: scene.star.keyframe.value,
+      min: 0,
+      max: 1,
+    },
+    ...(scene.objects ?? []).flatMap((object) =>
+      object.tracks.map((track) => ({
+        nodeId: object.id,
+        property: track.property,
+        keyframeId: track.keyframe.id,
+        frame: track.keyframe.frame,
+        value: track.keyframe.value,
+        min: track.property === "opacity" ? 0 : -10000,
+        max: track.property === "opacity" ? 1 : 10000,
+      })),
+    ),
+  ];
+}
 
 export const editRequestSchema = z.strictObject({
   contractVersion: version,
@@ -65,7 +137,7 @@ export const editRequestSchema = z.strictObject({
   sceneId: id,
   baseRevision: revision,
   allowedTarget: target,
-  requestedValue: glow,
+  requestedValue: z.number().min(-10000).max(10000),
 });
 
 export const editPatchSchema = z.strictObject({
@@ -75,7 +147,10 @@ export const editPatchSchema = z.strictObject({
   sceneId: id,
   baseRevision: revision,
   operations: z.tuple([
-    target.extend({ op: z.literal("set-keyframe-value"), value: glow }),
+    target.extend({
+      op: z.literal("set-keyframe-value"),
+      value: z.number().min(-10000).max(10000),
+    }),
   ]),
 });
 
@@ -128,17 +203,31 @@ export function prepareEditCandidate(
 
   const [operation] = patch.operations;
   const allowed = request.allowedTarget;
+  const selected = sceneEditTargets(scene).find(
+    (item) =>
+      item.nodeId === operation.nodeId &&
+      item.property === operation.property &&
+      item.keyframeId === operation.keyframeId,
+  );
   if (
     operation.nodeId !== allowed.nodeId ||
     operation.property !== allowed.property ||
     operation.keyframeId !== allowed.keyframeId ||
-    operation.nodeId !== scene.star.id ||
-    operation.keyframeId !== scene.star.keyframe.id
+    !selected
   )
     throw Error("Edit is outside the saved request scope");
+  if (operation.value < selected.min || operation.value > selected.max)
+    throw Error("Value must be >=0 and <=1 for glow or opacity");
   if (operation.value !== request.requestedValue)
     throw Error("Value differs from the saved request");
 
-  scene.star.keyframe.value = operation.value;
+  if (operation.property === "glowIntensity")
+    scene.star.keyframe.value = operation.value;
+  else {
+    const object = scene.objects!.find((item) => item.id === operation.nodeId)!;
+    object.tracks.find(
+      (item) => item.property === operation.property,
+    )!.keyframe.value = operation.value;
+  }
   return scene;
 }
