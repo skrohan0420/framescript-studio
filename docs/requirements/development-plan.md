@@ -127,6 +127,7 @@ To repeat the check:
 - **5 November 2026.** Started after `b1229b7`. The existing Prompt Builder opens **Generate structured scene**, with the current visuals and script as a starting brief and the project's dimensions and frame rate. The first contract supports one built-in Canvas star, native title and editable glow keyframe. Custom modules and reference attachments remain follow-up work.
 - Download ZIP saves a project-scoped request and generates its copied prompt from the same brief. The ZIP contains the task, manifest, result schema, output contract and built-in module reference. Paste or upload a JSON result, review the scene, then append it as one undoable clip addition.
 - The browser fixture uses a local JSON response to verify request matching, rejection of changed dimensions and the path from Generate to Edit. The live prompt-only Generate handoff has its own remaining verification.
+- **Live Generate verified on 5 November 2026.** Claude's first response to request `25ee6305-5191-40b8-bb4f-8d24034f5de7` passed import validation without repair. Applied **New Galaxy** as a new 1037-frame clip at 30 fps. The clip's Edit / Update panel exposed revision 1 and its glow keyframe at source frame 1036 (34.533s). The live Generate handoff is complete for the current built-in star contract.
 
 ### Progress report template
 
