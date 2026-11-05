@@ -14,7 +14,17 @@ AI-generated output intended for structured editing must follow a versioned, mac
 - **Validation and compatibility.** Validate the contract version, references, capabilities and parameter values before applying generated content. Identify the failing file, field or ID and explain the expected input. Apply valid edits as undoable transactions that preserve unrelated content. Existing `renderFrame(seconds)` scenes retain compatibility playback and export. Structured editing requires declared objects or module parameters.
 - **AI handoff.** Publish the schema, module interface and valid examples as part of the [AI prompt package](07-ai-prompt-package.md). The prompt and importer must target the same contract version. Schema and module interface changes need an explicit compatibility or migration policy.
 
+## Production generated-output contract
+
+**Agreed on 5 November 2026.** Generate, Edit / Update and Extend all receive a ZIP plus matching prompt and return generated code. That output may include the JSON scene data and metadata needed for FrameScript to interpret the action. Users must not need to author or assemble a separate JSON response. The current JSON-only milestone responses validate the underlying semantics and are intermediate work, not the final production intake.
+
+The production code contract must define a machine-readable convention for any included data: contract version, action type, request ID, scene identity and base revision where applicable, allowed scope, declared dependencies and the resulting scene/change/extension. FrameScript must extract and validate it before preview or execution. Code and included metadata must describe the same result; missing, conflicting or unsupported declarations must produce actionable errors without changing the project. The exact container and embedding syntax remain to be specified; do not treat this decision as approval of a particular syntax or of unrestricted generated code.
+
+Keep the existing stable-ID, deterministic evaluation, dependency, isolation and compatibility requirements. Each accepted result applies as one undoable transaction: Generate removes its added scene on Undo, Edit restores the prior scene, and Extend restores prior source duration and affected placements.
+
 ## FSSF v1 scope
+
+The [visual editor plan](visual-editor-plan.md) expands the architecture needed for preview selection, typed inspector controls, drag/resize/rotate operations and procedural picking. It also records how to preserve creative freedom through native nodes and declared procedural interfaces. These interactions remain planned work beyond the current milestone.
 
 - A minimum valid scene declares its schema version, stable scene ID, dimensions, frame rate, duration and ordered layers. It may contain native nodes, procedural module instances or both. Declare every referenced asset and module.
 - Prioritize native text, typed transforms and properties, keyframes, asset references and a procedural module interface for the first integration milestone. Record which Canvas, DOM and Three.js capabilities v1 supports before publishing the contract. Cameras, materials, effects and continuity fields require explicit support and validation rules before AI output can depend on them.

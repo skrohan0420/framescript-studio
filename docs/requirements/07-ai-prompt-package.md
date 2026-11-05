@@ -6,6 +6,16 @@ Provide a repeatable ZIP handoff for manual AI workflows and a validated path ba
 
 The [AI-generated scene and code contract](08-scene-architecture.md#ai-generated-scene-and-code-contract) defines the output FrameScript can interpret and edit. The package must communicate that versioned contract through `OUTPUT_CONTRACT.md`, and the importer must validate generated results against the declared version.
 
+## Production workflow decision — ZIP plus prompt, generated code back
+
+The [visual editor plan](visual-editor-plan.md#authoritative-data-and-generated-code) requires subsequent AI packages to include the latest inspector and direct-manipulation edits as authoritative source state, with matching revisions and declared parameters.
+
+**Agreed with the creator on 5 November 2026.** Every production prompt action—Generate, Edit / Update and Extend—uses the same handoff: FrameScript exports a self-contained ZIP and matching copied prompt; the creator sends both to the AI; the AI returns generated code following the versioned contract in Requirement 8. Required JSON scene data, request identity, scope or other metadata may be included in that generated output. The creator must not have to manually construct or separately assemble a JSON response to perform an action.
+
+Use the existing Prompt Builder for Generate and contextual panels for Edit / Update and Extend. Their shared package compiler includes the relevant creative settings, source, references, captures, dependencies and output contract. FrameScript extracts and validates the returned code and its declared data, previews the proposed result and applies it as one undoable transaction. Undo reverses the applied Generate, Edit or Extend result, including associated timeline changes.
+
+The current JSON-only scene, patch and continuation responses are intermediate implementations for verifying the contract and round trip. They are not the final production intake experience. Mode-specific result definitions below describe the semantics FrameScript must interpret from the returned generated output. Earlier references to standalone JSON or incoming result archives do not create an additional required manual response assembly step. The exact code container and metadata embedding convention still need specification and tests; this decision does not allow arbitrary unvalidated code or remove scope/revision checks.
+
 ## Self-contained packages for Generate Edit and Extend
 
 This version must support three entry points backed by one package contract. **Generate** uses the existing Prompt Builder and its creative format selector. **Edit / Update** and **Extend** open dedicated panels from contextual scene, clip or timeline actions. Carry the selected target, source revision and playhead position into the panel automatically. Show what the action will affect before packaging. Offer **Repair existing code** as an Edit preset.

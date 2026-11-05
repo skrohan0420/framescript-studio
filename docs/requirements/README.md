@@ -17,6 +17,8 @@ The [AI-generated scene and code contract](08-scene-architecture.md#ai-generated
 
 ## Delivery order
 
+The [visual editor plan](visual-editor-plan.md) records preview selection, right-panel property editing, direct manipulation, animation editing and the tradeoffs between predictable generated code and creative freedom. It connects requirements 8, 3, 4 and 7 and distinguishes planned scope from existing implementation.
+
 Use the [development plan and tracker](development-plan.md) for the current implementation order, stage exit checks, progress reports, problem reports and decision records. Start by designing the Requirement 7 handoff and use the first Edit workflow to define the minimum Requirement 8 contract.
 
 Use the [development prompts](development-prompts.md) to start or resume any stage.

@@ -148,6 +148,19 @@ To repeat the check:
 - Verified TypeScript, all 158 tests across 38 Vitest files and all seven structured workflow browser tests. The Generate browser case packages an image and example code, imports two shapes, edits the circle's x track and undoes both changes. A targeted rerun additionally verifies circle/rectangle preview pixels. Sandbox browser-cache and loopback restrictions required the established host test setup.
 - Remaining: live external AI handoff using references and shapes; broader scene/module types and inspector support; reference captures and attachment selection for Edit/Extend; long-scene context budgets and dependency closure. This increment does not complete Requirements 7 or 8.
 
+### Production handoff decision — 5 November 2026
+
+- **Accepted creator requirement.** All production Generate, Edit / Update and Extend actions export a self-contained ZIP plus matching prompt and accept generated code back. Necessary JSON data/metadata may be included in that generated output; users must not manually assemble a separate JSON response. Generate uses the existing Prompt Builder; Edit and Extend retain contextual panels. See [Requirement 7](07-ai-prompt-package.md#production-workflow-decision--zip-plus-prompt-generated-code-back) and [Requirement 8](08-scene-architecture.md#production-generated-output-contract).
+- **Implementation status.** Current JSON-only scene/patch/continuation intake remains an intermediate milestone. Production code intake is not yet implemented. Specify the generated code container, data embedding/extraction and code/data consistency validation before replacing it; retain request matching, revisions, scope, isolated preview and atomic Apply/Undo.
+- **Acceptance follow-up.** Verify all three actions using ZIP plus prompt and generated code containing its required declarations, without separate manual JSON assembly. Include missing/conflicting metadata, unsupported versions, stale results, preview and Undo/Redo cases.
+
+### Visual editor direction — 5 November 2026
+
+- Recorded the creator discussion in the [visual editor plan](visual-editor-plan.md): preview selection, right-panel typed properties, drag/resize/rotate, animation-aware changes, transactional Undo and latest-state AI packaging.
+- Requirement 8 owns data and picking/module interfaces; requirements 3 and 4 own interaction UX and timeline behavior; requirement 7 consumes the resulting state. No visual-editor implementation is claimed by this documentation update.
+- Proposed sequence: general objects/properties → object list/inspector → preview selection → manipulation → keyframe-aware controls → procedural selection. Record supported scope and verification per increment before marking completion.
+- Preserve creative freedom through a broad native vocabulary and procedural modules with declared controls. Validate creative quality alongside contract compliance. Full visual-editor scope requires revising prior effort/line estimates; first-release scope and detailed interaction policies remain open.
+
 ### Progress report template
 
 - Date and reporting period

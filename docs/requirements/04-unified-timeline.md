@@ -6,6 +6,8 @@ Use one authoritative clock across scenes, narration, music, SFX, text, effects 
 
 ## Work required
 
+The [visual editor plan](visual-editor-plan.md#animated-properties) requires shared timing and explicit base-value/keyframe editing for inspector changes and direct manipulation. Reuse source-time conversion and interpolation across handles, tracks, preview and export.
+
 - Specify integer ticks or rational time, exact frame and sample conversions, rounding and boundary ownership. Define conversions between project time and source time through trims, offsets and speed changes.
 - Define tracks, clips, keyframes, track ordering, links, groups, transitions and overlap semantics. Expose APIs for typography, continuity, audio and structured patches.
 - Implement collapsible lanes, zoom, snapping, move, trim, split, multi-select, locking, grouping, ripple and non-ripple editing. Make edits transactional for undo and redo.

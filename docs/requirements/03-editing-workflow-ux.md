@@ -6,6 +6,8 @@ Connect brief, package, import, inspection, editing, timeline, preview and expor
 
 ## Work required
 
+Follow the [visual editor plan](visual-editor-plan.md) for live-preview selection, contextual right-panel properties, object-list access, direct manipulation, keyboard alternatives and one-gesture Undo. Make base-value and keyframe editing explicit.
+
 - Map common creator tasks and baseline their completion time and interaction counts. Remove redundant controls and avoid unnecessary modal interruptions.
 - Define a consistent object hierarchy, contextual inspector, central preview and unified timeline. Show import and edit diagnostics beside the affected file, object or clip.
 - Provide review before applying imported scenes or patches. Show progress and cancellation for validation, asset processing and export. Provide a way to retry or recover after failure.
