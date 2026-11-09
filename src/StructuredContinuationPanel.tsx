@@ -263,10 +263,10 @@ export function StructuredContinuationPanel({
         />
       </label>
       <label className="field">
-        Upload extension JSON
+        Upload extension result
         <input
           type="file"
-          accept=".json"
+          accept=".mjs,.js,.json"
           disabled={busy}
           onChange={(event) => setFile(event.target.files?.[0])}
         />
@@ -280,8 +280,8 @@ export function StructuredContinuationPanel({
             const session = useStudio.getState().session;
             if (text.length > 65536 || (file && file.size > 65536))
               throw Error("The extension exceeds the 64 KB limit.");
-            if (file && !file.name.endsWith(".json"))
-              throw Error("Upload a JSON extension.");
+            if (file && !/\.(mjs|js|json)$/i.test(file.name))
+              throw Error("Upload an extension result as .mjs, .js, or .json.");
             const pasted = text.trim() ? parseExtendResult(text) : undefined;
             const uploaded = file
               ? parseExtendResult(await file.text())

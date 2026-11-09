@@ -96,6 +96,11 @@ import { useStudio, useProjectState } from "./store";
 import { Timeline, type TimelineActions } from "./Timeline";
 import { StructuredEditPanel } from "./StructuredEditPanel";
 import { StructuredExtendPanel } from "./StructuredExtendPanel";
+import { StructuredShapeInspector } from "./StructuredShapeInspector";
+import {
+  matchesStructuredSceneCode,
+  structuredStarCode,
+} from "../shared/structured-star";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import {
   formatShortcut,
@@ -131,6 +136,7 @@ import { CodeHistory } from "./CodeHistory";
 import { PreviewConsole } from "./PreviewConsole";
 import { TerminalPanel } from "./TerminalPanel";
 import type { PreviewConsoleEntry } from "./preview-document";
+import type { PreviewShapePick } from "./preview-shapes";
 import {
   CodeProblems,
   useCodeSyntax,
@@ -331,6 +337,11 @@ export function App() {
     [select, setSelect] = useState(false),
     [selection, setSelection] = useState<any>(null),
     [runtime, setRuntime] = useState<any>(null);
+  const [shapeChoice, setShapeChoice] = useState<{
+    session: number;
+    clipId: string;
+    objectId: string | null;
+  }>();
   const [servicesReturn, setServicesReturn] = useState("");
   const openServices = (back = "") => {
     setServicesReturn(back);
@@ -403,10 +414,24 @@ export function App() {
     const savedScenes = new Map(
       saved.workflow?.scenes.map((scene) => [scene.id, scene]),
     );
+    const currentScenes = new Map(
+      p.workflow?.scenes.map((scene) => [scene.id, scene]),
+    );
     const empty: CodeSnapshot = { html: "", css: "", js: "" };
     const source = (id?: string): CodeSnapshot => {
+      const structured = id ? currentScenes.get(id)?.structuredEdit : undefined;
+      const prior = id ? savedScenes.get(id) : undefined;
+      // Structured controls update the applied scene data directly. A raw-code
+      // draft can still differ from this projection until it is saved.
+      if (
+        structured &&
+        (!prior ||
+          (prior.structuredEdit &&
+            matchesStructuredSceneCode(prior, prior.structuredEdit)))
+      )
+        return structuredStarCode(structured);
       const code = id
-        ? (savedScenes.get(id) ??
+        ? (prior ??
           (!saved.workflow && id === p.workflow?.scenes[0]?.id ? saved : empty))
         : saved;
       return { html: code.html, css: code.css, js: code.js };
@@ -427,6 +452,17 @@ export function App() {
     () => (masterMode ? composeProject(executionProject) : executionProject),
     [masterMode, executionProject],
   );
+  const shapeClip = selectedScene(p);
+  const shapeObjects = shapeClip?.structuredEdit?.objects;
+  const selectedShapeId =
+    shapeChoice && shapeChoice.session === s.session && shapeChoice.clipId === shapeClip?.id
+      ? shapeObjects?.find(({ id }) => id === shapeChoice.objectId)?.id ?? null
+      : shapeObjects?.[0]?.id ?? null;
+  const chooseShape = (objectId: string | null) => {
+    if (shapeClip)
+      setShapeChoice({ session: s.session, clipId: shapeClip.id, objectId });
+    setSelection(null);
+  };
   const previewLocation =
     !masterMode && s.errorCode === p.js ? s.errorLocation : undefined;
   const problemCount =
@@ -1449,7 +1485,35 @@ export function App() {
         }}
       />
     );
-  const handleSelect = useCallback((value: any) => setSelection(value), []);
+  const handleSelect = useCallback((value: any) => {
+    const { project, session } = useStudio.getState();
+    const clip = selectedScene(project);
+    if (clip?.structuredEdit?.objects?.length)
+      setShapeChoice({ session, clipId: clip.id, objectId: null });
+    setSelection(value);
+  }, []);
+  const handleShapePick = useCallback((pick: PreviewShapePick) => {
+    if (!select || !pick) return;
+    const state = useStudio.getState();
+    const clip = state.project.workflow?.scenes.find(({ id }) => id === pick.clipId);
+    const applied = executionProject.workflow?.scenes.find(({ id }) => id === pick.clipId);
+    const scene = clip?.structuredEdit;
+    if (
+      !clip || clip.locked || !scene || !applied ||
+      scene.sceneId !== pick.sceneId || scene.revision !== pick.revision ||
+      !matchesStructuredSceneCode(applied, scene) ||
+      (pick.objectId !== null && !scene.objects?.some(({ id }) => id === pick.objectId))
+    ) return;
+    if (state.project.workflow?.selectedId !== clip.id) {
+      if (!masterMode || pick.objectId === null) return;
+      state.change(activateScene(state.project, clip.id), "Select scene");
+      if (useStudio.getState().project.workflow?.selectedId !== clip.id) return;
+    }
+    setShapeChoice({ session: state.session, clipId: clip.id, objectId: pick.objectId });
+    setSelection(null);
+    setRightTab("properties");
+    setRightHidden(false);
+  }, [select, masterMode, executionProject]);
   const handleReady = useCallback((value: any) => setRuntime(value), []);
   const handleVisual = useCallback((value: any) => {
     const state = useStudio.getState();
@@ -3101,6 +3165,7 @@ export function App() {
             </div>
             <button
               title="Select element"
+              aria-pressed={select}
               className={select ? "accent" : ""}
               onClick={() => {
                 setSelect(!select);
@@ -3212,6 +3277,10 @@ export function App() {
               run={run}
               select={select}
               onSelect={handleSelect}
+              onShapePick={handleShapePick}
+              shapeSelection={shapeClip && selectedShapeId && rightTab === "properties" && !selection
+                ? { clipId: shapeClip.id, objectId: selectedShapeId }
+                : null}
               onReady={handleReady}
               onVisual={handleVisual}
               onConsole={appendConsole}
@@ -3532,6 +3601,12 @@ export function App() {
             </>
           ) : rightTab === "properties" ? (
             <div className="properties">
+              <StructuredShapeInspector
+                key={`${s.session}:${p.workflow?.selectedId}`}
+                appliedProject={executionProject}
+                objectId={selectedShapeId}
+                onChooseShape={chooseShape}
+              />
               <h3>Element inspector</h3>
               {selection ? (
                 <>

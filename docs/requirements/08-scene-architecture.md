@@ -16,9 +16,17 @@ AI-generated output intended for structured editing must follow a versioned, mac
 
 ## Production generated-output contract
 
-**Agreed on 5 November 2026.** Generate, Edit / Update and Extend all receive a ZIP plus matching prompt and return generated code. That output may include the JSON scene data and metadata needed for FrameScript to interpret the action. Users must not need to author or assemble a separate JSON response. The current JSON-only milestone responses validate the underlying semantics and are intermediate work, not the final production intake.
+**Agreed on 5 November 2026.** Generate, Edit / Update and Extend all receive a ZIP plus matching prompt and return generated code. The output carries the scene data and metadata FrameScript needs. Users can import it directly. The original JSON-only milestone responses validated the underlying scene, patch and continuation contracts.
 
-The production code contract must define a machine-readable convention for any included data: contract version, action type, request ID, scene identity and base revision where applicable, allowed scope, declared dependencies and the resulting scene/change/extension. FrameScript must extract and validate it before preview or execution. Code and included metadata must describe the same result; missing, conflicting or unsupported declarations must produce actionable errors without changing the project. The exact container and embedding syntax remain to be specified; do not treat this decision as approval of a particular syntax or of unrestricted generated code.
+The first generated-code format is a data module. Return one UTF-8 `.mjs` file or one JavaScript code block containing `export default` followed by a strict JSON object and an optional semicolon. The export is the complete result. It contains no imports, comments, functions, or executable expressions. FrameScript extracts the literal, parses it as JSON, validates it against the schema for the saved request, and builds the preview with its own renderer. Missing, conflicting, or unsupported declarations fail validation before the project changes. A future format for procedural code needs its own validation and isolation rules.
+
+- **Generate (`new-scene`)** declares the contract version, request ID and full scene. The saved request governs scene identity, initial revision, dimensions, frame rate and duration. The current schema declares the supported built-in module path and version.
+- **Edit (`scene-patch`)** declares the contract version, request ID, scene ID, base revision and scoped operations. The saved request governs allowed targets, the requested change and which clips may change.
+- **Extend (`scene-extension`)** declares the contract version, request ID, scene ID, base revision and continuation. Validate the source, clip placement and exact frame interval against the saved task.
+
+Use integer source frames. To convert a nonnegative timestamp from seconds, multiply by the saved frame rate and round to the nearest integer, rounding exact halves up. A keyframe must be inside the scene (`0 <= frame < durationFrames`). For example, at 30 fps, 1.25s maps to frame 38 and 1.75s maps to frame 53. Use a saved handoff frame as given for Extend.
+
+Generate, Edit and Extend share the module parser. Each importer also accepts legacy JSON for previously exported tasks and validates the result with its action-specific schema.
 
 Keep the existing stable-ID, deterministic evaluation, dependency, isolation and compatibility requirements. Each accepted result applies as one undoable transaction: Generate removes its added scene on Undo, Edit restores the prior scene, and Extend restores prior source duration and affected placements.
 
@@ -93,7 +101,7 @@ This example illustrates what the AI and editor exchange. Field names and units 
 
 ## Current native shape increment
 
-The initial version 1 scene contract retains its required built-in star and title and adds an optional `objects` array of up to 20 circles or rectangles. Each object has a unique stable ID, x/y coordinates, width/height, six-digit hex color and opacity. Positions and dimensions use source pixels. Circle x/y identify its center; rectangle x/y identify its top-left. Objects draw in array order over the star; the title remains above the canvas.
+Version 1 requires a `title` for the timeline name. The built-in `star` and the on-screen `label` are independently optional. A scene must contain at least one shape, a star, or a label. The `objects` array accepts up to 20 circles or rectangles. Each object has a unique stable ID, x/y coordinates, width/height, six-digit hex color and opacity. Positions and dimensions use source pixels. Circle x/y identify its center and rectangle x/y identify its top-left. Objects draw in array order above the background and optional star. The optional label appears above the canvas.
 
 Each shape may declare one keyframe for each of x, y and opacity. Values interpolate linearly from the base value to that keyframe and hold afterward; a frame-zero keyframe applies immediately. Coordinates and position keyframe values are bounded to -10,000 through 10,000; opacity is 0–1. Shape dimensions are positive and at most 10,000 pixels. Keyframes must fall within the source duration. Duplicate node IDs, duplicate track properties/keyframe IDs within an object and invalid opacity values are rejected.
 

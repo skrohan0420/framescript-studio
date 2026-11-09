@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import ffmpeg from "ffmpeg-static";
 import { z } from "zod";
+import { structuredResultModuleInstructions } from "../shared/structured-result";
 import { newProject } from "../shared/project";
 import {
   editPatchSchema,
@@ -66,10 +67,10 @@ export async function writeStructuredEditPackage(
   const frame = selected.frame;
   const time = frame / scene.fps;
   const seconds = time.toFixed(3);
-  const framePath = `references/preview-frames/glow-${seconds}s.png`;
+  const framePath = `references/preview-frames/keyframe-${seconds}s.png`;
   const json = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
   const brief = `Edit ${scene.title}, revision ${scene.revision}. Set ${selected.nodeId}.${selected.property} at ${seconds}s to ${requestedValue}. Preserve the keyframe time, label and unrelated content.`;
-  const prompt = `${brief}\n\nOpen the attached ZIP and read TASK.md first. Inspect ${framePath} and return JSON following OUTPUT_CONTRACT.md. If you cannot access a required file, name it before proceeding.\n`;
+  const prompt = `${brief}\n\nOpen the attached ZIP and read TASK.md first. Inspect ${framePath} and return one JavaScript module following OUTPUT_CONTRACT.md. If you cannot access a required file, name it before proceeding.\n`;
   await fs.mkdir(path.dirname(destination), { recursive: true });
   const temporary = await fs.mkdtemp(
     path.join(path.dirname(destination), "edit-package-"),
@@ -121,14 +122,16 @@ export async function writeStructuredEditPackage(
       {
         path: "OUTPUT_CONTRACT.md",
         role: "contract",
-        content: `Return one JSON object conforming to \`schemas/edit-result.schema.json\`. Echo request ID \`${request.requestId}\`, scene ID \`${scene.sceneId}\` and base revision ${scene.revision}. The only allowed operation is \`set-keyframe-value\` on \`${selected.nodeId}.${selected.property}\`, keyframe \`${selected.keyframeId}\`, with value ${requestedValue}.\n`,
+        content: `${structuredResultModuleInstructions}\n\nThe exported object must conform to \`schemas/edit-result.schema.json\`. Echo request ID \`${request.requestId}\`, scene ID \`${scene.sceneId}\` and base revision ${scene.revision}. The only allowed operation is \`set-keyframe-value\` on \`${selected.nodeId}.${selected.property}\`, keyframe \`${selected.keyframeId}\`, with value ${requestedValue}.\n`,
       },
       { path: "source/scene.json", role: "scene-source", content: json(scene) },
-      {
-        path: scene.star.modulePath,
-        role: "runtime-module",
-        content: starModuleSource,
-      },
+      ...(scene.star
+        ? [{
+            path: scene.star.modulePath,
+            role: "runtime-module",
+            content: starModuleSource,
+          }]
+        : []),
       {
         path: framePath,
         role: "required-evidence",

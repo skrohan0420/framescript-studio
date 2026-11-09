@@ -69,6 +69,11 @@ function runtime(
     });
     if (typeof w.renderFrame === "function") w.renderFrame(time);
     w.__fsTypography?.(time);
+    w.__fsShapeOutline?.();
+  };
+  w.__fsClearElementSelection = () => {
+    if (selected) selected.style.outline = "";
+    selected = null;
   };
   window.addEventListener("message", (e) => {
     if (
@@ -90,11 +95,16 @@ function runtime(
     "click",
     (e) => {
       if ((e.target as HTMLElement)?.closest?.("[data-fs-text]")) return;
+      if (w.__fsPickShape?.(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       if (!selection) return;
       e.preventDefault();
       e.stopPropagation();
       const el = e.target as HTMLElement;
-      if (selected) selected.style.outline = "";
+      w.__fsClearElementSelection();
       selected = el;
       el.style.outline = "2px solid #68afff";
       const s = getComputedStyle(el);

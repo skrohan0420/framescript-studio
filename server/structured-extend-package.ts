@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { structuredResultModuleInstructions } from "../shared/structured-result";
 import ffmpeg from "ffmpeg-static";
 import {
   extendResultSchema,
@@ -23,11 +24,12 @@ export async function writeExtendPackage(
   record: string,
 ) {
   const { scene, placement, addedFrames, brief } = task.input;
+  if (!scene.star) throw Error("Glow continuation requires a star.");
   const startFrame = Math.round(
     (placement.sourceOffset + placement.duration) * scene.fps,
   );
   const endFrame = startFrame + addedFrames;
-  const prompt = `Extend ${scene.title} from source frame ${startFrame} to ${endFrame}. ${brief}\nRead TASK.md and inspect references/preview-frames/handoff.png in the attached ZIP. Preserve all earlier animation. Return one JSON extension following OUTPUT_CONTRACT.md. If a required file is inaccessible, name it before proceeding.\n`;
+  const prompt = `Extend ${scene.title} from source frame ${startFrame} to ${endFrame}. ${brief}\nRead TASK.md and inspect references/preview-frames/handoff.png in the attached ZIP. Preserve all earlier animation. Return one JavaScript module following OUTPUT_CONTRACT.md. If a required file is inaccessible, name it before proceeding.\n`;
   const json = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
   await fs.mkdir(path.dirname(destination), { recursive: true });
   const root = await fs.mkdtemp(
@@ -74,7 +76,7 @@ export async function writeExtendPackage(
       {
         path: "OUTPUT_CONTRACT.md",
         role: "contract",
-        content: `Return a scene-extension JSON object using schemas/extend-result.schema.json. Echo requestId "${task.requestId}", sceneId "${scene.sceneId}", baseRevision ${scene.revision}, startFrame ${startFrame}, endFrame ${endFrame}. Choose only the final glow value between 0 and 1. The built-in renderer interpolates from the existing glow at the handoff. Scene source, title and preceding animation are preserved by FrameScript.\n`,
+        content: `${structuredResultModuleInstructions}\n\nThe exported scene-extension object must follow schemas/extend-result.schema.json. Echo requestId "${task.requestId}", sceneId "${scene.sceneId}", baseRevision ${scene.revision}, startFrame ${startFrame}, endFrame ${endFrame}. Choose only the final glow value between 0 and 1. The built-in renderer interpolates from the existing glow at the handoff. Scene source, title and preceding animation are preserved by FrameScript.\n`,
       },
       { path: "source/scene.json", role: "source", content: json(scene) },
       {

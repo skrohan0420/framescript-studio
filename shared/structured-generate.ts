@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { editSceneSchema, parseStructuredResult } from "./structured-edit";
+import { editSceneSchema } from "./structured-edit";
+import { parseStructuredResult } from "./structured-result";
 import { structuredStarCode } from "./structured-star";
 import type { Project } from "./project";
 import { activateScene, initialWorkflow, totalDuration } from "./workflow";
@@ -30,9 +31,10 @@ export const generateResultSchema = z.strictObject({
   requestId: z.string().uuid(),
   scene: editSceneSchema.safeExtend({
     title: z.string().min(1).max(200),
-    label: editSceneSchema.shape.label.extend({
-      text: z.string().min(1).max(1000),
-    }),
+    label: editSceneSchema.shape.label
+      .unwrap()
+      .extend({ text: z.string().min(1).max(1000) })
+      .optional(),
   }),
 });
 export type GenerateInput = z.infer<typeof generateInputSchema>;

@@ -3,6 +3,24 @@ import type { editSceneSchema } from "./structured-edit";
 
 export type StructuredEditScene = z.infer<typeof editSceneSchema>;
 
+// Keep picking and rendering on the same interpolation without changing
+// the generated source stored in existing projects.
+export function structuredShapeValuesSource(fps: number) {
+  return `const values = { x: object.x, y: object.y, opacity: object.opacity };
+    for (const track of object.tracks) {
+      const progress = track.keyframe.frame === 0 ? 1 : Math.max(0, Math.min(1, seconds * ${fps} / track.keyframe.frame));
+      values[track.property] += (track.keyframe.value - values[track.property]) * progress;
+    }`;
+}
+
+export function matchesStructuredSceneCode(
+  source: { html: string; css: string; js: string },
+  scene: StructuredEditScene,
+) {
+  const code = structuredStarCode(scene);
+  return source.html === code.html && source.css === code.css && source.js === code.js;
+}
+
 const renderer = `function renderStar(context, { glowIntensity }) {
   const { width, height } = context.canvas;
   const x = width / 2;
@@ -22,25 +40,34 @@ const renderer = `function renderStar(context, { glowIntensity }) {
 export const starModuleSource = renderer + "\nexport { renderStar };\n";
 
 export function structuredStarCode(scene: StructuredEditScene) {
-  const keyframe = scene.star.keyframe;
+  const { star, label } = scene;
+  const keyframe = star?.keyframe;
+  const labelScript = label
+    ? `\ndocument.querySelector("#galaxy-label").textContent = ${JSON.stringify(label.text).replaceAll("<", "\\u003c")};`
+    : "";
   const code = {
-    html: `<canvas width="${scene.width}" height="${scene.height}"></canvas><span id="galaxy-label"></span>`,
+    html: `<canvas width="${scene.width}" height="${scene.height}"></canvas>${label ? '<span id="galaxy-label"></span>' : ""}`,
     css: "body{margin:0}span{position:absolute;bottom:24px;width:100%;text-align:center;color:white;font:24px sans-serif}",
-    js: `${renderer}
-const context = document.querySelector("canvas").getContext("2d");
-document.querySelector("#galaxy-label").textContent = ${JSON.stringify(scene.label.text).replaceAll("<", "\\u003c")};
-window.renderFrame = seconds => {
-  const position = Math.min(1, seconds * ${scene.fps} / ${Math.max(1, keyframe.frame)});
-  renderStar(context, { glowIntensity: ${keyframe.frame === 0 ? keyframe.value : `${scene.star.glowIntensity} + (${keyframe.value} - ${scene.star.glowIntensity}) * position`} });
-};`,
+    js: `${star ? renderer + "\n" : ""}const context = document.querySelector("canvas").getContext("2d");${labelScript}`,
   };
+  if (star && keyframe) {
+    code.js += `\nwindow.renderFrame = seconds => {
+  const position = Math.min(1, seconds * ${scene.fps} / ${Math.max(1, keyframe.frame)});
+  renderStar(context, { glowIntensity: ${keyframe.frame === 0 ? keyframe.value : `${star.glowIntensity} + (${keyframe.value} - ${star.glowIntensity}) * position`} });
+};`;
+  } else {
+    code.js += `\nwindow.renderFrame = () => {
+  context.fillStyle = "#080d20";
+  context.fillRect(0, 0, context.canvas.width, context.canvas.height);
+};`;
+  }
   const extension = scene.continuation;
-  if (extension) {
+  if (extension && star && keyframe) {
     const from =
       keyframe.frame === 0
         ? keyframe.value
-        : scene.star.glowIntensity +
-          (keyframe.value - scene.star.glowIntensity) *
+        : star.glowIntensity +
+          (keyframe.value - star.glowIntensity) *
             Math.min(1, extension.startFrame / keyframe.frame);
     code.js += `\nconst originalFrame = window.renderFrame;
 window.renderFrame = seconds => {
@@ -57,11 +84,7 @@ const frameBeforeObjects = window.renderFrame;
 window.renderFrame = seconds => {
   frameBeforeObjects(seconds);
   for (const object of nativeObjects) {
-    const values = { x: object.x, y: object.y, opacity: object.opacity };
-    for (const track of object.tracks) {
-      const progress = track.keyframe.frame === 0 ? 1 : Math.max(0, Math.min(1, seconds * ${scene.fps} / track.keyframe.frame));
-      values[track.property] += (track.keyframe.value - values[track.property]) * progress;
-    }
+    ${structuredShapeValuesSource(scene.fps)}
     context.save();
     context.globalAlpha = values.opacity;
     context.fillStyle = object.color;

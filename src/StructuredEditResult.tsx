@@ -180,9 +180,9 @@ export function StructuredEditResult({
         (file && file.size > resultSizeLimit)
       )
         throw Error("This Edit result exceeds the 64 KB patch limit.");
-      if (file && !file.name.toLowerCase().endsWith(".json"))
+      if (file && !/\.(mjs|js|json)$/i.test(file.name))
         throw Error(
-          "Upload the .json patch for this Edit task. This contract uses a self-contained JSON result.",
+          "Upload an Edit result as .mjs, .js, or .json.",
         );
       const pasted = text.trim() ? parseEditResult(text) : undefined;
       const uploaded = file ? parseEditResult(await file.text()) : undefined;
@@ -195,7 +195,7 @@ export function StructuredEditResult({
           "The pasted and uploaded patches differ. Keep one result or provide matching copies.",
         );
       const patch = pasted ?? uploaded;
-      if (!patch) throw Error("Paste the AI result or upload its JSON file.");
+      if (!patch) throw Error("Paste or upload the AI result.");
       if (
         !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
           patch.requestId,
@@ -241,7 +241,7 @@ export function StructuredEditResult({
         !/different project|predates project matching/.test(message)
       )
         setRepair(
-          `Revise your previous response using the original FrameScript task ZIP. Return only the complete JSON patch specified in OUTPUT_CONTRACT.md. Preserve the request ID, target, base revision and allowed scope. FrameScript reported: ${message}`,
+          `Revise your previous response using the original FrameScript task ZIP. Return only the complete patch in the format specified by OUTPUT_CONTRACT.md. Preserve the request ID, target, base revision and allowed scope. FrameScript reported: ${message}`,
         );
     } finally {
       setBusy(false);
@@ -418,7 +418,7 @@ export function StructuredEditResult({
   return (
     <Modal title="Import AI result" open onClose={onBack}>
       <p>
-        Paste the AI patch, upload its JSON file, or provide matching copies.
+        Paste the AI patch, upload the result file, or provide matching copies.
       </p>
       <label className="field">
         <span>Paste AI result</span>
@@ -435,7 +435,7 @@ export function StructuredEditResult({
         <span>Upload result file</span>
         <input
           type="file"
-          accept=".json,application/json"
+          accept=".mjs,.js,.json"
           disabled={busy}
           onChange={(event) => {
             setFile(event.target.files?.[0]);

@@ -2,8 +2,8 @@ import { z } from "zod";
 import {
   editSceneSchema,
   editPlacementSchema,
-  parseStructuredResult,
 } from "./structured-edit";
+import { parseStructuredResult } from "./structured-result";
 import type { Project } from "./project";
 import { structuredExtensionTiming } from "./structured-edit-timing";
 import { structuredStarCode } from "./structured-star";
@@ -20,12 +20,13 @@ export const extendInputSchema = z
   .refine(({ scene, placement, addedFrames }) => {
     const frame = (placement.sourceOffset + placement.duration) * scene.fps;
     return (
+      !!scene.star &&
       !scene.continuation &&
       Math.abs(frame - Math.round(frame)) < 1e-7 &&
       frame <= scene.durationFrames &&
       (frame + addedFrames) / scene.fps <= 600
     );
-  }, "Use a frame-aligned handoff within the source. This version supports one continuation per source.");
+  }, "A star is required. Use a frame-aligned handoff within the source and one continuation per source.");
 export const extendTaskSchema = z.strictObject({
   requestId: z.string().uuid(),
   input: extendInputSchema,

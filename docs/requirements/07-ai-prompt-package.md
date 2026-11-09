@@ -8,13 +8,15 @@ The [AI-generated scene and code contract](08-scene-architecture.md#ai-generated
 
 ## Production workflow decision — ZIP plus prompt, generated code back
 
+Generate, Edit and Extend ask for a data-only JavaScript module in the copied prompt and `OUTPUT_CONTRACT.md`. Users can paste the module or upload it and can still import previously generated JSON. The [generated-output contract](08-scene-architecture.md#production-generated-output-contract) defines the envelope and frame conversion rule.
+
 The [visual editor plan](visual-editor-plan.md#authoritative-data-and-generated-code) requires subsequent AI packages to include the latest inspector and direct-manipulation edits as authoritative source state, with matching revisions and declared parameters.
 
 **Agreed with the creator on 5 November 2026.** Every production prompt action—Generate, Edit / Update and Extend—uses the same handoff: FrameScript exports a self-contained ZIP and matching copied prompt; the creator sends both to the AI; the AI returns generated code following the versioned contract in Requirement 8. Required JSON scene data, request identity, scope or other metadata may be included in that generated output. The creator must not have to manually construct or separately assemble a JSON response to perform an action.
 
 Use the existing Prompt Builder for Generate and contextual panels for Edit / Update and Extend. Their shared package compiler includes the relevant creative settings, source, references, captures, dependencies and output contract. FrameScript extracts and validates the returned code and its declared data, previews the proposed result and applies it as one undoable transaction. Undo reverses the applied Generate, Edit or Extend result, including associated timeline changes.
 
-The current JSON-only scene, patch and continuation responses are intermediate implementations for verifying the contract and round trip. They are not the final production intake experience. Mode-specific result definitions below describe the semantics FrameScript must interpret from the returned generated output. Earlier references to standalone JSON or incoming result archives do not create an additional required manual response assembly step. The exact code container and metadata embedding convention still need specification and tests; this decision does not allow arbitrary unvalidated code or remove scope/revision checks.
+The module carries the complete scene, patch or continuation as one exported object. FrameScript parses that object as JSON and uses the saved request to validate its identity, revision and scope before review.
 
 ## Self-contained packages for Generate Edit and Extend
 
@@ -37,7 +39,7 @@ A package is self-contained when an AI can understand the task and produce the r
 
 ### Extend an existing scene
 
-The first built-in star workflow uses **Extend → Generate continuation**. Export the task ZIP and matching prompt, then paste or upload a JSON extension. The ZIP includes a frame evaluated at the exact source handoff and declares the frame interval. The initial response can choose the ending glow. FrameScript creates a separate source for the selected clip and requires confirmation before shifting later clips. Broader procedural continuation remains planned work.
+The first built-in star workflow uses **Extend → Generate continuation**. Export the task ZIP and matching prompt, then paste or upload the generated module. The ZIP includes a frame evaluated at the exact source handoff and declares the frame interval. The initial response can choose the ending glow. FrameScript creates a separate source for the selected clip and requires confirmation before shifting later clips. Broader procedural continuation remains planned work.
 
 - **Panel:** Show the selected target, actual handoff timestamp, requested added duration and the segment that will be preserved. If a clip is trimmed, distinguish revealing existing source time from generating new animation. Package an AI extension when the creator chooses to generate new material.
 - **Package:** Target scene ID and exact base revision, current source and runtime dependencies, original duration, requested added duration, continuation brief and narration cues where supplied. Include a handoff frame from the packaged revision and relevant object, camera and motion state when available. A frame shortly before the handoff can show motion direction.

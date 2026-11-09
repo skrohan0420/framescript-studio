@@ -25,7 +25,7 @@ export function StructuredEditPanel({
   const applied = appliedProject.workflow?.scenes.find(
     (scene) => scene.id === clipId,
   );
-  const [value, setValue] = useState("0.8");
+  const [enteredValue, setValue] = useState<string>();
   const [targetIndex, setTargetIndex] = useState(0);
   const [scope, setScope] = useState<"clip" | "shared">("clip");
   const [useApplied, setUseApplied] = useState(false);
@@ -47,6 +47,9 @@ export function StructuredEditPanel({
   const scene = source?.structuredEdit;
   const targets = scene ? sceneEditTargets(scene) : [];
   const target = targets[targetIndex] ?? targets[0];
+  const value =
+    enteredValue ??
+    (target?.property === "glowIntensity" ? "0.8" : String(target?.value ?? ""));
   const timing = clip && target && structuredClipTiming(clip, target);
   const supported =
     !!target && supportsStructuredClip(project, clip, source, target);
@@ -110,7 +113,7 @@ export function StructuredEditPanel({
   return (
     <Modal title="Edit / Update" open onClose={onClose}>
       <p>{clip?.title ?? "The selected clip is no longer available."}</p>
-      {scene && (
+      {scene && target && (
         <>
           <p>
             Source revision {scene.revision} ·{" "}
@@ -178,7 +181,9 @@ export function StructuredEditPanel({
           <p>Package contents</p>
           <ul>
             <li>Task, manifest and Edit result schema</li>
-            <li>Scene source and Canvas module</li>
+            <li>
+              {scene.star ? "Scene source and Canvas module" : "Scene source"}
+            </li>
             <li>
               Required PNG of the keyframe at source revision {scene.revision}
             </li>
@@ -202,8 +207,9 @@ export function StructuredEditPanel({
       )}
       {!supported && !(pending && !useApplied) && (
         <p role="alert">
-          Edit requires an unlocked structured clip containing the source
-          keyframe, with its original dimensions and frame rate in seek mode.
+          {scene && !target
+            ? "This scene has no editable keyframes."
+            : "Edit requires an unlocked structured clip containing the source keyframe, with its original dimensions and frame rate in seek mode."}
         </p>
       )}
       {notice && <p role="status">{notice}</p>}

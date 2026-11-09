@@ -4,6 +4,254 @@ import type { Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import { resizeVisual, splitVisual } from "../shared/timeline-edit";
 import { activateScene, selectedScene } from "../shared/workflow";
+import { editSceneSchema } from "../shared/structured-edit";
+import { structuredStarCode } from "../shared/structured-star";
+
+test("picks the topmost rendered shape in scaled clip and combined previews", async ({ page }) => {
+  const base = structuredEditFixtureProject();
+  const clip = selectedScene(base)!;
+  const scene = editSceneSchema.parse({
+    ...clip.structuredEdit,
+    star: undefined,
+    label: undefined,
+    objects: [
+      {
+        id: "moving-box", kind: "rectangle", x: 40, y: 70,
+        width: 100, height: 80, color: "#0088ff", opacity: 1,
+        tracks: [{ property: "x", keyframe: { id: "move", frame: 60, value: 200 } }],
+      },
+      {
+        id: "ellipse", kind: "circle", x: 210, y: 100,
+        width: 80, height: 60, color: "#ffffff", opacity: 1, tracks: [],
+      },
+    ],
+  });
+  const code = structuredStarCode(scene);
+  const project = {
+    ...base,
+    ...code,
+    workflow: { ...base.workflow!, scenes: [{ ...clip, ...code, structuredEdit: scene }] },
+  };
+  const split = { ...project, ...splitVisual(project, clip.id, 1) };
+  const right = split.workflow!.scenes[1];
+  await page.goto("/");
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    page.getByRole("button", { name: "Open .frame file" }).click(),
+  ]);
+  await chooser.setFiles({
+    name: "shape-selection.frame",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({ ...split, ...activateScene(split, right.id) })),
+  });
+
+  const preview = page.frameLocator('iframe[title="Animation preview"]');
+  const arrow = page.getByRole("button", { name: "Select element", exact: true });
+  const playhead = page.getByRole("slider", { name: "Timeline position" });
+  const inspector = page.getByRole("region", { name: "Shape inspector" });
+  const picker = inspector.getByLabel("Shape", { exact: true });
+  const outline = preview.locator("[data-fs-shape-outline]");
+  const clickSource = async (canvas: ReturnType<typeof preview.locator>, x: number, y: number) => {
+    const box = (await canvas.boundingBox())!;
+    await page.mouse.click(box.x + x * box.width / scene.width, box.y + y * box.height / scene.height);
+  };
+
+  await arrow.click();
+  await page.getByRole("button", { name: "Zoom out", exact: true }).click();
+  await playhead.fill("0.5");
+  await expect(outline).toHaveCSS("left", "160px");
+  const canvas = preview.locator("canvas");
+  expect(Math.abs((await canvas.boundingBox())!.width - scene.width)).toBeGreaterThan(10);
+  await clickSource(canvas, 210, 100);
+  await expect(picker).toHaveValue("ellipse");
+  await expect(outline).toHaveAttribute("data-fs-shape-outline", "ellipse");
+  await expect(inspector.getByLabel("Width (px)")).toHaveValue("80");
+
+  // Inside both bounding boxes, but outside the ellipse itself.
+  await clickSource(canvas, 175, 74);
+  await expect(picker).toHaveValue("moving-box");
+  await expect(outline).toHaveAttribute("data-fs-shape-outline", "moving-box");
+  await clickSource(canvas, 50, 90);
+  await expect(picker).toHaveValue("");
+  await expect(outline).toHaveCount(0);
+  await picker.selectOption("moving-box");
+  await expect(outline).toHaveCSS("left", "160px");
+  await playhead.fill("1");
+  await expect(outline).toHaveCSS("left", "200px");
+  await playhead.fill("0");
+  await expect(outline).toHaveCSS("left", "120px");
+
+  await page.getByRole("button", { name: "Preview all timelines" }).click();
+  await arrow.click();
+  const first = preview.frameLocator('iframe[title="Timeline preview 1"]');
+  await expect(first.locator("canvas")).toBeVisible();
+  await clickSource(first.locator("canvas"), 210, 100);
+  await expect(picker).toHaveValue("ellipse");
+  await expect(first.locator("[data-fs-shape-outline]")).toHaveAttribute("data-fs-shape-outline", "ellipse");
+  await expect(page.getByRole("tab", { name: /^1 ·/ })).toHaveAttribute("aria-selected", "true");
+
+  await playhead.fill("1.5");
+  const second = preview.frameLocator('iframe[title="Timeline preview 2"]');
+  await expect(second.locator("canvas")).toBeVisible();
+  await clickSource(second.locator("canvas"), 175, 74);
+  await expect(picker).toHaveValue("moving-box");
+  await expect(second.locator("[data-fs-shape-outline]")).toHaveCSS("left", "160px");
+  await expect(page.getByRole("tab", { name: /^2 ·/ })).toHaveAttribute("aria-selected", "true");
+});
+
+test("edits shape base values and keyframes in the inspector with clip scope and history", async ({
+  page,
+}) => {
+  const base = structuredEditFixtureProject();
+  const clip = selectedScene(base)!;
+  const scene = editSceneSchema.parse({
+    ...clip.structuredEdit,
+    star: undefined,
+    label: undefined,
+    objects: [{
+      id: "signal",
+      kind: "rectangle",
+      x: 20,
+      y: 40,
+      width: 30,
+      height: 30,
+      color: "#0088ff",
+      opacity: 1,
+      tracks: [{ property: "x", keyframe: { id: "move", frame: 30, value: 100 } }],
+    }, {
+      id: "dot",
+      kind: "circle",
+      x: 400,
+      y: 50,
+      width: 40,
+      height: 40,
+      color: "#ffffff",
+      opacity: 0.5,
+      tracks: [],
+    }],
+  });
+  const code = structuredStarCode(scene);
+  const project = {
+    ...base,
+    ...code,
+    workflow: {
+      ...base.workflow!,
+      scenes: [{ ...clip, ...code, structuredEdit: scene }],
+    },
+  };
+  const split = { ...project, ...splitVisual(project, clip.id, 2) };
+  const [left, right] = split.workflow!.scenes;
+  await page.goto("/");
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    page.getByRole("button", { name: "Open .frame file" }).click(),
+  ]);
+  await chooser.setFiles({
+    name: "shape-inspector.frame",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(split)),
+  });
+  await page.getByRole("button", { name: "Properties", exact: true }).click();
+  const inspector = page.getByRole("region", { name: "Shape inspector" });
+  const picker = inspector.getByLabel("Shape", { exact: true });
+  await expect(picker).toHaveValue("signal");
+  await picker.selectOption("dot");
+  await expect(inspector.getByLabel("Width (px)")).toHaveValue("40");
+  await expect(inspector.getByLabel("Opacity (0–1)")).toHaveValue("0.5");
+  await picker.selectOption("signal");
+  await expect(inspector.getByLabel("Shape edit scope")).toHaveValue("clip");
+  const baseX = inspector.getByLabel("X position (px)", { exact: true });
+  await baseX.fill("50");
+  await baseX.press("Enter");
+
+  const preview = page.frameLocator('iframe[title="Animation preview"]').locator("canvas");
+  const pixel = (x: number) =>
+    preview.evaluate((canvas, x) =>
+      Array.from((canvas as HTMLCanvasElement).getContext("2d")!.getImageData(x, 45, 1, 1).data),
+    x);
+  await expect.poll(() => pixel(55)).toEqual([0, 136, 255, 255]);
+  await expect.poll(() => pixel(25)).toEqual([8, 13, 32, 255]);
+  const values = inspector.getByLabel("Edit shape values");
+  await values.selectOption("keyframe");
+  const keyX = inspector.getByLabel(/X position.*keyframe/);
+  await expect(keyX).toHaveValue("100");
+  await keyX.fill("150");
+  await keyX.press("Enter");
+  await page.getByRole("slider", { name: "Timeline position" }).fill("1");
+  await expect.poll(() => pixel(155)).toEqual([0, 136, 255, 255]);
+
+  const undo = page.getByRole("button", { name: "Undo project change" });
+  const redo = page.getByRole("button", { name: "Redo project change" });
+  await undo.click();
+  await expect(keyX).toHaveValue("100");
+  await expect.poll(() => pixel(105)).toEqual([0, 136, 255, 255]);
+  await redo.click();
+  await expect(keyX).toHaveValue("150");
+  await expect.poll(() => pixel(155)).toEqual([0, 136, 255, 255]);
+
+  const savedClips = async () => {
+    const response = await page.request.post("/api/workspaceGet", {
+      headers: { "X-FrameScript": "1" },
+      data: { args: [] },
+    });
+    return (await response.json()).result?.workflow?.scenes;
+  };
+  await expect.poll(savedClips).toEqual([
+    expect.objectContaining({
+      id: left.id,
+      structuredEdit: expect.objectContaining({
+        sceneId: expect.not.stringMatching(new RegExp(`^${scene.sceneId}$`)),
+        revision: scene.revision + 2,
+        objects: [expect.objectContaining({
+          x: 50,
+          tracks: [{ property: "x", keyframe: { id: "move", frame: 30, value: 150 } }],
+        }), scene.objects![1]],
+      }),
+    }),
+    right,
+  ]);
+  await undo.click();
+  await undo.click();
+  await values.selectOption("base");
+  await inspector.getByLabel("Shape edit scope").selectOption("shared");
+  const fill = inspector.getByLabel("Fill color (hex)");
+  await fill.fill("red");
+  await fill.press("Enter");
+  await expect(inspector.getByRole("alert")).toContainText("six-digit hex color");
+  await fill.fill("#ff0000");
+  await fill.press("Enter");
+  await expect.poll(async () => (await savedClips())?.map((clip: typeof left) => ({
+    sceneId: clip.structuredEdit?.sceneId,
+    color: clip.structuredEdit?.objects?.[0].color,
+  }))).toEqual([
+    { sceneId: scene.sceneId, color: "#ff0000" },
+    { sceneId: scene.sceneId, color: "#ff0000" },
+  ]);
+
+  const openSettings = page.getByRole("contentinfo").getByRole("button", { name: "Project settings" });
+  await openSettings.click();
+  const settings = page.getByRole("dialog", { name: "Project & application settings" });
+  await settings.getByLabel("Workspace save mode").selectOption("manual");
+  await settings.getByRole("button", { name: "Close", exact: true }).first().click();
+  const width = inspector.getByLabel("Width (px)");
+  await expect.poll(() => pixel(145)).toEqual([8, 13, 32, 255]);
+  await width.fill("60");
+  await width.press("Enter");
+  await expect.poll(() => pixel(145)).toEqual([255, 0, 0, 255]);
+  await undo.click();
+  await expect(width).toHaveValue("30");
+  await expect.poll(() => pixel(145)).toEqual([8, 13, 32, 255]);
+  await redo.click();
+  await expect(width).toHaveValue("60");
+  await expect.poll(() => pixel(145)).toEqual([255, 0, 0, 255]);
+  await openSettings.click();
+  const autosaveRestored = page.waitForResponse((response) =>
+    response.url().endsWith("/api/settingsSet") &&
+    response.request().postData()?.includes('"autosave":true') === true,
+  );
+  await settings.getByLabel("Workspace save mode").selectOption("auto");
+  await autosaveRestored;
+});
 
 test("continues a trimmed clip from its handoff and restores the original with Undo", async ({
   page,
@@ -29,6 +277,7 @@ test("continues a trimmed clip from its handoff and restores the original with U
   expect(response.ok(), await response.text()).toBe(true);
   const { result } = await response.json();
   expect(await (await zip).failure()).toBeNull();
+  expect(result.prompt).toContain("Return one JavaScript module");
   const extension = {
     contractVersion: "1",
     type: "scene-extension",
@@ -46,7 +295,12 @@ test("continues a trimmed clip from its handoff and restores the original with U
   await expect(panel.getByRole("alert")).toContainText(
     "must match the saved request",
   );
-  await panel.getByLabel("Paste AI extension").fill(JSON.stringify(extension));
+  await panel.getByLabel("Paste AI extension").fill("");
+  await panel.getByLabel("Upload extension result").setInputFiles({
+    name: "continuation.mjs",
+    mimeType: "text/javascript",
+    buffer: Buffer.from(`export default ${JSON.stringify(extension)};`),
+  });
   await panel.getByRole("button", { name: "Review extension" }).click();
   const review = page.getByRole("dialog", { name: "Review AI changes" });
   await expect(review).toContainText("Continue from 2.000s to 3.000s");
@@ -100,7 +354,7 @@ test("continues a trimmed clip from its handoff and restores the original with U
     });
     return (await response.json()).result.workflow.scenes;
   };
-  await expect.poll(savedClips).toEqual([
+  const extendedClips = [
     expect.objectContaining({
       id: left.id,
       duration: 3,
@@ -111,12 +365,15 @@ test("continues a trimmed clip from its handoff and restores the original with U
       }),
     }),
     right,
-  ]);
+  ];
+  await expect.poll(savedClips).toEqual(extendedClips);
   await page.getByRole("button", { name: "Undo project change" }).click();
   await expect.poll(savedClips).toEqual([left, right]);
+  await page.getByRole("button", { name: "Redo project change" }).click();
+  await expect.poll(savedClips).toEqual(extendedClips);
 });
 
-test("generates an editable scene through the Prompt Builder and undoes the addition", async ({
+test("generates, edits and exports a shapes-only scene through the module workflow", async ({
   page,
 }) => {
   const { scene } = await openFixture(page);
@@ -132,7 +389,7 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
   const panel = page.getByRole("dialog", { name: "Generate structured scene" });
   await panel
     .getByLabel("Scene brief")
-    .fill("Create a star titled New Galaxy.");
+    .fill("Create a scene named New Galaxy with shapes only.");
   const response = page.waitForResponse((item) =>
     item.url().endsWith("/api/structuredGeneratePackage"),
   );
@@ -159,7 +416,7 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
   const { result } = await packaged.json();
   expect(await (await zip).failure()).toBeNull();
   await expect(panel.getByLabel("Exported Generate prompt")).toContainText(
-    "Create a star titled New Galaxy.",
+    "Create a scene named New Galaxy with shapes only.",
   );
   const saved = await page.request.post("/api/structuredGenerateRequest", {
     headers: { "X-FrameScript": "1" },
@@ -169,6 +426,7 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
   expect(input.references).toHaveLength(2);
   expect(result.prompt).toContain("references/images/1.png");
   expect(result.prompt).toContain("references/example-code/2.txt");
+  expect(result.prompt).toContain("Return one JavaScript module");
   const generated = {
     ...scene,
     sceneId: result.requestId,
@@ -178,7 +436,8 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
     height: input.height,
     fps: input.fps,
     durationFrames: input.durationFrames,
-    label: { ...scene.label, text: "New Galaxy" },
+    star: undefined,
+    label: undefined,
     objects: [
       {
         id: "planet",
@@ -211,7 +470,7 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
       },
     ],
   };
-  const resultText = panel.getByLabel("Paste AI scene result");
+  const resultText = panel.getByLabel("Paste generated scene code");
   const submit = panel.getByRole("button", { name: "Review scene result" });
   const responseFor = (width: number) =>
     JSON.stringify({
@@ -225,13 +484,25 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
   await expect(panel.getByRole("alert")).toContainText(
     "must match the saved request",
   );
-  await resultText.fill(responseFor(generated.width));
+  const module = `export default ${responseFor(generated.width)};`;
+  await resultText.fill(`${module}\nconsole.log("unexpected code");`);
+  await submit.click();
+  await expect(panel.getByRole("alert")).toContainText(
+    "containing only export default",
+  );
+  await resultText.fill(`\`\`\`javascript\n${module}\n\`\`\``);
+  await panel.getByLabel("Upload scene result").setInputFiles({
+    name: "scene.mjs",
+    mimeType: "text/javascript",
+    buffer: Buffer.from(module),
+  });
   await submit.click();
   const review = page.getByRole("dialog", { name: "Review AI changes" });
   await expect(review).toContainText("New timeline clip");
-  await expect(
-    page.frameLocator('iframe[title="Proposed scene"]').getByText("New Galaxy"),
-  ).toBeVisible();
+  await expect(review).toContainText("New Galaxy");
+  const proposed = page.frameLocator('iframe[title="Proposed scene"]');
+  await expect(proposed.locator("#galaxy-label")).toHaveCount(0);
+  await review.getByRole("slider", { name: "Comparison time" }).fill("2");
   const proposedCanvas = page
     .frameLocator('iframe[title="Proposed scene"]')
     .locator("canvas");
@@ -265,7 +536,7 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
   await page.getByRole("button", { name: "Edit / Update" }).click();
   const edit = page.getByRole("dialog", { name: "Edit / Update" });
   await expect(edit).toContainText("Source revision 1");
-  await edit.getByLabel("Editable property").selectOption("1");
+  await expect(edit.getByLabel("planet.x at 1.000s")).toHaveValue("100");
   await edit.getByLabel("planet.x at 1.000s").fill("320");
   await expect(
     edit.getByRole("button", { name: "Download ZIP" }),
@@ -277,10 +548,14 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
   const editPackage = await editResponse;
   expect(editPackage.ok(), await editPackage.text()).toBe(true);
   const { result: editTask } = await editPackage.json();
+  expect(editTask.prompt).toContain("return one JavaScript module");
+  expect(editTask.prompt).toContain(
+    "references/preview-frames/keyframe-1.000s.png",
+  );
   await edit.getByRole("button", { name: "Import AI result" }).click();
   const intake = page.getByRole("dialog", { name: "Import AI result" });
   await intake.getByLabel("Paste AI result").fill(
-    JSON.stringify({
+    `export default ${JSON.stringify({
       contractVersion: "1",
       type: "scene-patch",
       requestId: editTask.requestId,
@@ -295,11 +570,42 @@ test("generates an editable scene through the Prompt Builder and undoes the addi
           value: 320,
         },
       ],
-    }),
+    })};`,
   );
   await intake.getByRole("button", { name: "Review result" }).click();
   await expect(review).toContainText("planet.x at 1.000s: 100 → 320");
   await review.getByRole("button", { name: "Apply changes" }).click();
+  await page.getByRole("button", { name: "Extend", exact: true }).click();
+  const extend = page.getByRole("dialog", { name: "Extend clip" });
+  await expect(extend.getByRole("button", { name: "Generate continuation" })).toHaveCount(0);
+  await extend.getByRole("button", { name: "Cancel" }).click();
+
+  await page.getByRole("slider", { name: "Timeline position" }).fill("2");
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  const exportDialog = page.getByRole("dialog", { name: "Export animation" });
+  await exportDialog.getByLabel("Export format").selectOption("png");
+  const [png] = await Promise.all([
+    page.waitForEvent("download"),
+    exportDialog.getByRole("button", { name: "Render & download" }).click(),
+  ]);
+  const exportedPixels = await page.evaluate(async (base64) => {
+    const image = new Image();
+    image.src = "data:image/png;base64," + base64;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext("2d")!;
+    context.drawImage(image, 0, 0);
+    return [[320, 40], [90, 130], [320, 180]].map(([x, y]) =>
+      Array.from(context.getImageData(x, y, 1, 1).data),
+    );
+  }, (await readFile(await png.path())).toString("base64"));
+  expect(exportedPixels).toEqual([
+    [0, 136, 255, 255],
+    [255, 136, 0, 255],
+    [8, 13, 32, 255],
+  ]);
   const undo = page.getByRole("button", { name: "Undo project change" });
   await undo.click();
   await expect(page.locator(".track-clip")).toContainText("New Galaxy");
@@ -484,9 +790,9 @@ for (const scope of ["clip", "shared"] as const)
         operations: [
           {
             op: "set-keyframe-value",
-            nodeId: scene.star.id,
+            nodeId: scene.star!.id,
             property: "glowIntensity",
-            keyframeId: scene.star.keyframe.id,
+            keyframeId: scene.star!.keyframe.id,
             value: 0.8,
           },
         ],
@@ -606,9 +912,9 @@ test("reviews paste, upload and combined results, and applies one undoable chang
     review.getByRole("button", { name: "Discard changes" }).click();
   const uploadPatch = () =>
     upload.setInputFiles({
-      name: "patch.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(patch),
+      name: "patch.mjs",
+      mimeType: "text/javascript",
+      buffer: Buffer.from(`export default ${patch};`),
     });
   const seek = review.getByRole("slider", { name: "Comparison time" });
 
@@ -694,7 +1000,7 @@ test("reviews paste, upload and combined results, and applies one undoable chang
     .toEqual({
       ...scene,
       revision: 15,
-      star: { ...scene.star, keyframe: { ...scene.star.keyframe, value: 0.8 } },
+      star: { ...scene.star, keyframe: { ...scene.star!.keyframe, value: 0.8 } },
     });
 
   await panel

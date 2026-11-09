@@ -20,11 +20,14 @@ import {
   textLayerSchema,
 } from "../shared/typography";
 import { selectedScene } from "../shared/workflow";
+import type { PreviewShapePick } from "./preview-shapes";
 import { Check } from "lucide-react";
 export function Preview({
   run,
   select,
   onSelect,
+  shapeSelection,
+  onShapePick,
   onReady,
   onVisual,
   onConsole,
@@ -42,6 +45,8 @@ export function Preview({
   run: number;
   select: boolean;
   onSelect: (s: any) => void;
+  shapeSelection: { clipId: string; objectId: string } | null;
+  onShapePick: (pick: PreviewShapePick) => void;
   onReady: (s: any) => void;
   onVisual: (s: any) => void;
   onConsole: (entries: PreviewConsoleEntry[]) => void;
@@ -61,6 +66,7 @@ export function Preview({
   const textGesture = useRef<{ id: string; revision: number } | null>(null);
   const setError = useStudio((s) => s.setError);
   const project = projectOverride ?? storedProject;
+  const clip = selectedScene(project);
   const [active, setActive] = useState<number | null>(null);
   const [candidate, setCandidate] = useState<number | null>(null);
   const [frames, setFrames] = useState<
@@ -208,6 +214,10 @@ export function Preview({
     project.js,
     project.settings,
     project.assets,
+    clip?.id,
+    clip?.locked,
+    clip?.sourceOffset,
+    clip?.structuredEdit,
     textEditing,
     resolutionScale,
     shortcutKeys,
@@ -351,6 +361,7 @@ export function Preview({
         onReady(e.data.value);
       }
       if (e.data.type === "selection" && visible) onSelect(e.data.value);
+      if (e.data.type === "shape-pick" && visible) onShapePick(e.data.value);
       if (e.data.type === "visual" && visible) onVisual(e.data.value);
     };
     window.addEventListener("message", handler);
@@ -359,6 +370,7 @@ export function Preview({
     candidate,
     frames,
     onSelect,
+    onShapePick,
     onReady,
     onVisual,
     onConsole,
@@ -384,6 +396,12 @@ export function Preview({
       "*",
     );
   }, [select, active]);
+  useEffect(() => {
+    activeRef.current?.contentWindow?.postMessage(
+      { framescript: true, type: "shape-selection", value: shapeSelection },
+      "*",
+    );
+  }, [shapeSelection?.clipId, shapeSelection?.objectId, active]);
   const s = Math.max(0.01, fit * zoom);
   const editingLayer =
     inlineText && textEditing

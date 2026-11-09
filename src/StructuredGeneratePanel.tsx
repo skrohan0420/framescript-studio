@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { sceneEditTargets } from "../shared/structured-edit";
 import {
   generateInputSchema,
   parseGenerateResult,
@@ -70,8 +71,10 @@ export function StructuredGeneratePanel({
       const session = useStudio.getState().session;
       if (text.length > 65536 || (file && file.size > 65536))
         throw Error("The scene result exceeds the 64 KB limit.");
-      if (file && !file.name.toLowerCase().endsWith(".json"))
-        throw Error("Upload a .json scene result.");
+      if (file && !/\.(mjs|js|json)$/i.test(file.name))
+        throw Error(
+          "Upload a generated .mjs or .js file, or a legacy .json result.",
+        );
       const pasted = text.trim() ? parseGenerateResult(text) : undefined;
       const uploaded = file
         ? parseGenerateResult(await file.text())
@@ -118,7 +121,7 @@ export function StructuredGeneratePanel({
       return (
         <SceneReview
           after={generated}
-          initialTime={scene.star.keyframe.frame / scene.fps}
+          initialTime={(sceneEditTargets(scene)[0]?.frame ?? 0) / scene.fps}
           explanation={
             <>
               <p>
@@ -168,8 +171,8 @@ export function StructuredGeneratePanel({
   return (
     <Modal title="Generate structured scene" open onClose={onClose}>
       <p>
-        Generate a star, title and optional native circles or rectangles with
-        editable position and opacity tracks.
+        Create a scene with shapes, a star, or an on-screen title. Shapes can
+        have editable position and opacity tracks.
       </p>
       <p>
         {initial.width} × {initial.height} · {initial.fps} fps ·{" "}
@@ -304,7 +307,7 @@ export function StructuredGeneratePanel({
         />
       )}
       <label className="field">
-        Paste AI scene result
+        Paste generated scene code
         <textarea
           value={text}
           disabled={busy}
@@ -312,10 +315,10 @@ export function StructuredGeneratePanel({
         />
       </label>
       <label className="field">
-        Upload scene JSON
+        Upload scene result
         <input
           type="file"
-          accept=".json,application/json"
+          accept=".mjs,.js,.json"
           disabled={busy}
           onChange={(event) => setFile(event.target.files?.[0])}
         />

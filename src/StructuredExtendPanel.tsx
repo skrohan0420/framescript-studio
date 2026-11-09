@@ -110,9 +110,13 @@ export function StructuredExtendPanel({
             </label>
           )}
           <h3>Generate new animation</h3>
-          <button onClick={() => setContinuation(true)}>
-            Generate continuation
-          </button>
+          {timing.clip.structuredEdit?.star ? (
+            <button onClick={() => setContinuation(true)}>
+              Generate continuation
+            </button>
+          ) : (
+            <p>Generated continuation is available for star glow.</p>
+          )}
         </>
       ) : (
         <p role="alert">

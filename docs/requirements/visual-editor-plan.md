@@ -50,7 +50,7 @@ Persist the edited state through save/reopen and include it in the next AI ZIP a
 
 Standardize how content connects to FrameScript: stable IDs, time, dependencies, editable property declarations, module lifecycle and validation. Allow artistic freedom in composition, visual style, drawing techniques and supported procedural behavior.
 
-A narrow vocabulary can restrict creative output. The current mandatory star and small shape set are temporary milestone constraints, not the intended production vocabulary. Native nodes should cover common editing needs while procedural modules support more complex visuals.
+A narrow vocabulary can restrict creative output. The current model supports scenes with circles, rectangles, an optional star and an optional on-screen label. Native nodes should cover common editing needs while procedural modules support more complex visuals.
 
 There is a real tradeoff between procedural freedom and editable coverage. A complex galaxy can expose a few useful parameters without exposing every particle as a node. Choose meaningful controls rather than requiring every implementation detail to be individually editable.
 
@@ -58,8 +58,8 @@ The AI must satisfy both the creative brief and the code contract. Concise schem
 
 ## Proposed development order
 
-1. General scene objects, stable IDs and typed editable properties; remove the mandatory-star restriction from the production scene model.
-2. Object list and contextual right-panel inspector with validated changes and Undo/Redo.
+1. General scene objects, stable IDs and typed editable properties. Shapes-only scenes are supported and the next step is to expose these properties in the editor.
+2. The Properties tab lists circles and rectangles in the active structured clip. Edit position, dimensions, fill and opacity as base values, or edit existing position and opacity keyframes at their displayed source times. Press Enter or leave a field to apply one undoable change. Edits default to the active clip and can explicitly apply to all linked clips with matching, unlocked source.
 3. Preview selection, hit testing and selection bounds.
 4. Dragging, resizing and rotation, then snapping/alignment and keyboard interactions.
 5. Keyframe-aware inspector/manipulation modes connected to the timeline.

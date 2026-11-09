@@ -1,6 +1,11 @@
 import { documentFor } from "../shared/runtime";
-import { sceneOffset } from "../shared/workflow";
+import { sceneOffset, selectedScene } from "../shared/workflow";
 import type { Project } from "../shared/project";
+import {
+  matchesStructuredSceneCode,
+  structuredShapeValuesSource,
+} from "../shared/structured-star";
+import { previewShapes } from "./preview-shapes";
 import { keyboardChord } from "./shortcuts";
 
 export type PreviewQuality = "auto" | "1080" | "full";
@@ -361,6 +366,7 @@ function lazyComposition(
 ) {
   const w = window as any;
   const loaded = new Map<number, HTMLIFrameElement>();
+  const shapeMessages = new Map<string, unknown>();
   let current = 0,
     time = 0;
   w.__fsConsoleTarget = () => loaded.get(current)?.contentWindow;
@@ -373,6 +379,10 @@ function lazyComposition(
       },
       "*",
     );
+  const syncShapes = (index: number) => {
+    for (const message of shapeMessages.values())
+      loaded.get(index)?.contentWindow?.postMessage(message, "*");
+  };
   w.renderFrame = (value: number) => {
     time = value;
     current = scenes.findIndex(
@@ -404,14 +414,28 @@ function lazyComposition(
   };
   window.addEventListener("message", (event) => {
     if (!event.data?.framescript) return;
+    if (event.source === parent) {
+      const { type } = event.data;
+      if (type === "select" || type === "shape-selection") {
+        shapeMessages.set(
+          type,
+          type === "select" ? { ...event.data, type: "select-shapes" } : event.data,
+        );
+        for (const index of loaded.keys()) syncShapes(index);
+      }
+      return;
+    }
     const entry = [...loaded].find(
       ([, frame]) => frame.contentWindow === event.source,
     );
     if (!entry) return;
-    if (event.data.type === "ready") seek(entry[0]);
+    if (event.data.type === "ready") {
+      seek(entry[0]);
+      syncShapes(entry[0]);
+    }
     if (
       entry[0] === current &&
-      ["error", "preview-console", "preview-shortcut"].includes(event.data.type)
+      ["error", "preview-console", "preview-shortcut", "shape-pick"].includes(event.data.type)
     )
       parent.postMessage(event.data, "*");
   });
@@ -424,6 +448,7 @@ export function previewDocument(
   composition?: Project,
   sourceOffset?: number,
   shortcuts?: string[],
+  clip = selectedScene(project),
 ): string {
   let p = project;
   if (composition?.workflow?.scenes.length) {
@@ -444,6 +469,7 @@ export function previewDocument(
         undefined,
         scene.sourceOffset,
         shortcuts,
+        scene,
       ),
     }));
     p = {
@@ -455,9 +481,22 @@ export function previewDocument(
     };
   }
   const source = documentFor(p, { textEditing, sourceOffset });
+  const scene = clip?.structuredEdit;
+  const shapeScript =
+    !composition && clip && !clip.locked && scene?.objects?.length &&
+    matchesStructuredSceneCode(p, scene)
+      ? `(${previewShapes.toString()})(${JSON.stringify({
+          clipId: clip.id,
+          sceneId: scene.sceneId,
+          revision: scene.revision,
+          width: scene.width,
+          height: scene.height,
+          objects: scene.objects,
+        }).replaceAll("<", "\\u003c")},(object,seconds)=>{${structuredShapeValuesSource(scene.fps)}return values;});`
+      : "";
   // A single line keeps existing user-code line mapping intact.
   const script =
-    `(()=>{const __name=(fn)=>fn;(${previewRuntime.toString()})(${scale},${JSON.stringify(shortcuts)},(${keyboardChord.toString()}));})()`.replace(
+    `(()=>{const __name=(fn)=>fn;(${previewRuntime.toString()})(${scale},${JSON.stringify(shortcuts)},(${keyboardChord.toString()}));${shapeScript}})()`.replace(
       /\r?\n/g,
       " ",
     );

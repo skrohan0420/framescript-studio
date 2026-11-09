@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseStructuredResult } from "./structured-result";
 
 const version = z.literal("1");
 const id = z.string().min(1).max(128);
@@ -57,34 +58,40 @@ export const editSceneSchema = z
         value: glow,
       })
       .optional(),
-    star: z.strictObject({
-      id,
-      moduleVersion: version,
-      modulePath: z.literal("source/modules/star.mjs"),
-      glowIntensity: glow,
-      keyframe: z.strictObject({ id, frame, value: glow }),
-    }),
-    label: z.strictObject({ id, text: z.string().min(1) }),
+    star: z
+      .strictObject({
+        id,
+        moduleVersion: version,
+        modulePath: z.literal("source/modules/star.mjs"),
+        glowIntensity: glow,
+        keyframe: z.strictObject({ id, frame, value: glow }),
+      })
+      .optional(),
+    label: z.strictObject({ id, text: z.string().min(1) }).optional(),
   })
   .refine(
     (scene) =>
-      scene.star.id !== scene.label.id &&
-      scene.star.keyframe.frame < scene.durationFrames &&
+      (!scene.star || scene.star.keyframe.frame < scene.durationFrames) &&
       scene.durationFrames / scene.fps >= 0.1 &&
       scene.durationFrames / scene.fps <= 600,
-    "Node IDs must differ and the keyframe must fall within the scene",
+    "Duration or star keyframe is outside the supported range",
+  )
+  .refine(
+    (scene) => !!(scene.star || scene.label || scene.objects?.length),
+    "Include a star, an on-screen label, or at least one shape",
   )
   .refine(
     (scene) =>
       !scene.continuation ||
-      (scene.continuation.startFrame < scene.continuation.endFrame &&
+      (!!scene.star &&
+        scene.continuation.startFrame < scene.continuation.endFrame &&
         scene.continuation.endFrame <= scene.durationFrames),
-    "Invalid continuation interval",
+    "A continuation requires a star and a valid frame interval",
   )
   .refine((scene) => {
     const ids = [
-      scene.star.id,
-      scene.label.id,
+      ...(scene.star ? [scene.star.id] : []),
+      ...(scene.label ? [scene.label.id] : []),
       ...(scene.objects ?? []).map((item) => item.id),
     ];
     return (
@@ -106,16 +113,19 @@ export const editSceneSchema = z
   }, "Duplicate IDs, invalid tracks or out-of-range keyframes");
 
 export function sceneEditTargets(scene: z.infer<typeof editSceneSchema>) {
+  const star = scene.star;
   return [
-    {
-      nodeId: scene.star.id,
-      property: "glowIntensity" as const,
-      keyframeId: scene.star.keyframe.id,
-      frame: scene.star.keyframe.frame,
-      value: scene.star.keyframe.value,
-      min: 0,
-      max: 1,
-    },
+    ...(star
+      ? [{
+          nodeId: star.id,
+          property: "glowIntensity" as const,
+          keyframeId: star.keyframe.id,
+          frame: star.keyframe.frame,
+          value: star.keyframe.value,
+          min: 0,
+          max: 1,
+        }]
+      : []),
     ...(scene.objects ?? []).flatMap((object) =>
       object.tracks.map((track) => ({
         nodeId: object.id,
@@ -158,31 +168,6 @@ export function parseEditResult(text: string) {
   return parseStructuredResult(text, editPatchSchema, "patch");
 }
 
-export function parseStructuredResult<T>(
-  text: string,
-  schema: z.ZodType<T>,
-  name: string,
-) {
-  const trimmed = text.trim();
-  const fenced = /^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i.exec(trimmed);
-  let value: unknown;
-  try {
-    value = JSON.parse(fenced?.[1] ?? trimmed);
-  } catch {
-    throw Error(
-      `The result must contain one JSON ${name}. Paste or upload the complete JSON.`,
-    );
-  }
-  const result = schema.safeParse(value);
-  if (!result.success)
-    throw Error(
-      result.error.issues
-        .map((issue) => `${issue.path.join(".") || "Result"}: ${issue.message}`)
-        .join("\n"),
-    );
-  return result.data;
-}
-
 // Produce a review candidate without mutating or advancing the saved scene.
 export function prepareEditCandidate(
   sceneInput: unknown,
@@ -222,7 +207,7 @@ export function prepareEditCandidate(
     throw Error("Value differs from the saved request");
 
   if (operation.property === "glowIntensity")
-    scene.star.keyframe.value = operation.value;
+    scene.star!.keyframe.value = operation.value;
   else {
     const object = scene.objects!.find((item) => item.id === operation.nodeId)!;
     object.tracks.find(
