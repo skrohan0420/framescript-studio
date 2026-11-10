@@ -179,7 +179,45 @@ To repeat the check:
 
 - The selection arrow picks native circles and rectangles in clip and combined previews. Picking uses the canvas coordinates and rendered source time, skips fully transparent shapes and locked clips, and chooses the topmost hit. Selection bounds follow the shape as the playhead moves, and the Properties object picker and preview selection stay in sync.
 - TypeScript passed. Four focused Playwright checks passed with host Chromium on an isolated port: scaled and trimmed shape picking, overlap and ellipse geometry, picker synchronization and combined clip switching; the existing shape inspector workflow; and both DOM preview selection/editing checks.
-- Next: shape dragging and resize handles.
+- Shape dragging and resize handles are paused while work continues on AI packaging.
+
+### Stage 5 Edit and Extend package context — 9 November 2026
+
+- Edit and Extend now share Generate's image and example-code attachment picker and ZIP layout. They also accept one optional capture by source frame number within the selected clip. Extend accepts context frames before the handoff. The required keyframe and handoff captures remain part of their respective packages.
+- The server renders captures from the packaged revision, records their source frames and revision in the manifest, and hashes each ZIP entry. The copied prompt lists the selected context. Changing an attachment or frame invalidates the old prompt.
+- TypeScript, all 12 structured Edit unit tests, and all nine structured workflow browser tests passed. Browser checks verified ZIP paths and prompt agreement, the Edit reference hash and capture metadata, prompt invalidation, and rejection of a handoff frame submitted as optional Extend context through the API.
+- Remaining at this checkpoint: focused long-scene context, dependency closure, measured package budgets and outstanding acceptance cases. Requirement 8 still needs broader scene and procedural module contracts.
+
+### Stage 5 focused Extend packaging — 9 November 2026
+
+- Measured actual Extend ZIPs with the 30 fps Fireworks Galaxy fixture and one optional frame 15 frames before handoff. The six-second and nine-minute 640 × 360 versions both used about 79 KB before compression. A nine-minute source with 20 animated shapes and a 60-second selected tail used 202 KB at 1080p and 1.16 MB at 8K. Frame resolution and scene contents mattered more than duration for the supported contract.
+- Extend now centers every package on the handoff. The manifest references the single canonical scene file, and the handoff context supplies the starting glow and preserved frame range. The dense fixtures saved about 17 KB of uncompressed data by removing the duplicate source. The required handoff PNG, optional earlier PNG, canonical scene and star module matched the baseline byte for byte in all four fixtures. Every listed entry's size and SHA-256 hash matched the ZIP.
+- Set an 8 MiB limit on all uncompressed ZIP entries, including the manifest. The focused 8K fixture used 1,144,361 bytes, leaving room for the existing 6 MiB reference allowance. An oversized request fails with the largest entries listed so the creator can reduce context.
+- TypeScript and both focused Extend browser checks passed, including oversized-package rejection, continuation review, and Undo/Redo. The budget is based on package measurements. A live AI comparison of the focused package remains open.
+- At this checkpoint, Edit packaging and general procedural dependency closure remained open. Live shape editing remains paused.
+
+### Stage 5 range-focused Edit packaging — 9 November 2026
+
+- Measured four Edit ZIPs at 30 fps with a required keyframe PNG and an optional PNG 15 frames earlier. The six-second and nine-minute 640 × 360 fixtures both used about 79 KB before compression. Nine-minute fixtures with 20 animated shapes and a 60-second selected tail used 186 KB at 1080p and 1.15 MB at 8K.
+- Edit now puts the selected clip range, target keyframe, current and requested values, edit scope and capture paths in `context/edit-range.json`. The full scene and its declared star module stay in the ZIP because the track can depend on or affect frames outside the selected range. The focus is on the current clip rather than a separate range selector.
+- Edit shares Extend's 8 MiB uncompressed budget and entry size and hash metadata. The new context and metadata added about 1.3 KB per fixture. All four packages retained identical canonical source, module and capture bytes. Verified exact trimmed range and target values and checked every listed entry's size and SHA-256 hash.
+- TypeScript and all nine structured workflow browser tests passed. Coverage includes oversized Edit requests, optional capture bounds, and clip-only and shared edits from trimmed clips at double playback speed.
+- At this checkpoint, live AI comparisons and acceptance cases remained open, along with a separate Edit range selector and dependency closure for general procedural modules.
+
+### Stage 5 structured handoff acceptance — 10 November 2026
+
+- Deferred the live AI comparison of the focused Edit and Extend packages. Earlier live handoffs verified the JavaScript module workflow before the focused packaging changes.
+- TypeScript and three focused browser cases passed. Generate, Edit and Extend reject JavaScript results with unsupported contract versions or missing required metadata. Edit rejects conflicting pasted and uploaded results. Edit and Extend block Apply when their source changes during review.
+- The Extend API rejects caller-supplied required capture metadata. It renders required evidence from the packaged revision and rejects optional capture frames outside the selected clip. The separate manual-save scenario with a newer source draft and an older applied preview still needs a focused browser check.
+
+### Workspace render investigation — 10 November 2026
+
+- Reproduced frame drift in timelines 1 and 5 of the five-timeline `ad` project. Their standalone animation loops continued drawing after FrameScript sought or paused. Timeline 3 also restarted its loop on canvas clicks. Timeline 4 registered its own playback keys alongside the editor.
+- Created a repaired project copy with the standalone playback code gated when FrameScript owns the clock. Compared the snapshots and confirmed only timeline JavaScript and its selected-clip projection changed. Chromium checks passed on all five timelines for paused frames, clicks, backward seeks and forward motion in the repaired preview and export documents.
+- The repaired Timeline 5 sample decoded all 120 frames at 1080p and 60 fps. At 1.5s, it matched the independently rendered still more closely than the latest existing export (SSIM 0.962 versus 0.848). Local evidence is in `test-results/render-investigation/`.
+- Re-exported the full 20-second Timeline 5 at 1080p and 60 fps. FFmpeg decoded all 1,200 frames without errors.
+- Follow-up in the actual editor UI confirmed that the original Timeline 5 playhead stopped on Pause while its canvas kept changing. With the repaired copy, both stopped. The active saved workspace still contained the original JavaScript at the time of the check.
+- At the creator's request, backed up the active `ad` project and applied the five verified script repairs through the local workspace API. Confirmed the repaired scripts were persisted in both the workspace and the named project. An already open editor tab needs a reload to pick up the saved code.
 
 ### Progress report template
 

@@ -3,6 +3,16 @@ import type { Project } from "../shared/project";
 import type { RpcResults } from "../shared/rpc";
 import { bridge, download } from "./bridge";
 import { Modal } from "./components";
+import {
+  ContextFrame,
+  PromptReferences,
+  validContextFrame,
+} from "./PromptReferences";
+import {
+  contextFrameRange,
+  structuredContextLimitMiB,
+  type PromptReferences as References,
+} from "../shared/prompt-references";
 import { structuredClipTiming } from "../shared/structured-edit-timing";
 import { sceneEditTargets } from "../shared/structured-edit";
 import {
@@ -30,6 +40,8 @@ export function StructuredEditPanel({
   const [scope, setScope] = useState<"clip" | "shared">("clip");
   const [useApplied, setUseApplied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [references, setReferences] = useState<References>([]);
+  const [capture, setCapture] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [intake, setIntake] = useState(false);
@@ -49,8 +61,20 @@ export function StructuredEditPanel({
   const target = targets[targetIndex] ?? targets[0];
   const value =
     enteredValue ??
-    (target?.property === "glowIntensity" ? "0.8" : String(target?.value ?? ""));
+    (target?.property === "glowIntensity"
+      ? "0.8"
+      : String(target?.value ?? ""));
   const timing = clip && target && structuredClipTiming(clip, target);
+  const placement = timing && {
+    sourceOffset: timing.sourceOffset,
+    duration: timing.duration,
+  };
+  const { first, last } =
+    scene && placement
+      ? contextFrameRange(scene, placement)
+      : { first: 0, last: -1 };
+  const captureFrame = capture === "" ? undefined : Number(capture);
+  const validCapture = validContextFrame(captureFrame, first, last);
   const supported =
     !!target && supportsStructuredClip(project, clip, source, target);
   const snapshot = JSON.stringify({
@@ -61,6 +85,7 @@ export function StructuredEditPanel({
     useApplied,
     scope,
     target,
+    capture,
   });
   const ready = supported && (!pending || useApplied);
   const validValue =
@@ -75,7 +100,8 @@ export function StructuredEditPanel({
     setNotice("");
   };
   const exportZip = async () => {
-    if (!scene || !timing || !ready || !validValue || busy) return;
+    if (!scene || !placement || !ready || !validValue || !validCapture || busy)
+      return;
     resetExport();
     setBusy(true);
     try {
@@ -84,13 +110,14 @@ export function StructuredEditPanel({
         scene,
         Number(value),
         clipId,
-        { sourceOffset: timing.sourceOffset, duration: timing.duration },
+        placement,
         scope,
         target && {
           nodeId: target.nodeId,
           property: target.property,
           keyframeId: target.keyframeId,
         },
+        { references, captureFrame },
       );
       setExported({ snapshot, result });
       download(result);
@@ -180,7 +207,7 @@ export function StructuredEditPanel({
           </label>
           <p>Package contents</p>
           <ul>
-            <li>Task, manifest and Edit result schema</li>
+            <li>Task, selected clip range, manifest and Edit result schema</li>
             <li>
               {scene.star ? "Scene source and Canvas module" : "Scene source"}
             </li>
@@ -188,6 +215,10 @@ export function StructuredEditPanel({
               Required PNG of the keyframe at source revision {scene.revision}
             </li>
           </ul>
+          <p>
+            The Edit ZIP can include up to {structuredContextLimitMiB} MiB of
+            context before compression.
+          </p>
         </>
       )}
       {pending && (
@@ -212,13 +243,49 @@ export function StructuredEditPanel({
             : "Edit requires an unlocked structured clip containing the source keyframe, with its original dimensions and frame rate in seek mode."}
         </p>
       )}
+      {ready && (
+        <>
+          <PromptReferences
+            references={references}
+            busy={busy}
+            onChange={(files) => {
+              setReferences(files);
+              resetExport();
+            }}
+            run={async (action) => {
+              setError("");
+              setBusy(true);
+              try {
+                await action();
+              } catch (failure) {
+                setError((failure as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          />
+          <ContextFrame
+            value={capture}
+            onChange={(frame) => {
+              setCapture(frame);
+              resetExport();
+            }}
+            busy={busy}
+            first={first}
+            last={last}
+          />
+          {!validCapture && (
+            <p role="alert">Choose a whole source frame within the clip.</p>
+          )}
+        </>
+      )}
       {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}
       <div className="modal-actions">
         <button onClick={onClose}>Close</button>
         <button onClick={() => setIntake(true)}>Import AI result</button>
         <button
-          disabled={!ready || !validValue || busy}
+          disabled={!ready || !validValue || !validCapture || busy}
           onClick={() => void exportZip()}
         >
           {busy ? "Preparing ZIP…" : "Download ZIP"}

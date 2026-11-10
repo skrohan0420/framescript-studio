@@ -56,9 +56,10 @@ The first built-in star workflow uses **Extend → Generate continuation**. Expo
 
 ## Focused context for long scenes
 
-- Use a scene duration threshold of **X minutes** to offer focused packaging. Determine X after testing representative projects and reviewing package sizes and AI result quality. Check actual source complexity, asset size, captures and context budgets for every package, including short scenes.
-- For a long **Edit**, default to the selected time range when available. Include relevant objects, tracks, code, assets and frames, together with a short summary of the wider scene. Keep the requested edit scope visible even when its dependencies reach outside the range.
-- For a long **Extend**, focus on the handoff. Include the final frame, a nearby frame showing motion when useful, available object and camera state, the source and assets needed for continuity, and instructions for the added time. Preserve the earlier segment when applying the result.
+- For the current **Edit** and **Extend** contracts, use the selected clip and task to focus the context at every duration. Measurements found that resolution and scene contents mattered more than duration. Revisit duration thresholds for broader renderer contracts when there are representative fixtures and AI result quality evidence.
+- **Edit** uses the selected clip's source range. `context/edit-range.json` records the exact range, its first and last visible frames, the target keyframe and values, the clip-only or shared scope, and the capture paths. The ZIP keeps the full canonical scene and any declared built-in star module because interpolation and shared edits can depend on or affect frames outside the selected range.
+- **Extend** focuses on the handoff at every duration under the current star contract. The ZIP includes the required handoff PNG, optional earlier PNG and attachments, the full canonical scene, and its built-in star module. `context/handoff.json` provides the starting glow, preserved source range and continuation interval. The manifest points to `source/scene.json` and records each entry's byte count and hash.
+- Edit and Extend each allow **8 MiB of uncompressed ZIP entries**, including the manifest. The limit covers the measured 8K two-frame fixtures plus the existing 6 MiB reference allowance with headroom. If a package exceeds the limit, the export reports the largest files so the creator can reduce optional context or source size. Required evidence and the canonical source stay in every successful package.
 - Use declared dependencies to isolate structured scene context. For legacy HTML/CSS/JavaScript, include the full source when dependencies cannot be safely isolated and the source fits the budget. When required context exceeds the budget, identify what makes it too large and offer ways to reduce optional context. Block export if a self-contained package still cannot fit.
 
 ## ZIP structure
@@ -73,6 +74,7 @@ framescript-prompt.zip
 ├── context/
 │   ├── brief.json
 │   ├── narration.srt
+│   ├── edit-range.json
 │   └── handoff.json
 ├── source/
 │   └── scene.json or HTML/CSS/JS and modules
@@ -149,11 +151,15 @@ Use one review screen for Generate, Edit and Extend, with a summary specific to 
 - Define the incoming scene or patch, optional modules and assets, and continuity or generation metadata. Validate manifest type and version, dependencies, paths, hashes and formats before applying changes.
 - Set archive, expanded-size and context limits. Check for traversal, ZIP bombs, malformed manifests and exposed secrets. Keep reference files outside the execution path. Present import diagnostics and allow human review.
 
-## Current Generate reference support
+## Current reference and capture support
 
 The Stage 5 Generate panel accepts optional PNG/JPEG/WebP images and JS/CSS/HTML/JSON/TXT example code. The ZIP places these under `references/images/<number>.<type>` and `references/example-code/<number>.txt`. The manifest retains original names, roles and hashes; TASK.md and the copied prompt list the same paths. No extra manual image attachment is needed when the receiving AI can inspect the ZIP.
 
-Limits are six files, 2 MiB per file and 8,388,608 base64 characters total (approximately 6 MiB decoded). Changing the brief or reference list invalidates the prior prompt. References provide guidance within the supported renderer capabilities; they are not runtime assets or executable modules. Automated coverage includes an image and example code in the Generate handoff. A live external AI test of this expanded package remains outstanding. Edit/Extend reference selection and focused long-scene packaging remain planned.
+Generate, Edit and Extend share the same attachment limits: six files, 2 MiB per file and 8,388,608 base64 characters total (approximately 6 MiB decoded). The ZIP stores attachments at numbered paths, with their original names, roles and SHA-256 hashes in the manifest. References provide visual guidance or example code. FrameScript does not load them as runtime assets or execute them. The Generate handoff with an image and example code has been verified live.
+
+Edit and Extend also accept one optional capture by source frame number within the selected clip. Edit still includes the required keyframe PNG. Extend still includes the required handoff PNG, and its optional capture must precede the handoff. The server renders both PNGs from the packaged scene revision and records their source frames and revision in the manifest. The matching prompt lists the optional context. Changing the attachment list or capture selection requires downloading a new ZIP before copying its prompt.
+
+Focused Edit uses the selected clip range. A separate range selector and dependency closure for general runtime modules remain open. The built-in star is the only declared runtime module in the current Edit and Extend contracts.
 
 ## Deliverables and acceptance
 

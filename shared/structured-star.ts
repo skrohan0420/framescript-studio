@@ -3,6 +3,17 @@ import type { editSceneSchema } from "./structured-edit";
 
 export type StructuredEditScene = z.infer<typeof editSceneSchema>;
 
+export function starGlowAtSourceFrame(
+  star: NonNullable<StructuredEditScene["star"]>,
+  frame: number,
+) {
+  const { keyframe, glowIntensity } = star;
+  return keyframe.frame === 0
+    ? keyframe.value
+    : glowIntensity +
+        (keyframe.value - glowIntensity) * Math.min(1, frame / keyframe.frame);
+}
+
 // Keep picking and rendering on the same interpolation without changing
 // the generated source stored in existing projects.
 export function structuredShapeValuesSource(fps: number) {
@@ -63,12 +74,7 @@ export function structuredStarCode(scene: StructuredEditScene) {
   }
   const extension = scene.continuation;
   if (extension && star && keyframe) {
-    const from =
-      keyframe.frame === 0
-        ? keyframe.value
-        : star.glowIntensity +
-          (keyframe.value - star.glowIntensity) *
-            Math.min(1, extension.startFrame / keyframe.frame);
+    const from = starGlowAtSourceFrame(star, extension.startFrame);
     code.js += `\nconst originalFrame = window.renderFrame;
 window.renderFrame = seconds => {
   originalFrame(seconds);

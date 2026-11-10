@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { promptContextSchema } from "./prompt-references";
 import { extendInputSchema, type ExtendTask } from "./structured-extend";
 import {
   generateInputSchema,
@@ -54,6 +55,7 @@ export const rpcSchemas = {
     editPlacementSchema.optional(),
     editScopeSchema.optional(),
     editTargetSchema.optional(),
+    promptContextSchema.optional(),
   ]),
   structuredEditRequest: z.tuple([z.string().uuid()]),
   session: empty,

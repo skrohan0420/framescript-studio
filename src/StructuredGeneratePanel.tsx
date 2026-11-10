@@ -1,3 +1,4 @@
+import { PromptReferences } from "./PromptReferences";
 import { useState } from "react";
 import { sceneEditTargets } from "../shared/structured-edit";
 import {
@@ -190,95 +191,17 @@ export function StructuredGeneratePanel({
           }}
         />
       </label>
-      <label className="field">
-        Reference images and example code
-        <input
-          type="file"
-          multiple
-          accept=".png,.jpg,.jpeg,.webp,.js,.css,.html,.json,.txt"
-          disabled={busy}
-          onChange={(event) => {
-            const files = Array.from(event.target.files ?? []);
-            event.target.value = "";
-            void run(async () => {
-              if (references.length + files.length > 6)
-                throw Error("Choose at most six references.");
-              const added: typeof references = [];
-              for (const file of files) {
-                if (file.size > 2 * 1024 * 1024)
-                  throw Error("Each reference must fit within 2 MB.");
-                const extension = file.name.split(".").pop()?.toLowerCase();
-                const kind =
-                  extension === "png"
-                    ? "png"
-                    : extension === "jpg" || extension === "jpeg"
-                      ? "jpeg"
-                      : extension === "webp"
-                        ? "webp"
-                        : "code";
-                if (
-                  ![
-                    "png",
-                    "jpg",
-                    "jpeg",
-                    "webp",
-                    "js",
-                    "css",
-                    "html",
-                    "json",
-                    "txt",
-                  ].includes(extension ?? "")
-                )
-                  throw Error(
-                    "Choose PNG, JPEG, WebP or a supported text code file.",
-                  );
-                const data = await new Promise<string>((resolve, reject) => {
-                  const reader = new FileReader();
-                  reader.onerror = () =>
-                    reject(Error("Could not read " + file.name));
-                  reader.onload = () =>
-                    resolve(String(reader.result).split(",")[1]);
-                  reader.readAsDataURL(file);
-                });
-                added.push({ name: file.name, kind, data });
-              }
-              generateInputSchema.parse({
-                ...initial,
-                brief: brief || "Draft",
-                references: [...references, ...added],
-              });
-              setReferences([...references, ...added]);
-              setExported(undefined);
-            });
-          }}
-        />
-      </label>
-      <p>
-        Up to six references, 2 MB each and 6 MB total. Included as visual
-        guidance or example code.
-      </p>
-      {references.length > 0 && (
-        <ul>
-          {references.map((reference, index) => (
-            <li key={index}>
-              {reference.name} ·{" "}
-              {reference.kind === "code" ? "Example code" : "Visual reference"}
-              <button
-                disabled={busy}
-                aria-label={"Remove reference " + reference.name}
-                onClick={() => {
-                  setReferences(
-                    references.filter((_, position) => position !== index),
-                  );
-                  setExported(undefined);
-                }}
-              >
-                Remove
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <PromptReferences
+        references={references}
+        busy={busy}
+        run={run}
+        onChange={(files) => {
+          setReferences(files);
+          setExported(undefined);
+          setNotice("");
+        }}
+      />
+
       <div className="modal-actions">
         <button
           disabled={busy || !brief.trim()}

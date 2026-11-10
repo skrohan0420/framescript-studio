@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { promptContextSchema } from "./prompt-references";
 import {
   editSceneSchema,
   editPlacementSchema,
@@ -16,6 +17,7 @@ export const extendInputSchema = z
     placement: editPlacementSchema,
     addedFrames: z.number().int().positive().max(72000),
     brief: z.string().trim().min(1).max(12000),
+    context: promptContextSchema.optional(),
   })
   .refine(({ scene, placement, addedFrames }) => {
     const frame = (placement.sourceOffset + placement.duration) * scene.fps;

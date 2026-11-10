@@ -1,3 +1,7 @@
+import {
+  packageReferences,
+  referenceGuide,
+} from "./structured-package-context";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -18,27 +22,8 @@ export async function writeGeneratePackage(
   record: string,
 ) {
   const { requestId, input } = task;
-  const references = (input.references ?? []).map((file, index) => {
-    const content = Buffer.from(file.data, "base64");
-    if (content.length > 2 * 1024 * 1024)
-      throw Error("Each reference must fit within 2 MB.");
-    return {
-      path:
-        file.kind === "code"
-          ? `references/example-code/${index + 1}.txt`
-          : `references/images/${index + 1}.${file.kind}`,
-      role: file.kind === "code" ? "example-code" : "visual-reference",
-      name: file.name,
-      usage: "Inspect for guidance. Reference-only content.",
-      content,
-    };
-  });
-  const referenceGuide = references.length
-    ? "\nInspect these references for guidance:\n" +
-      references.map((file) => `- ${file.path} (${file.name})`).join("\n") +
-      "\n"
-    : "";
-  const prompt = `Generate a structured FrameScript scene with native shapes, an on-screen label, or a built-in star as requested. ${input.brief}\n\nRead TASK.md in the attached ZIP.${referenceGuide} Return one JavaScript module following OUTPUT_CONTRACT.md. If a required file is inaccessible, name it before proceeding.\n`;
+  const references = packageReferences(input.references);
+  const prompt = `Generate a structured FrameScript scene with native shapes, an on-screen label, or a built-in star as requested. ${input.brief}\n\nRead TASK.md in the attached ZIP.${referenceGuide(references)} Return one JavaScript module following OUTPUT_CONTRACT.md. If a required file is inaccessible, name it before proceeding.\n`;
   const json = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
   const files = [
     { path: "TASK.md", role: "task", content: prompt },

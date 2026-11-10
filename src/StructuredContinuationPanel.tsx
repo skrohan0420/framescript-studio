@@ -14,6 +14,16 @@ import { bridge, download } from "./bridge";
 import { Modal } from "./components";
 import { SceneReview } from "./SceneReview";
 import { useStudio } from "./store";
+import {
+  ContextFrame,
+  PromptReferences,
+  validContextFrame,
+} from "./PromptReferences";
+import {
+  contextFrameRange,
+  structuredContextLimitMiB,
+  type PromptReferences as References,
+} from "../shared/prompt-references";
 
 export function StructuredContinuationPanel({
   project,
@@ -41,6 +51,18 @@ export function StructuredContinuationPanel({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [references, setReferences] = useState<References>([]);
+  const [capture, setCapture] = useState("");
+  const placement = timing && {
+    sourceOffset: timing.clip.sourceOffset ?? 0,
+    duration: timing.clip.duration,
+  };
+  const { first, last } =
+    scene && placement
+      ? contextFrameRange(scene, placement)
+      : { first: 0, last: -1 };
+  const captureFrame = capture === "" ? undefined : Number(capture);
+  const validCapture = validContextFrame(captureFrame, first, last);
   const [confirmed, setConfirmed] = useState(false);
   const [review, setReview] = useState<{
     task: ExtendTask;
@@ -54,6 +76,7 @@ export function StructuredContinuationPanel({
     timing?.clip.duration,
     brief,
     addedFrames,
+    capture,
   ]);
   const run = async (action: () => Promise<void>) => {
     setError("");
@@ -205,22 +228,48 @@ export function StructuredContinuationPanel({
           }}
         />
       </label>
+      <PromptReferences
+        references={references}
+        busy={busy}
+        run={run}
+        onChange={(files) => {
+          setReferences(files);
+          setExported(undefined);
+          setNotice("");
+        }}
+      />
+      <ContextFrame
+        value={capture}
+        onChange={(frame) => {
+          setCapture(frame);
+          setExported(undefined);
+          setNotice("");
+        }}
+        busy={busy}
+        first={first}
+        last={last}
+      />
+      <p>
+        The Extend ZIP can include up to {structuredContextLimitMiB} MiB of
+        context before compression.
+      </p>
+      {!validCapture && (
+        <p role="alert">Choose a whole source frame before the handoff.</p>
+      )}
       <div className="modal-actions">
         <button
-          disabled={busy || !scene || !timing}
+          disabled={busy || !scene || !placement || !validCapture}
           onClick={() =>
             void run(async () => {
-              if (!scene || !timing) return;
+              if (!scene || !placement || !validCapture) return;
               setExported(undefined);
               const input = extendInputSchema.parse({
                 scene,
                 clipId,
-                placement: {
-                  sourceOffset: timing.clip.sourceOffset ?? 0,
-                  duration: timing.clip.duration,
-                },
+                placement,
                 addedFrames: Number(addedFrames),
                 brief,
+                context: { references, captureFrame },
               });
               const result = await bridge.call(
                 "structuredExtendPackage",

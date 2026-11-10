@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { structuredEditFixtureProject } from "./fixtures/structured-edit/project";
 import type { Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { resizeVisual, splitVisual } from "../shared/timeline-edit";
 import { activateScene, selectedScene } from "../shared/workflow";
 import { editSceneSchema } from "../shared/structured-edit";
@@ -268,6 +269,14 @@ test("continues a trimmed clip from its handoff and restores the original with U
   await page.getByRole("button", { name: "Extend", exact: true }).click();
   await page.getByRole("button", { name: "Generate continuation" }).click();
   const panel = page.getByRole("dialog", { name: "Generate continuation" });
+  const capture = panel.getByLabel("Additional capture (source frame)");
+  await capture.fill("60");
+  await expect(panel.getByRole("button", { name: "Download Extend ZIP" })).toBeDisabled();
+  await capture.fill("59");
+  await panel.getByLabel("Reference images and example code").setInputFiles({
+    name: "motion.txt", mimeType: "text/plain", buffer: Buffer.from("Ease into the handoff."),
+  });
+  await expect(panel.getByRole("button", { name: "Remove reference motion.txt" })).toBeVisible();
   const responsePromise = page.waitForResponse((response) =>
     response.url().endsWith("/api/structuredExtendPackage"),
   );
@@ -276,7 +285,38 @@ test("continues a trimmed clip from its handoff and restores the original with U
   const response = await responsePromise;
   expect(response.ok(), await response.text()).toBe(true);
   const { result } = await response.json();
-  expect(await (await zip).failure()).toBeNull();
+  const [input] = response.request().postDataJSON().args;
+  const rejected = await page.request.post("/api/structuredExtendPackage", {
+    headers: { "X-FrameScript": "1" },
+    data: { args: [{ ...input, context: { captureFrame: 60 } }] },
+  });
+  expect(rejected.ok()).toBe(false);
+  expect(await rejected.text()).toContain("The additional source frame must be within the selected clip.");
+  const spoofedCapture = await page.request.post("/api/structuredExtendPackage", {
+    headers: { "X-FrameScript": "1" },
+    data: {
+      args: [{ ...input, context: { requiredCapture: { sourceFrame: 59, sceneRevision: 13 } } }],
+    },
+  });
+  expect(spoofedCapture.ok()).toBe(false);
+  expect(await spoofedCapture.text()).toContain("requiredCapture");
+  const oversized = await page.request.post("/api/structuredExtendPackage", {
+    headers: { "X-FrameScript": "1" },
+    data: { args: [{ ...input, scene: { ...input.scene, title: "x".repeat(4 * 1024 ** 2) } }] },
+  });
+  expect(oversized.ok()).toBe(false);
+  const budgetError = await oversized.text();
+  expect(budgetError).toContain("Extend context exceeds 8 MiB before ZIP compression");
+  expect(budgetError).toContain("source/scene.json");
+  const downloaded = await zip;
+  expect(await downloaded.failure()).toBeNull();
+  const zipBytes = await readFile(await downloaded.path());
+  for (const file of ["context/handoff.json", "source/scene.json", "references/preview-frames/handoff.png", "references/preview-frames/context-frame-59.png", "references/example-code/1.txt"]) {
+    expect(result.prompt).toContain(file);
+    expect(zipBytes.includes(Buffer.from(file))).toBe(true);
+  }
+  await panel.getByRole("button", { name: "Remove reference motion.txt" }).click();
+  await expect(panel.getByRole("button", { name: "Copy Extend prompt" })).toBeDisabled();
   expect(result.prompt).toContain("Return one JavaScript module");
   const extension = {
     contractVersion: "1",
@@ -288,6 +328,16 @@ test("continues a trimmed clip from its handoff and restores the original with U
     endFrame: 90,
     value: 0.9,
   };
+  await panel.getByLabel("Paste AI extension").fill(
+    `export default ${JSON.stringify({ ...extension, contractVersion: "2" })};`,
+  );
+  await panel.getByRole("button", { name: "Review extension" }).click();
+  await expect(panel.getByRole("alert")).toContainText("contractVersion");
+  await panel.getByLabel("Paste AI extension").fill(
+    `export default ${JSON.stringify({ ...extension, baseRevision: undefined })};`,
+  );
+  await panel.getByRole("button", { name: "Review extension" }).click();
+  await expect(panel.getByRole("alert")).toContainText("baseRevision");
   await panel
     .getByLabel("Paste AI extension")
     .fill(JSON.stringify({ ...extension, startFrame: 59 }));
@@ -369,7 +419,19 @@ test("continues a trimmed clip from its handoff and restores the original with U
   await expect.poll(savedClips).toEqual(extendedClips);
   await page.getByRole("button", { name: "Undo project change" }).click();
   await expect.poll(savedClips).toEqual([left, right]);
-  await page.getByRole("button", { name: "Redo project change" }).click();
+  await page.getByRole("button", { name: "Extend", exact: true }).click();
+  await page.getByRole("button", { name: "Generate continuation" }).click();
+  await panel.getByLabel("Paste AI extension").fill(
+    `export default ${JSON.stringify(extension)};`,
+  );
+  await panel.getByRole("button", { name: "Review extension" }).click();
+  await review.getByRole("checkbox", { name: /Move following clips later/ }).check();
+  await expect(apply).toBeEnabled();
+  // Redo changes the source revision while the modal has focus.
+  await page.locator('button[aria-label="Redo project change"]')
+    .evaluate((button: HTMLButtonElement) => button.click());
+  await expect(review.getByRole("alert")).toContainText("Export a fresh Extend task.");
+  await expect(apply).toBeDisabled();
   await expect.poll(savedClips).toEqual(extendedClips);
 });
 
@@ -485,6 +547,12 @@ test("generates, edits and exports a shapes-only scene through the module workfl
     "must match the saved request",
   );
   const module = `export default ${responseFor(generated.width)};`;
+  await resultText.fill(module.replace('"contractVersion":"1"', '"contractVersion":"2"'));
+  await submit.click();
+  await expect(panel.getByRole("alert")).toContainText("contractVersion");
+  await resultText.fill(module.replace(`"requestId":"${result.requestId}",`, ""));
+  await submit.click();
+  await expect(panel.getByRole("alert")).toContainText("requestId");
   await resultText.fill(`${module}\nconsole.log("unexpected code");`);
   await submit.click();
   await expect(panel.getByRole("alert")).toContainText(
@@ -698,6 +766,11 @@ test("exports a frozen Edit task from a visual clip and saves it across reload",
   await expect(panel.getByText(/Source revision 14/)).toBeVisible();
   const copy = panel.getByRole("button", { name: "Copy prompt" });
   await expect(copy).toBeDisabled();
+  await panel.getByLabel("Additional capture (source frame)").fill("80");
+  await panel.getByLabel("Reference images and example code").setInputFiles({
+    name: "style.txt", mimeType: "text/plain", buffer: Buffer.from("Keep the current palette."),
+  });
+  await expect(panel.getByRole("button", { name: "Remove reference style.txt" })).toBeVisible();
   const packageResponse = page.waitForResponse((response) =>
     response.url().endsWith("/api/structuredEditPackage"),
   );
@@ -706,8 +779,22 @@ test("exports a frozen Edit task from a visual clip and saves it across reload",
   const response = await packageResponse;
   expect(response.ok(), await response.text()).toBe(true);
   const { result } = await response.json();
+  const editArgs = response.request().postDataJSON().args;
+  const oversizedEdit = await page.request.post("/api/structuredEditPackage", {
+    headers: { "X-FrameScript": "1" },
+    data: { args: [{ ...editArgs[0], title: "x".repeat(4 * 1024 ** 2) }, ...editArgs.slice(1)] },
+  });
+  expect(oversizedEdit.ok()).toBe(false);
+  const editBudgetError = await oversizedEdit.text();
+  expect(editBudgetError).toContain("Edit context exceeds 8 MiB before ZIP compression");
+  expect(editBudgetError).toContain("source/scene.json");
   const downloaded = await zip;
   expect(await downloaded.failure()).toBeNull();
+  const zipBytes = await readFile(await downloaded.path());
+  for (const file of ["context/edit-range.json", "references/preview-frames/context-frame-80.png", "references/example-code/1.txt"]) {
+    expect(result.prompt).toContain(file);
+    expect(zipBytes.includes(Buffer.from(file))).toBe(true);
+  }
   await downloaded.saveAs(testInfo.outputPath("editor-exported-edit.zip"));
   await writeFile(
     testInfo.outputPath("editor-exported-prompt.txt"),
@@ -722,7 +809,7 @@ test("exports a frozen Edit task from a visual clip and saves it across reload",
   await expect(panel.getByRole("status")).toHaveText("Prompt copied.");
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied.replaceAll("\r\n", "\n")).toBe(result.prompt);
-  await panel.getByRole("spinbutton").fill("0.9");
+  await panel.getByLabel("Additional capture (source frame)").fill("81");
   await expect(copy).toBeDisabled();
   await page.reload();
   const stored = await page.request.post("/api/structuredEditRequest", {
@@ -741,11 +828,29 @@ test("exports a frozen Edit task from a visual clip and saves it across reload",
       requestedValue: 0.8,
     },
     manifest: {
+      sourcePath: "source/scene.json",
+      contextPath: "context/edit-range.json",
       files: expect.arrayContaining([
+        expect.objectContaining({
+          path: "context/edit-range.json",
+          role: "edit-range",
+          bytes: expect.any(Number),
+        }),
         expect.objectContaining({
           role: "required-evidence",
           frame: 96,
           sceneRevision: 14,
+        }),
+        expect.objectContaining({
+          role: "context-frame",
+          frame: 80,
+          sceneRevision: 14,
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        }),
+        expect.objectContaining({
+          role: "example-code",
+          name: "style.txt",
+          sha256: createHash("sha256").update("Keep the current palette.").digest("hex"),
         }),
       ]),
     },
@@ -768,6 +873,12 @@ for (const scope of ["clip", "shared"] as const)
     await expect(panel.getByLabel("Edit scope")).toHaveValue("clip");
     if (scope === "shared")
       await panel.getByLabel("Edit scope").selectOption(scope);
+    if (scope === "clip") {
+      const capture = panel.getByLabel("Additional capture (source frame)");
+      await capture.fill("59");
+      await expect(panel.getByRole("button", { name: "Download ZIP" })).toBeDisabled();
+      await capture.fill("");
+    }
     await expect(panel).toContainText(
       "Source keyframe at 3.200s · 1.200s into this clip",
     );
@@ -778,6 +889,8 @@ for (const scope of ["clip", "shared"] as const)
     const response = await exported;
     expect(response.ok(), await response.text()).toBe(true);
     const { result } = await response.json();
+    expect(result.prompt).toContain("Selected clip source range: [2.000s, 4.500s)");
+    expect(result.prompt).toContain(scope === "shared" ? "all matching linked clips" : "this clip only");
     await panel.getByRole("button", { name: "Import AI result" }).click();
     const intake = page.getByRole("dialog", { name: "Import AI result" });
     await intake.getByRole("textbox", { name: "Paste AI result" }).fill(
@@ -925,6 +1038,12 @@ test("reviews paste, upload and combined results, and applies one undoable chang
   await expect(
     intake.getByRole("button", { name: "Copy repair prompt" }),
   ).toBeVisible();
+  await pasted.fill(`export default ${patch.replace('"contractVersion":"1"', '"contractVersion":"2"')};`);
+  await validate();
+  await expect(intake.getByRole("alert")).toContainText("contractVersion");
+  await pasted.fill(`export default ${patch.replace('"baseRevision":14,', "")};`);
+  await validate();
+  await expect(intake.getByRole("alert")).toContainText("baseRevision");
   await pasted.fill("```json\n" + patch + "\n```");
   await validate();
   await expect(review).toContainText("Glow at 3.200s: 0.6 → 0.8");
