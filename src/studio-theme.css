@@ -3,6 +3,14 @@
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   --panel-shadow: none;
+  --audio-voice-tone: #83c7f1;
+  --audio-music-tone: #c3aff5;
+  --audio-sfx-tone: #ebc184;
+}
+:root[data-theme=light] {
+  --audio-voice-tone: #22649a;
+  --audio-music-tone: #6b479e;
+  --audio-sfx-tone: #8a6022;
 }
 body { background: var(--base); }
 button { border-radius: 7px; line-height: 1.25; }
@@ -32,6 +40,23 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .editor-tabs button { border-radius: 5px; }
 .editor-tabs button.active { background: var(--raised); color: var(--accent); }
 .panel-heading, .preview-toolbar, .timeline-top { background: var(--surface); }
+.timeline-top .timeline-extend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--subtle-border));
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.timeline-top .timeline-extend:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--accent-wash));
+  color: var(--accent);
+}
 .field > span { font-weight: 500; color: var(--secondary); }
 .field input:not([type=range]):not([type=checkbox]):not([type=color]), .field select { min-height: 34px; }
 input, select, textarea { border-radius: 7px; }
@@ -40,22 +65,42 @@ input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 2px color-mix(in s
 .library-content { padding: 14px; }
 .library-sidebar { background: var(--input); }
 .library-sidebar button.active { border: 1px solid var(--subtle-border); border-radius: 6px; color: var(--text); background: var(--raised); }
-.audio-card-grid { gap: 12px; }
-.audio-card-grid .audio-library-tile { padding: 10px; border-radius: 8px; border-color: var(--subtle-border); background: var(--input); }
-.audio-card-grid .audio-library-tile.selected { border-color: var(--accent); }
-.audio-card-grid .media-caption { font-size: 11px; min-height: 26px; }
-.audio-card-grid .audio-library-tile > .audio-source-meta { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--muted); }
-.audio-library-add, .audio-library-remove { min-width: 30px; min-height: 30px; border: 1px solid var(--subtle-border); border-radius: 6px; margin-block: 6px; }
-.audio-library-add { background: var(--raised); color: var(--secondary); }
-.audio-cleanup { padding: 10px 0; margin-top: 6px; }
-.audio-cleanup-actions button { min-height: 32px; background: var(--surface); }
-.audio-text-actions { padding-top: 8px; }
 .media-type-badge { background: var(--surface); color: var(--secondary); border: 1px solid var(--subtle-border); }
-.audio-preview-control { background: var(--surface); color: var(--accent); border: 1px solid var(--subtle-border); }
-.audio-card-grid .audio-thumbnail { background: var(--input); }
-.audio-card-grid .audio-thumbnail[aria-pressed=true] { background: var(--raised); border-color: var(--accent); }
 .media-duration { color: var(--secondary); }
-.audio-cut-wave canvas { --wave: var(--accent); }
+.audio-library-tile[data-lane=voice] { --recording-tone: var(--audio-voice-tone); }
+.audio-library-tile[data-lane=music] { --recording-tone: var(--audio-music-tone); }
+.audio-library-tile[data-lane=sfx] { --recording-tone: var(--audio-sfx-tone); }
+.audio-card-grid .audio-library-tile.selected {
+  background: color-mix(in srgb, var(--recording-tone) 5%, var(--input));
+  border-color: color-mix(in srgb, var(--recording-tone) 42%, var(--subtle-border));
+}
+.audio-library-tile .audio-thumbnail {
+  background: color-mix(in srgb, var(--recording-tone) 8%, var(--input));
+  border-color: var(--subtle-border);
+}
+.audio-library-tile .audio-thumbnail:is(:hover, [aria-pressed=true]) {
+  background: color-mix(in srgb, var(--recording-tone) 13%, var(--input));
+  border-color: color-mix(in srgb, var(--recording-tone) 48%, var(--subtle-border));
+}
+.audio-library-tile .audio-waveform-thumbnail { --wave: var(--recording-tone); }
+.audio-library-tile .media-caption { color: var(--text); }
+.audio-library-tile :is(.media-type-badge, .audio-preview-control) {
+  background: var(--surface);
+  color: var(--recording-tone);
+  border: 1px solid var(--subtle-border);
+}
+.audio-library-tile .audio-thumbnail[aria-pressed=true] .audio-preview-control {
+  background: color-mix(in srgb, var(--recording-tone) 18%, var(--surface));
+}
+.audio-card-actions button { color: var(--secondary); }
+.audio-card-actions :is(.audio-library-add, [aria-expanded=true]) {
+  color: var(--recording-tone);
+  background: color-mix(in srgb, var(--recording-tone) 11%, var(--surface));
+}
+.audio-card-actions .audio-library-remove:hover:not(:disabled) {
+  color: var(--error);
+  background: var(--error-bg);
+}
 .audio-cut-playhead { background: var(--text); }
 button.audio-cut-deleted { color: var(--error); border-color: var(--error); background: repeating-linear-gradient(135deg,color-mix(in srgb,var(--error) 24%,transparent),color-mix(in srgb,var(--error) 24%,transparent) 5px,color-mix(in srgb,var(--error) 8%,transparent) 5px,color-mix(in srgb,var(--error) 8%,transparent) 10px); }
 .prompt-heading { background: var(--surface); }
@@ -75,16 +120,16 @@ button.audio-cut-deleted { color: var(--error); border-color: var(--error); back
 .transport .play-button { border-radius: 5px; background: transparent; color: var(--text); width: 32px; height: 32px; }
 .transport .player-speed { display: flex; align-items: center; gap: 7px; }
 .transport code, .project-detail-list dd { font-variant-numeric: tabular-nums; }
-.timeline .audio-edit-clip.voice { background: #18324c; border-color: #5b91bc; --wave: #83c7f1; }
-.timeline .audio-edit-clip.music { background: #2e2849; border-color: #927bc5; --wave: #c3aff5; }
-.timeline .audio-edit-clip.sfx { background: #3a2d1d; border-color: #b8945a; --wave: #ebc184; }
+.timeline .audio-edit-clip.voice { background: #18324c; border-color: #5b91bc; --wave: var(--audio-voice-tone); }
+.timeline .audio-edit-clip.music { background: #2e2849; border-color: #927bc5; --wave: var(--audio-music-tone); }
+.timeline .audio-edit-clip.sfx { background: #3a2d1d; border-color: #b8945a; --wave: var(--audio-sfx-tone); }
 .timeline .audio-edit-clip.voice .audio-clip-name { background: #254a6a; color: #ecf6ff; }
 .timeline .audio-edit-clip.music .audio-clip-name { background: #483a6a; color: #f5efff; }
 .timeline .audio-edit-clip.sfx .audio-clip-name { background: #5a4429; color: #fff4df; }
 .timeline .audio-edit-clip.selected { outline: 1px solid var(--accent); outline-offset: 1px; }
-:root[data-theme=light] .timeline .audio-edit-clip.voice { background: #dcecf8; --wave: #22649a; }
-:root[data-theme=light] .timeline .audio-edit-clip.music { background: #eae3f9; --wave: #6b479e; }
-:root[data-theme=light] .timeline .audio-edit-clip.sfx { background: #f7ead5; --wave: #8a6022; }
+:root[data-theme=light] .timeline .audio-edit-clip.voice { background: #dcecf8; }
+:root[data-theme=light] .timeline .audio-edit-clip.music { background: #eae3f9; }
+:root[data-theme=light] .timeline .audio-edit-clip.sfx { background: #f7ead5; }
 :root[data-theme=light] .timeline .audio-edit-clip.voice .audio-clip-name { background: #bfd9ed; color: #153858; }
 :root[data-theme=light] .timeline .audio-edit-clip.music .audio-clip-name { background: #d5c7ec; color: #392459; }
 :root[data-theme=light] .timeline .audio-edit-clip.sfx .audio-clip-name { background: #ead4ad; color: #52391a; }
@@ -92,7 +137,6 @@ button.audio-cut-deleted { color: var(--error); border-color: var(--error); back
 .modal-head { padding-bottom: 14px; border-bottom: 1px solid var(--subtle-border); margin-bottom: 20px; }
 .modal-head h2 { font-size: 17px; letter-spacing: -.25px; font-weight: 600; }
 .overlay { background: #000000a3; backdrop-filter: blur(5px); }
-.audio-cut-tools button, .audio-cut-selection-tools button { min-width: 34px; border-radius: 7px; }
 .export-dock { border-color: var(--border); background: var(--surface); box-shadow: 0 12px 40px #00000030; }
 .export-job-count { color: var(--muted); }
 .status-bar { background: var(--base); border-color: var(--subtle-border); }

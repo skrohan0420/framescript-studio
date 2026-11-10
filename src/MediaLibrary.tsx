@@ -1,3 +1,4 @@
+import { useStatusActivity, useStatusNotice } from "./editor-status";
 import { useEffect, useRef, useState } from "react";
 import {
   FileAudio,
@@ -8,10 +9,6 @@ import {
   X,
   FileText,
   Copy,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  LoaderCircle,
   RotateCcw,
   Play,
   Pause,
@@ -180,7 +177,8 @@ export function MediaLibrary({
   };
   const [transcribing, setTranscribing] = useState<string | null>(null);
   const [transcriptId, setTranscriptId] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const notify = useStatusNotice();
+  useStatusActivity(transcribing ? "Extracting voiceover text…" : importing ? "Importing media…" : "");
   const [transcriptFormat, setTranscriptFormat] = useState<"text" | "srt">(
     "text",
   );
@@ -239,7 +237,7 @@ export function MediaLibrary({
         "Extract voiceover text",
       );
       setTranscriptId(clip.id);
-      setCopiedId(null);
+      notify("Transcript ready.");
     } catch (error) {
       onError((error as Error).message);
     } finally {
@@ -565,6 +563,7 @@ export function MediaLibrary({
             {audio.map((clip) => (
               <article
                 className={`media-tile audio-library-tile ${selectedSource === clip.id || project.audio?.some((item) => item.id === selectedAudio && item.data === clip.data) ? "selected" : ""}`}
+                data-lane={clip.lane}
                 key={clip.id}
                 onClickCapture={(event) => {
                   if (
@@ -604,64 +603,50 @@ export function MediaLibrary({
                     {clip.duration.toFixed(1)}s
                   </span>
                 </button>
-                <button
-                  className="media-caption"
-                  onClick={() => inspectAudio(clip)}
-                  title={clip.name}
+                <div className="audio-card-heading">
+                  <button
+                    className="media-caption"
+                    onClick={() => inspectAudio(clip)}
+                    title={clip.name}
+                  >
+                    {clip.name}
+                  </button>
+                  <small
+                    className="audio-source-meta"
+                    title="Timeline clips using this recording"
+                  >
+                    <FileAudio size={12} aria-hidden="true" />{" "}
+                    {project.audio?.filter((item) => item.data === clip.data)
+                      .length ?? 0}
+                    <span className="sr-only"> timeline clips</span>
+                  </small>
+                </div>
+                <div
+                  className="audio-card-actions"
+                  role="group"
+                  aria-label="Recording actions"
                 >
-                  {clip.name}
-                </button>
-                <small
-                  className="audio-source-meta"
-                  title="Copies used in timelines"
-                >
-                  <FileAudio size={12} aria-hidden="true" />{" "}
-                  {project.audio?.filter((item) => item.data === clip.data)
-                    .length ?? 0}{" "}
-                  clips
-                </small>
-                <button
-                  className="audio-library-add"
-                  aria-label={`Add ${clip.name} to timeline`}
-                  title="Add a fresh copy to the timeline"
-                  onClick={() => addAudioSource(clip)}
-                >
-                  <Plus size={15} />
-                </button>
-                <button
-                  className="audio-library-remove"
-                  aria-label={`Remove ${clip.name} from library`}
-                  title="Remove this recording from the library; timeline copies are kept"
-                  onClick={() => {
-                    change(
-                      {
-                        audioLibrary: project.audioLibrary?.filter(
-                          (source) => source.id !== clip.id,
-                        ),
-                      },
-                      "Remove library recording",
-                    );
-                    if (selectedSource === clip.id) setSelectedSource(null);
-                  }}
-                >
-                  <X size={15} />
-                </button>
-                {clip.lane === "voice" && (
-                  <SilenceEditor
-                    key={clip.data.slice(-64) + clip.id}
-                    clip={clip}
-                    onError={onError}
-                  />
-                )}
-                {clip.lane === "voice" && (
-                  <div className="audio-text-actions">
+                  <button
+                    className="audio-library-add"
+                    aria-label={`Add ${clip.name} to timeline`}
+                    title="Add a fresh copy to the timeline"
+                    onClick={() => addAudioSource(clip)}
+                  >
+                    <Plus size={15} />
+                  </button>
+                  {clip.lane === "voice" && (
+                    <SilenceEditor clip={clip} onError={onError} />
+                  )}
+                  {clip.lane === "voice" && (
                     <div
                       className="audio-transcript-toolbar"
                       aria-busy={transcribing === clip.id}
                     >
-                      {clip.transcript ? (
+                      {clip.transcript && (
                         <button
                           className="transcript-toggle"
+                          aria-label="Transcript"
+                          title="Show or hide transcript"
                           aria-expanded={transcriptId === clip.id}
                           aria-controls={`transcript-${clip.id}`}
                           onClick={() =>
@@ -670,17 +655,8 @@ export function MediaLibrary({
                             )
                           }
                         >
-                          <FileText size={14} /> Transcript
-                          {transcriptId === clip.id ? (
-                            <ChevronUp size={14} />
-                          ) : (
-                            <ChevronDown size={14} />
-                          )}
+                          <FileText size={14} />
                         </button>
-                      ) : (
-                        <span className="transcript-label">
-                          <FileText size={14} /> Voiceover text
-                        </span>
                       )}
                       <button
                         className={
@@ -694,30 +670,40 @@ export function MediaLibrary({
                             ? `Extract text again from ${clip.name}`
                             : `Extract text from ${clip.name}`
                         }
-                        title="Send the full source audio to ElevenLabs for transcription. Requires a connected API key; provider charges may apply."
+                        title="Extract text with ElevenLabs (API key required, provider charges may apply)"
                         onClick={() => void extractText(clip)}
                       >
-                        {transcribing === clip.id ? (
-                          <>
-                            <LoaderCircle
-                              size={14}
-                              className="transcript-spinner"
-                            />{" "}
-                            Extracting…
-                          </>
-                        ) : clip.transcript ? (
+                        {clip.transcript ? (
                           <RotateCcw size={14} />
                         ) : (
-                          "Extract text"
+                          <FileText size={14} />
                         )}
                       </button>
                     </div>
-                    {!clip.transcript && (
-                      <p className="transcript-hint">
-                        Turn speech into copyable text · ElevenLabs
-                      </p>
-                    )}
-                    {transcriptId === clip.id && clip.transcript && (
+                  )}
+                  <button
+                    className="audio-library-remove"
+                    aria-label={`Remove ${clip.name} from library`}
+                    title="Remove from library"
+                    onClick={() => {
+                      change(
+                        {
+                          audioLibrary: project.audioLibrary?.filter(
+                            (source) => source.id !== clip.id,
+                          ),
+                        },
+                        "Remove library recording",
+                      );
+                      if (selectedSource === clip.id) setSelectedSource(null);
+                    }}
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+                {clip.lane === "voice" &&
+                  transcriptId === clip.id &&
+                  clip.transcript && (
+                    <div className="audio-text-actions">
                       <div
                         className="transcript-content"
                         id={`transcript-${clip.id}`}
@@ -731,7 +717,6 @@ export function MediaLibrary({
                             aria-pressed={transcriptFormat === "text"}
                             onClick={() => {
                               setTranscriptFormat("text");
-                              setCopiedId(null);
                             }}
                           >
                             Plain text
@@ -740,7 +725,6 @@ export function MediaLibrary({
                             aria-pressed={transcriptFormat === "srt"}
                             onClick={() => {
                               setTranscriptFormat("srt");
-                              setCopiedId(null);
                             }}
                           >
                             Timed text · SRT
@@ -776,7 +760,7 @@ export function MediaLibrary({
                             onClick={() =>
                               void navigator.clipboard
                                 .writeText(transcriptValue(clip))
-                                .then(() => setCopiedId(clip.id))
+                                .then(() => notify("Transcript copied."))
                                 .catch(() =>
                                   onError(
                                     "Could not copy. Select and copy the transcript manually.",
@@ -784,15 +768,7 @@ export function MediaLibrary({
                                 )
                             }
                           >
-                            {copiedId === clip.id ? (
-                              <>
-                                <Check size={13} /> Copied
-                              </>
-                            ) : (
-                              <>
-                                <Copy size={13} /> Copy text
-                              </>
-                            )}
+                            <Copy size={13} /> Copy text
                           </button>
                           <button
                             className="transcript-copy"
@@ -804,9 +780,8 @@ export function MediaLibrary({
                           </button>
                         </div>
                       </div>
-                    )}
-                  </div>
-                )}
+                    </div>
+                  )}
               </article>
             ))}
           </div>

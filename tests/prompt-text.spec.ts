@@ -26,7 +26,7 @@ test("text is opt-in and independent labels/counters persist without leaking whe
     .getByRole("button", { name: "Add text item", exact: true })
     .click();
   await expect(
-    panel.getByRole("button", { name: "Copy prompt", exact: true }),
+    panel.getByRole("button", { name: "Copy and Download", exact: true }),
   ).toBeDisabled();
   await panel.getByLabel("Exact item text", { exact: true }).fill("Red planet");
   await panel
@@ -49,7 +49,7 @@ test("text is opt-in and independent labels/counters persist without leaking whe
   await panel.getByLabel("Counter suffix", { exact: true }).fill(" million");
   await panel.getByLabel("Item end (seconds)", { exact: true }).fill("8");
   await expect(
-    panel.getByRole("button", { name: "Copy prompt", exact: true }),
+    panel.getByRole("button", { name: "Copy and Download", exact: true }),
   ).toBeEnabled();
   let prompt = await generated.inputValue();
   for (const value of [
@@ -64,7 +64,7 @@ test("text is opt-in and independent labels/counters persist without leaking whe
   await page.screenshot({ path: "test-results/prompt-text-items.png" });
   await panel.getByLabel("Item end (seconds)", { exact: true }).fill("0");
   await expect(
-    panel.getByRole("button", { name: "Copy prompt", exact: true }),
+    panel.getByRole("button", { name: "Copy and Download", exact: true }),
   ).toBeDisabled();
   await panel.getByLabel("Item end (seconds)", { exact: true }).fill("8");
   await toggle.uncheck();

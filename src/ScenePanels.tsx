@@ -310,7 +310,7 @@ export function SceneInspector({
           disabled={busy || scene.locked}
           onClick={onGenerate}
         >
-          {busy ? "Generating scene…" : "Generate scene"}
+          Generate scene
         </button>
         <button onClick={() => onOpen("voice")}>Voice</button>
         <button onClick={() => onOpen("sound")}>SFX & Music</button>

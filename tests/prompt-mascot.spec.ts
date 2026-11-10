@@ -26,9 +26,9 @@ test("optional mascot section saves direction, uses LLM attachments and excludes
     .fill("Enter at 2s, leave at 8s");
   expect(await prompt.inputValue()).toContain("Point to Mars");
   expect(await prompt.inputValue()).toContain(
-    "directly to this LLM conversation",
+    "include them in the attached ZIP",
   );
-  await expect(panel.locator('input[type="file"]')).toHaveCount(0);
+  await expect(panel.getByRole("tabpanel").locator('input[type="file"]')).toHaveCount(0);
   await page.reload();
   await page
     .getByRole("button", { name: "Prompts panel", exact: true })

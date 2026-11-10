@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useStatusNotice } from "./editor-status";
 import {
   Check,
   Move,
@@ -36,7 +36,7 @@ export function PromptAnimation({
   draft: PromptDraft;
   update: <K extends keyof PromptDraft>(key: K, value: PromptDraft[K]) => void;
 }) {
-  const [status, setStatus] = useState("");
+  const notify = useStatusNotice();
   const selected = draft.animationTechniques ?? [];
   const change = (id: string, patch: Partial<TechniqueSelection>) =>
     update(
@@ -82,11 +82,11 @@ export function PromptAnimation({
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(threeStarter);
-                  setStatus(
+                  notify(
                     "3D starter copied. Use Paste code to load it into the current scene.",
                   );
                 } catch {
-                  setStatus(
+                  notify(
                     "Clipboard unavailable. Allow clipboard access and try again.",
                   );
                 }
@@ -94,9 +94,6 @@ export function PromptAnimation({
             >
               Copy working 3D starter
             </button>
-            <p role="status" className="type-hint" hidden={!status}>
-              {status}
-            </p>
           </>
         )}
       </div>
@@ -261,8 +258,7 @@ export function PromptAnimation({
         );
       })}
       <p className="type-hint">
-        These choices guide generated code. They take effect when you paste the
-        resulting scene; changing them does not modify existing animation.
+        These choices guide the scene’s movement and timing.
       </p>
     </>
   );

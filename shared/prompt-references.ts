@@ -22,6 +22,28 @@ export const promptReferencesSchema = z
 
 export type PromptReferences = z.infer<typeof promptReferencesSchema>;
 
+export function describeReferences(references: PromptReferences = []) {
+  return references.map(({ kind, name }, index) => ({
+    path:
+      kind === "code"
+        ? `references/example-code/${index + 1}.txt`
+        : `references/images/${index + 1}.${kind}`,
+    role: kind === "code" ? "example-code" : "visual-reference",
+    name,
+    usage: "Inspect for guidance. Reference-only content.",
+  }));
+}
+
+export function referenceGuide(files: { path: string; name?: string }[]) {
+  return files.length
+    ? "\nInspect these optional references for guidance:\n" +
+        files
+          .map((file) => `- ${file.path}${file.name ? ` (${file.name})` : ""}`)
+          .join("\n") +
+        "\n"
+    : "";
+}
+
 export const promptContextSchema = z.strictObject({
   references: promptReferencesSchema.optional(),
   captureFrame: z.number().int().nonnegative().max(72000).optional(),

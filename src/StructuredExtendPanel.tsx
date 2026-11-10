@@ -22,7 +22,8 @@ export function StructuredExtendPanel({
   const [continuation, setContinuation] = useState(false);
   const added = Number(seconds);
   const valid = !!timing && added > 0 && added <= timing.available + 1e-9;
-  const following = timing?.following ?? [];
+  const growth = timing ? Math.max(0, timing.visualDuration + added - timing.clip.duration) : 0;
+  const following = growth > 0 ? timing?.following ?? [] : [];
   const impact = JSON.stringify([
     added,
     timing?.projectEnd,
@@ -43,7 +44,7 @@ export function StructuredExtendPanel({
     const { workflow, settings } = resizeVisual(
       project,
       clipId,
-      timing.clip.duration + Math.min(added, timing.available),
+      timing.visualDuration + Math.min(added, timing.available),
     );
     state.change({ workflow, settings }, "Reveal more scene source");
     if (useStudio.getState().revision === state.revision) {
@@ -105,7 +106,7 @@ export function StructuredExtendPanel({
                   setConfirmed(event.target.checked ? impact : "")
                 }
               />
-              Move following clips later by {added.toFixed(3)}s:{" "}
+              Move following clips later by {growth.toFixed(3)}s:{" "}
               {following.map((clip) => clip.title).join(", ")}.
             </label>
           )}

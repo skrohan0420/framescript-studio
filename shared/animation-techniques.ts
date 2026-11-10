@@ -119,11 +119,14 @@ export function restoreTechniques(value: unknown): TechniqueSelection[] {
 export function animationDirection(
   draft: AnimationDirection,
   duration: number,
+  structured = false,
 ) {
   const selections = restoreTechniques(draft.animationTechniques);
   const mode = draft.renderingMode ?? "auto";
   const renderer =
-    mode === "3d"
+    structured
+      ? `RENDERING PREFERENCE: ${mode === "3d" ? "True 3D" : mode === "auto" ? "Automatic" : mode.toUpperCase()}. Suggest this look using supported native shapes and tracks.`
+      : mode === "3d"
       ? `RENDERING: True 3D using the bundled window.THREE and FrameScript3D helper. No imports or CDN scripts. Use procedural meshes, coherent lighting and perspective or orthographic cameras. FrameScript3D.create({canvas, width, height, background}) returns {scene,camera,renderer,render,dispose}. It uses pixel ratio 1 and preserveDrawingBuffer for export. Call view.render() at the END of every window.renderFrame(t). Do not use setAnimationLoop or requestAnimationFrame. Set every transform from absolute t; never use rotation += or mixer.update(delta). Use AnimationMixer.setTime(t) for any preloaded animation. Core Three.js only: addons, OrbitControls and GLTFLoader are not bundled. No external assets.`
       : mode === "2.5d"
         ? "RENDERING: 2.5D layered HTML/CSS or Canvas with perspective and parallax; no Three.js required."
@@ -132,7 +135,7 @@ export function animationDirection(
           : "";
   if (!renderer && !selections.length) return "";
   return `${renderer}
-RENDER EFFICIENCY: Initialize geometry, materials, textures and static paths once outside renderFrame. For repeated 3D objects sharing geometry/material, use THREE.InstancedMesh where appearance and ordering permit. Cache unchanged 2D backgrounds at full output resolution; invalidate them when their inputs change. Update transforms instead of rebuilding objects. Keep the requested antialiasing, effects, texture resolution and detail; do not use lower resolution or fewer frames as a performance shortcut.
+${structured ? "" : "RENDER EFFICIENCY: Initialize geometry, materials, textures and static paths once outside renderFrame. For repeated 3D objects sharing geometry/material, use THREE.InstancedMesh where appearance and ordering permit. Cache unchanged 2D backgrounds at full output resolution; invalidate them when their inputs change. Update transforms instead of rebuilding objects. Keep the requested antialiasing, effects, texture resolution and detail; do not use lower resolution or fewer frames as a performance shortcut."}
 ${
   selections.length
     ? `SELECTED ANIMATION TECHNIQUES
@@ -148,7 +151,7 @@ ${selections
     return `- ${technique.name}: ${technique.detail} Variation: ${item.variant || technique.variants[0]}. ${technique.control}: ${item.amount?.trim() || "Adapt to subject and framing"}. Timing window: ${start}–${start + length}s. Individual settings override shared defaults.`;
   })
   .join("\n")}
-Combine compatible techniques on separate transform groups. Preserve supplied narration timestamps; place accents within each requested window. Use readable holds. Adapt camera and path techniques to the selected rendering mode (2D pan/zoom versus 3D dolly/orbit). Evaluate motion analytically from t, including springs and stagger; no accumulated simulation state. Do not add unselected effects or any text unless Typography explicitly permits it.`
+${structured ? "Translate compatible effects into supported tracks and preserve the supplied narration cues where possible." : "Combine compatible techniques on separate transform groups. Preserve supplied narration timestamps; place accents within each requested window. Use readable holds. Adapt camera and path techniques to the selected rendering mode (2D pan/zoom versus 3D dolly/orbit). Evaluate motion analytically from t, including springs and stagger; no accumulated simulation state. Do not add unselected effects or any text unless Typography explicitly permits it."}`
     : ""
 }`;
 }

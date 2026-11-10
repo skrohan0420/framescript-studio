@@ -1,6 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import { useContext, type ReactNode } from "react";
+import { EditorStatus } from "./editor-status";
 export function Modal({
   title,
   open,
@@ -18,6 +19,7 @@ export function Modal({
   onEscapeKeyDown?: (event: KeyboardEvent) => void;
   wide?: boolean;
 }) {
+  const { announcement } = useContext(EditorStatus);
   return (
     <Dialog.Root open={open} onOpenChange={(v) => !v && onClose()}>
       <Dialog.Portal>
@@ -38,6 +40,7 @@ export function Modal({
           <Dialog.Description className="sr-only">
             {title} controls
           </Dialog.Description>
+          <span className="sr-only" aria-live="polite">{announcement}</span>
           {children}
         </Dialog.Content>
       </Dialog.Portal>

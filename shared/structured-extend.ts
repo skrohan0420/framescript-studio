@@ -64,7 +64,7 @@ export function prepareExtension(
     task.input.clipId !== clipId ||
     JSON.stringify(current.structuredEdit) !== JSON.stringify(scene) ||
     (current.sourceOffset ?? 0) !== placement.sourceOffset ||
-    current.duration !== placement.duration
+    timing.visualDuration !== placement.duration
   )
     throw Error("The clip or source changed. Export a fresh Extend task.");
   const startFrame = Math.round(timing.handoff * scene.fps);
@@ -79,7 +79,9 @@ export function prepareExtension(
       "The extension must match the saved request, revision and frame interval.",
     );
   const added = addedFrames / scene.fps;
-  if (totalDuration(project) + added > 600)
+  const visualDuration = timing.visualDuration + added;
+  const duration = Math.max(current.duration, visualDuration);
+  if (totalDuration(project) + duration - current.duration > 600)
     throw Error("The extended timeline exceeds ten minutes.");
   const structuredEdit = editSceneSchema.parse({
     ...scene,
@@ -105,7 +107,7 @@ export function prepareExtension(
     ...(project.workflow.selectedId === clipId ? code : {}),
     settings:
       project.workflow.selectedId === clipId
-        ? { ...project.settings, duration: current.duration + added }
+        ? { ...project.settings, duration }
         : project.settings,
     workflow: {
       ...project.workflow,
@@ -115,7 +117,8 @@ export function prepareExtension(
               ...clip,
               ...code,
               structuredEdit,
-              duration: clip.duration + added,
+              duration,
+              visualDuration: clip.visualDuration !== undefined || visualDuration < duration ? visualDuration : undefined,
             }
           : clip,
       ),

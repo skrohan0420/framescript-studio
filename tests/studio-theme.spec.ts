@@ -20,6 +20,7 @@ test("studio themes keep readable text, named icon actions and usable panels", a
       "music",
       project.workflow.selectedId,
     ),
+    clipFromAudio(synthesizeSound("UI click"), "sfx", project.workflow.selectedId),
   ];
   let theme = "dark";
   await page.route("**/api/workspaceGet", (route) =>
@@ -94,16 +95,18 @@ test("studio themes keep readable text, named icon actions and usable panels", a
         .getByRole("button", { name: "Auto remove silence", exact: true })
         .first(),
     ).toBeVisible();
-    await expect
-      .poll(() =>
-        page
-          .locator(".audio-waveform-thumbnail")
-          .first()
-          .evaluate(
-            (canvas: HTMLCanvasElement) => canvas.getContext("2d")?.fillStyle,
-          ),
-      )
-      .toBe(mode === "dark" ? "#39d8c7" : "#06766b");
+    const laneColors = mode === "dark"
+      ? { voice: "#83c7f1", music: "#c3aff5", sfx: "#ebc184" }
+      : { voice: "#22649a", music: "#6b479e", sfx: "#8a6022" };
+    for (const [lane, color] of Object.entries(laneColors)) {
+      const waveform = page.locator(`.audio-library-tile[data-lane=${lane}] .audio-waveform-thumbnail`);
+      await expect.poll(() => waveform.evaluate(
+        (canvas: HTMLCanvasElement) => canvas.getContext("2d")?.fillStyle,
+      )).toBe(color);
+    }
+    await page.getByRole("button", { name: "Inspect Success chime", exact: true }).click();
+    await expect(page.locator('.audio-library-tile[data-lane="voice"]')).toHaveClass(/\bselected\b/);
+    await page.locator(".audio-card-grid").screenshot({ path: `test-results/audio-card-colors-${mode}.png` });
     await expect(
       page.getByRole("button", {
         name: "Add Ambient loop to timeline",

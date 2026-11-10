@@ -1,3 +1,4 @@
+import { useStatusNotice } from "./editor-status";
 import {
   memo,
   useEffect,
@@ -12,6 +13,7 @@ import {
 import {
   ArrowLeft,
   ArrowRight,
+  ArrowRightFromLine,
   Code2,
   Pause,
   Play,
@@ -42,11 +44,17 @@ import {
   typographyDragType,
 } from "../shared/typography";
 import { resizeVisual, splitVisual } from "../shared/timeline-edit";
+import { continuationSource } from "../shared/code-continuation";
 export type TimelineActions = {
   split: () => void;
   deleteText: () => void;
   toggleSnapping: () => void;
 };
+
+export type TimelineSelection =
+  | { kind: "audio" | "scene"; id: string; segmentId?: never }
+  | { kind: "continuation"; id: string; segmentId: string }
+  | null;
 
 export const Timeline = memo(function Timeline({
   masterMode,
@@ -63,6 +71,9 @@ export const Timeline = memo(function Timeline({
   splitHint,
   onStructuredEdit,
   onStructuredExtend,
+  onCodeExtend,
+  selection,
+  onSelectionChange: setSelection,
 }: {
   masterMode: boolean;
   timelineHidden: boolean;
@@ -78,6 +89,9 @@ export const Timeline = memo(function Timeline({
   splitHint?: string;
   onStructuredEdit?: (id: string) => void;
   onStructuredExtend?: (id: string) => void;
+  onCodeExtend?: (id: string, segmentId?: string) => void;
+  selection: TimelineSelection;
+  onSelectionChange: (selection: TimelineSelection) => void;
 }) {
   const playing = useStudio((state) => state.playing);
   const s = useProjectState(),
@@ -89,7 +103,7 @@ export const Timeline = memo(function Timeline({
     id: string;
     duration: number;
   } | null>(null);
-  const [editMessage, setEditMessage] = useState("");
+  const notify = useStatusNotice();
   const trimVisual = (event: ReactPointerEvent<HTMLElement>, id: string) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -102,15 +116,16 @@ export const Timeline = memo(function Timeline({
     if (!scene || scene.locked || !bounds) return;
     const revision = state.revision,
       x = event.clientX,
-      start = masterMode ? sceneOffset({ ...project, workflow }, id) : 0;
-    let duration = scene.duration;
+      start = masterMode ? sceneOffset({ ...project, workflow }, id) : 0,
+      initialDuration = scene.visualDuration ?? scene.duration;
+    let duration = initialDuration;
     const target = event.currentTarget;
     target.setPointerCapture(event.pointerId);
     state.setPlaying(false);
     const move = (e: PointerEvent) => {
       duration = Math.max(
         0.1,
-        scene.duration + ((e.clientX - x) / bounds.width) * playbackDuration,
+        initialDuration + ((e.clientX - x) / bounds.width) * playbackDuration,
       );
       let snap: number | null = null;
       if (snapping && !e.altKey) {
@@ -118,7 +133,7 @@ export const Timeline = memo(function Timeline({
         if (masterMode)
           for (const item of workflow.scenes) {
             const edge = sceneOffset({ ...project, workflow }, item.id);
-            targets.push(edge, edge + item.duration);
+            if (item.id !== id) targets.push(edge, edge + (item.visualDuration ?? item.duration));
           }
         for (const clip of project.audio ?? []) {
           if (!masterMode && clip.sceneId && clip.sceneId !== id) continue;
@@ -139,6 +154,7 @@ export const Timeline = memo(function Timeline({
       }
       duration = Math.min(
         duration,
+        scene.visualContinuations?.[0]?.start ?? Infinity,
         600 -
           workflow.scenes.reduce(
             (sum, item) => sum + (item.id === id ? 0 : item.duration),
@@ -153,10 +169,13 @@ export const Timeline = memo(function Timeline({
       target.removeEventListener("pointerup", end);
       target.removeEventListener("pointercancel", end);
       target.removeEventListener("lostpointercapture", end);
-      if (e.type === "pointerup" && duration !== scene.duration) {
-        if (useStudio.getState().revision === revision)
+      if (e.type === "pointerup" && duration !== initialDuration) {
+        const current = useStudio.getState();
+        if (current.revision !== revision || current.session !== state.session) {
+          notify("Project changed while trimming. Try again.");
+        } else {
           state.change(resizeVisual(project, id, duration), "Trim visual clip");
-        else setEditMessage("Project changed while trimming. Try again.");
+        }
       }
       setVisualDraft(null);
       setSnapTime(null);
@@ -242,16 +261,12 @@ export const Timeline = memo(function Timeline({
           "Split visual clip",
         );
       }
-      setEditMessage("");
+
       state.setPlaying(false);
     } catch (error) {
-      setEditMessage((error as Error).message);
+      notify((error as Error).message);
     }
   };
-  const [selection, setSelection] = useState<{
-    kind: "audio" | "scene";
-    id: string;
-  } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollViewportWidth, setScrollViewportWidth] = useState(0);
   useLayoutEffect(() => {
@@ -449,7 +464,7 @@ export const Timeline = memo(function Timeline({
       return false;
     }
     if (masterMode || selectedScene(state.project)?.locked) {
-      setEditMessage("Select an unlocked timeline to delete text.");
+      notify("Select an unlocked timeline to delete text.");
       return true;
     }
     state.setPlaying(false);
@@ -459,7 +474,7 @@ export const Timeline = memo(function Timeline({
     );
     state.setSelectedText(null);
     setSelection(null);
-    setEditMessage("");
+
     return true;
   };
   const toggleSnapping = () => {
@@ -712,9 +727,9 @@ export const Timeline = memo(function Timeline({
             state.setSelectedText(null);
             setSelection({ kind: "audio", id: clip.id });
             onSelectAudio?.(clip.id);
-            setEditMessage("");
+
           } catch (error) {
-            setEditMessage((error as Error).message);
+            notify((error as Error).message);
           }
           return;
         }
@@ -776,7 +791,7 @@ export const Timeline = memo(function Timeline({
             );
           else state.change({ html }, "Drop text onto timeline");
           state.setPlaying(false);
-          setEditMessage("");
+
           onSelectText?.(scene?.id, layer.id);
           state.setTime(
             Math.max(
@@ -786,7 +801,7 @@ export const Timeline = memo(function Timeline({
             ),
           );
         } catch (error) {
-          setEditMessage((error as Error).message);
+          notify((error as Error).message);
         }
       }}
       onPointerDownCapture={(event) => {
@@ -866,6 +881,13 @@ export const Timeline = memo(function Timeline({
             { audio: project.audio.filter((clip) => clip.id !== selection.id) },
             "Delete timeline audio",
           );
+        } else if (selection.kind === "continuation") {
+          const workflow = project.workflow;
+          const scene = workflow?.scenes.find((item) => item.id === selection.id);
+          if (!workflow || !scene || scene.locked) return;
+          state.change({ workflow: { ...workflow, scenes: workflow.scenes.map((item) => item.id === scene.id
+            ? { ...item, visualContinuations: item.visualContinuations?.filter((segment) => segment.id !== selection.segmentId) }
+            : item) } }, "Delete visual continuation");
         } else {
           const workflow = project.workflow;
           const scene = workflow?.scenes.find(
@@ -946,11 +968,27 @@ export const Timeline = memo(function Timeline({
                 Edit / Update
               </button>
               {onStructuredExtend && (
-                <button onClick={() => onStructuredExtend(selection.id)}>
+                <button
+                  className="timeline-extend"
+                  title="Continue the selected visual"
+                  onClick={() => onStructuredExtend(selection.id)}
+                >
+                  <ArrowRightFromLine size={14} aria-hidden="true" />
                   Extend
                 </button>
               )}
             </>
+          )}
+        {selection && selection.kind !== "audio" && onCodeExtend &&
+          continuationSource(p, selection.id, selection.segmentId) && (
+            <button
+              className="timeline-extend"
+              title="Continue the selected visual"
+              onClick={() => onCodeExtend(selection.id, selection.segmentId)}
+            >
+              <ArrowRightFromLine size={14} aria-hidden="true" />
+              Extend
+            </button>
           )}
         <button
           title={splitHint ?? "Split at playhead"}
@@ -1067,6 +1105,10 @@ export const Timeline = memo(function Timeline({
         className="timeline-track-scroll"
         ref={scrollRef}
         style={{ paddingRight: Math.max(0, scrollViewportWidth - 128) }}
+        onScroll={(event) => {
+          const viewport = event.currentTarget;
+          viewport.style.setProperty("--timeline-scroll-left", `${viewport.scrollLeft}px`);
+        }}
         onPointerDown={(event) => {
           if (event.target === event.currentTarget) beginBox(event);
         }}
@@ -1107,9 +1149,9 @@ export const Timeline = memo(function Timeline({
                 data-timeline-id={p.workflow?.selectedId ?? "scene-1"}
                 className={"track-clip " + (masterMode ? "master-clips" : "")}
                 style={
-                  !masterMode && visualDraft
+                  !masterMode
                     ? {
-                        width: `${(visualDraft.duration / playbackDuration) * 100}%`,
+                        width: `${((visualDraft?.duration ?? selectedScene(p)?.visualDuration ?? playbackDuration) / playbackDuration) * 100}%`,
                       }
                     : undefined
                 }
@@ -1141,7 +1183,7 @@ export const Timeline = memo(function Timeline({
                 }
               >
                 {masterMode && p.workflow ? (
-                  p.workflow.scenes.map((scene) => (
+                  p.workflow.scenes.filter((scene) => scene.visualDuration !== 0).map((scene) => (
                     <button
                       onClick={() => {
                         useStudio.getState().setSelectedText(null);
@@ -1156,19 +1198,20 @@ export const Timeline = memo(function Timeline({
                       data-timeline-id={scene.id}
                       key={scene.id}
                       style={{
+                        left: `${(sceneOffset(p, scene.id) / playbackDuration) * 100}%`,
                         width:
                           ((visualDraft?.id === scene.id
                             ? visualDraft.duration
-                            : scene.duration) /
+                            : scene.visualDuration ?? scene.duration) /
                             playbackDuration) *
                             100 +
                           "%",
                       }}
-                      title={scene.title + " · " + scene.duration + "s"}
+                      title={scene.title + " · " + (scene.visualDuration ?? scene.duration) + "s"}
                     >
                       <span className="scene-clip-caption">
                         {scene.title}
-                        <small>{scene.duration.toFixed(1)}s</small>
+                        <small>{(scene.visualDuration ?? scene.duration).toFixed(1)}s</small>
                       </span>
                       <span className="scene-filmstrip" aria-hidden="true">
                         {(() => {
@@ -1227,6 +1270,22 @@ export const Timeline = memo(function Timeline({
                   </>
                 )}
               </div>
+              {(masterMode ? p.workflow?.scenes ?? [] : [selectedScene(p)]).flatMap((scene) =>
+                scene ? (scene.visualContinuations ?? []).map((segment, index) => (
+                  <button
+                    className={`visual-continuation-clip ${selection?.segmentId === segment.id ? "selected" : ""}`}
+                    key={segment.id}
+                    style={{
+                      left: `${((segment.start + (masterMode ? sceneOffset(p, scene.id) : 0)) / playbackDuration) * 100}%`,
+                      width: `${(segment.duration / playbackDuration) * 100}%`,
+                    }}
+                    onClick={() => {
+                      useStudio.getState().setSelectedText(null);
+                      setSelection({ kind: "continuation", id: scene.id, segmentId: segment.id });
+                    }}
+                  ><Code2 size={13} /> Continuation {index + 1}</button>
+                )) : [],
+              )}
               {p.markers.map((m, i) => (
                 <button
                   key={i}
@@ -1266,26 +1325,23 @@ export const Timeline = memo(function Timeline({
             }}
             selected={selectedAudio}
           />
-          <TimelineCursor
-            duration={playbackDuration}
-            onPointerDown={beginScrub}
-          />
-          {snapTime !== null && (
-            <div
-              className="timeline-snap-guide"
-              aria-label={`Snap at ${snapTime.toFixed(2)} seconds`}
-              style={{
-                left: `calc(${(snapTime / playbackDuration) * 100}% + ${96 * (1 - snapTime / playbackDuration)}px)`,
-              }}
+          <div className="timeline-guides">
+            <TimelineCursor
+              duration={playbackDuration}
+              onPointerDown={beginScrub}
             />
-          )}
+            {snapTime !== null && (
+              <div
+                className="timeline-snap-guide"
+                aria-label={`Snap at ${snapTime.toFixed(2)} seconds`}
+                style={{
+                  left: `calc(${(snapTime / playbackDuration) * 100}% + ${96 * (1 - snapTime / playbackDuration)}px)`,
+                }}
+              />
+            )}
+          </div>
         </div>
       </div>
-      {editMessage && (
-        <div className="timeline-edit-message" role="status">
-          {editMessage}
-        </div>
-      )}
       {selectionBox && (
         <div className="timeline-selection-box" style={selectionBox} />
       )}

@@ -1,3 +1,4 @@
+import { useStatusActivity, useStatusNotice } from "./editor-status";
 import { useState } from "react";
 import type { Project } from "../shared/project";
 import type { RpcResults } from "../shared/rpc";
@@ -40,10 +41,11 @@ export function StructuredEditPanel({
   const [scope, setScope] = useState<"clip" | "shared">("clip");
   const [useApplied, setUseApplied] = useState(false);
   const [busy, setBusy] = useState(false);
+  useStatusActivity(busy ? "Processing AI handoff…" : "");
   const [references, setReferences] = useState<References>([]);
   const [capture, setCapture] = useState("");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const notify = useStatusNotice();
   const [intake, setIntake] = useState(false);
   const [exported, setExported] = useState<{
     snapshot: string;
@@ -97,7 +99,7 @@ export function StructuredEditPanel({
   const resetExport = () => {
     setExported(undefined);
     setError("");
-    setNotice("");
+
   };
   const exportZip = async () => {
     if (!scene || !placement || !ready || !validValue || !validCapture || busy)
@@ -121,7 +123,7 @@ export function StructuredEditPanel({
       );
       setExported({ snapshot, result });
       download(result);
-      setNotice("ZIP ready. Copy the prompt and send it with the ZIP.");
+      notify("ZIP ready. Copy the prompt and send it with the ZIP.");
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
@@ -279,7 +281,6 @@ export function StructuredEditPanel({
           )}
         </>
       )}
-      {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}
       <div className="modal-actions">
         <button onClick={onClose}>Close</button>
@@ -288,7 +289,7 @@ export function StructuredEditPanel({
           disabled={!ready || !validValue || !validCapture || busy}
           onClick={() => void exportZip()}
         >
-          {busy ? "Preparing ZIP…" : "Download ZIP"}
+          Download ZIP
         </button>
         <button
           disabled={!canCopy || busy}
@@ -296,7 +297,7 @@ export function StructuredEditPanel({
             if (!canCopy || !exported) return;
             try {
               await navigator.clipboard.writeText(exported.result.prompt);
-              setNotice("Prompt copied.");
+              notify("Prompt copied.");
             } catch {
               setError(
                 "Clipboard access failed. Select and copy the prompt below.",

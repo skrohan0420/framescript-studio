@@ -1,3 +1,4 @@
+import { useStatusNotice } from "./editor-status";
 import { useMemo, useState } from "react";
 import { newProject, type Project, type Scene } from "../shared/project";
 import type { RpcResults } from "../shared/rpc";
@@ -149,7 +150,7 @@ export function StructuredEditResult({
   const [file, setFile] = useState<File>();
   const [error, setError] = useState("");
   const [repair, setRepair] = useState("");
-  const [copied, setCopied] = useState(false);
+  const notify = useStatusNotice();
   const [busy, setBusy] = useState(false);
   const [review, setReview] = useState<Review>();
   const conflict = useMemo(
@@ -164,7 +165,6 @@ export function StructuredEditResult({
   const clearFeedback = () => {
     setError("");
     setRepair("");
-    setCopied(false);
   };
 
   const validate = async () => {
@@ -444,7 +444,6 @@ export function StructuredEditResult({
         />
       </label>
       {error && <p role="alert">{error}</p>}
-      {copied && <p role="status">Repair prompt copied.</p>}
       {repair && (
         <textarea readOnly aria-label="Repair prompt" value={repair} />
       )}
@@ -455,7 +454,7 @@ export function StructuredEditResult({
             onClick={async () => {
               try {
                 await navigator.clipboard.writeText(repair);
-                setCopied(true);
+                notify("Repair prompt copied.");
               } catch {
                 setError(
                   "Clipboard access failed. Select and copy the repair prompt above.",
@@ -471,7 +470,7 @@ export function StructuredEditResult({
           disabled={busy || (!text.trim() && !file)}
           onClick={() => void validate()}
         >
-          {busy ? "Validating…" : "Review result"}
+          Review result
         </button>
       </div>
     </Modal>

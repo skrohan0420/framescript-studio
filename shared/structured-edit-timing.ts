@@ -13,17 +13,20 @@ export function structuredExtensionTiming(project: Project, clipId: string) {
   const code = structuredStarCode(source);
   if (clip.html !== code.html || clip.css !== code.css || clip.js !== code.js)
     return;
-  const handoff = (clip.sourceOffset ?? 0) + clip.duration;
+  const visualDuration = Math.min(clip.duration, clip.visualDuration ?? clip.duration);
+  if (!visualDuration) return;
+  const handoff = (clip.sourceOffset ?? 0) + visualDuration;
   const sourceEnd = source.durationFrames / source.fps;
   if (handoff > sourceEnd + 1e-9) return;
   return {
     clip,
+    visualDuration,
     handoff,
     lastVisibleFrame: Math.max(0, Math.ceil(handoff * source.fps - 1e-9) - 1),
-    projectEnd: sceneOffset(project, clipId) + clip.duration,
+    projectEnd: sceneOffset(project, clipId) + visualDuration,
     available: Math.max(
       0,
-      Math.min(sourceEnd - handoff, 600 - totalDuration(project)),
+      Math.min(sourceEnd - handoff, 600 - totalDuration(project) + clip.duration - visualDuration),
     ),
     following: clips.slice(index + 1),
   };
@@ -32,13 +35,14 @@ export function structuredExtensionTiming(project: Project, clipId: string) {
 // Timeline positions are measured in scene seconds. Playback speed changes
 // elapsed playback time, not the position sent to renderFrame.
 export function structuredClipTiming(
-  clip: Pick<Scene, "structuredEdit" | "sourceOffset" | "duration">,
+  clip: Pick<Scene, "structuredEdit" | "sourceOffset" | "duration" | "visualDuration">,
   target?: z.infer<typeof editTargetSchema>,
 ) {
   const scene = clip.structuredEdit;
   if (!scene) return;
   const sourceOffset = clip.sourceOffset ?? 0;
-  const sourceEnd = sourceOffset + clip.duration;
+  const duration = Math.min(clip.duration, clip.visualDuration ?? clip.duration);
+  const sourceEnd = sourceOffset + duration;
   const selected = sceneEditTargets(scene).find(
     (item) =>
       !target ||
@@ -57,7 +61,7 @@ export function structuredClipTiming(
     return;
   return {
     sourceOffset,
-    duration: clip.duration,
+    duration,
     sourceTime,
     clipTime: Math.max(0, sourceTime - sourceOffset),
   };

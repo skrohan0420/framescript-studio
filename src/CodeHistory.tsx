@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { CodeSnapshot, CodeVersion } from "../shared/rpc";
 import { bridge } from "./bridge";
 import { Modal } from "./components";
+import { useStatusActivity } from "./editor-status";
 
 export function CodeHistory({
   scene,
@@ -21,6 +22,7 @@ export function CodeHistory({
   const [snapshot, setSnapshot] = useState<CodeSnapshot | null>(null);
   const [language, setLanguage] = useState<keyof CodeSnapshot>("html");
   const [error, setError] = useState("");
+  useStatusActivity(!versions && !error ? "Loading code history…" : "");
   useEffect(() => {
     let active = true;
     void bridge
@@ -60,7 +62,6 @@ export function CodeHistory({
         replaces its HTML, CSS, and JavaScript in the editor.
       </p>
       {error && <p role="alert">{error}</p>}
-      {!versions && !error && <p role="status">Loading code history…</p>}
       {versions?.length === 0 && (
         <p>Save the project to record its first code version.</p>
       )}

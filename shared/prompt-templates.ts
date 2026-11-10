@@ -447,6 +447,25 @@ export function buildCodePrompt(
   height: number,
   code?: { html: string; css: string; js: string },
 ) {
+  return buildScenePrompt(draft, width, height, code, false);
+}
+
+export function buildStructuredSceneBrief(
+  draft: PromptDraft,
+  width: number,
+  height: number,
+  code?: { html: string; css: string; js: string },
+) {
+  return buildScenePrompt(draft, width, height, code, true);
+}
+
+function buildScenePrompt(
+  draft: PromptDraft,
+  width: number,
+  height: number,
+  code: { html: string; css: string; js: string } | undefined,
+  structured: boolean,
+) {
   const typographyEnabled = draft.typographyEnabled === true;
   const items = typographyEnabled
     ? promptTextListSchema.parse(draft.textItems ?? [])
@@ -546,13 +565,13 @@ export function buildCodePrompt(
         ]
       : []),
   ];
-  return `You are creating animation code for FrameScript Studio, a local HTML/CSS/JavaScript video editor.
+  const direction = `${structured ? "You are designing an editable scene for FrameScript Studio." : "You are creating animation code for FrameScript Studio, a local HTML/CSS/JavaScript video editor."}
 
-TASK: ${template.brief}
+TASK: ${structured ? `Use the ${template.name} template as creative direction.` : template.brief}
 Work as an animation director, visual designer and implementation engineer. Deliver a finished scene whose visual choices communicate this specific brief.
 
 TEMPLATE CRAFT DIRECTION
-${craftDirection}
+${structured && template.id === "repair" ? "Use the supplied code as a visual and timing reference for a new structured scene." : craftDirection}
 
 CREATIVE BRIEF
 Duration: ${draft.duration} seconds.
@@ -565,7 +584,7 @@ ${
 TIMED NARRATION — SCENE-LOCAL SECONDS
 ${draft.timedNarration.trim()}
 
-Treat these timestamps as the timing authority. Stage visual actions, reveals, emphasis and transitions at the corresponding spoken phrases. Keep pauses and gaps; do not distribute the narration evenly or shift the cues to zero. Use these scene-local cue times directly in renderFrame(timeInSeconds). Keep the specified scene duration. These cues provide narration context, not permission to add on-screen text; follow the on-screen text requirement below.
+Treat these timestamps as the timing authority. Stage visual actions, reveals, emphasis and transitions at the corresponding spoken phrases. Keep pauses and gaps; do not distribute the narration evenly or shift the cues to zero. ${structured ? "Use these scene-local cue times to place supported keyframes." : "Use these scene-local cue times directly in renderFrame(timeInSeconds)."} Keep the specified scene duration. These cues provide narration context, not permission to add on-screen text; follow the on-screen text requirement below.
 `
     : ""
 }
@@ -576,7 +595,7 @@ ${
   draft.mascotEnabled === true
     ? `
 MASCOT — EXPLICITLY REQUESTED
-Include ${draft.mascotName?.trim() || "the user's mascot"} in this scene. The user will attach the mascot reference image(s) directly to this LLM conversation alongside this prompt. Use those attachments as the visual identity authority; no image is embedded or uploaded by the FrameScript prompt builder. Do not ask for a FrameScript asset ID, image URL, base64 string or a separate upload into FrameScript. If the reference is absent from this LLM conversation, ask the user to attach it before generating the mascot; do not invent a replacement character.
+Include ${draft.mascotName?.trim() || "the user's mascot"} in this scene. ${structured ? "Use the mascot reference image in the task ZIP or attached to the AI conversation as the visual identity authority. If neither contains a mascot reference, ask the user to attach one before generating the mascot; do not invent a replacement character." : "The user can attach the mascot reference image(s) directly to this LLM conversation alongside this prompt or include them in the attached ZIP. Use those references as the visual identity authority. Do not ask for a FrameScript asset ID, image URL, base64 string or a separate upload into FrameScript. If no mascot reference is available, ask the user to attach one before generating the mascot; do not invent a replacement character."}
 Identity to preserve: ${draft.mascotIdentity?.trim() || "Match the attached reference's face, silhouette, proportions, palette, outfit and identifying features."}
 Scene role: ${draft.mascotRole?.trim() || "Support the scene's explanation without distracting from the main subject."}
 Actions / expressions: ${draft.mascotActions?.trim() || "Use restrained, purposeful gestures that support the narration; preserve identity across poses."}
@@ -584,7 +603,7 @@ Placement / interaction: ${draft.mascotPlacement?.trim() || "Place near the rele
 Screen size / framing: ${draft.mascotScale?.trim() || "Keep a readable, consistent scale appropriate to the composition."}
 Appearance timing: ${draft.mascotTiming?.trim() || "Appear only where useful to the story, synchronized with supplied narration cues and scene duration."}
 Additional mascot direction: ${draft.mascotNotes?.trim() || "None."}
-Implement the referenced character as self-contained procedural Canvas, inline SVG or CSS artwork suited to the selected template. Recreate the reference as faithfully as this rendering approach allows; do not assume the attached image is a runtime file or return broken local/remote image links. Keep poses and movement deterministic through renderFrame(timeInSeconds). The user's attached mascot reference takes precedence over generic style presets for mascot identity. Do not add speech bubbles, names, labels or other on-screen text unless explicitly requested in the text settings below.
+${structured ? "Use a visual reference from the ZIP or the conversation to approximate the mascot with supported native shapes. Treat the reference as guidance, not as a runtime image." : "Implement the referenced character as self-contained procedural Canvas, inline SVG or CSS artwork suited to the selected template. Recreate the reference as faithfully as this rendering approach allows; do not assume the attached image is a runtime file or return broken local/remote image links. Keep poses and movement deterministic through renderFrame(timeInSeconds)."} The user's attached mascot reference takes precedence over generic style presets for mascot identity. Do not add speech bubbles, names, labels or other on-screen text unless explicitly requested in the text settings below.
 `
     : ""
 }
@@ -602,7 +621,7 @@ Audience / intended outcome: ${draft.audience?.trim() || "Make the subject under
 Mood: ${draft.mood?.trim() || "Match the emotional tone of the narration."}
 
 VISUAL DESIGN GUIDE
-${animationDirection(draft, draft.duration)}
+${animationDirection(draft, draft.duration, structured)}
 Palette: ${draft.palette?.trim() || "Choose 3–5 colors with stable background, subject and accent roles."}
 Lighting: ${draft.lighting?.trim() || "Keep light direction, shadow softness and contrast coherent."}
 Recurring subject identity: ${draft.characters?.trim() || "Establish recognizable silhouettes, proportions and distinguishing details."}
@@ -638,12 +657,34 @@ Title placement: ${draft.titlePlacement || "Center"}; subtitle placement: ${draf
 Font weight: ${draft.textWeight ?? 600}; alignment: ${draft.textAlign || "center"}; line height: ${draft.textLineHeight ?? 1.2}; letter spacing: ${draft.textTracking ?? 0}px.
 Text fill: ${draft.textFill || "#F5F5F5"}; emphasis / active-word color: ${draft.textAccent || "#36D3DF"}; backing color when a backing treatment is selected: ${draft.textBacking || "#111827"}.
 Text entrance duration: ${draft.textAnimationDuration ?? 0.4} seconds per phrase; maximum subtitle lines: ${draft.captionLines ?? 2}. Keep the entrance brief enough to preserve reading time; if word-level animation is selected, stagger words within this entrance duration rather than repeating a long entrance for every word. Do not stretch or recolor text arbitrarily between beats. Apply exact numeric settings above in preference to general type-scale suggestions.
-Apply these typography settings only to explicitly requested text. Keep labels, titles and subtitles as separate reusable HTML elements; scope CSS to those elements so scene geometry is unaffected. Use local system-font fallbacks and no downloaded fonts. Respect the configured maximum subtitle lines, wrap at phrase boundaries, reserve their screen space, and avoid covering focal subjects. Keep text visible long enough to read; animate phrase containers rather than scattering individual letters unless the selected animation calls for it. Word highlighting requires actual word timestamps; otherwise use phrase highlighting. Never display debug timestamps or placeholder copy.
+${structured ? "These selections describe the intended typography. Preserve exact text for any supported static label." : "Apply these typography settings only to explicitly requested text. Keep labels, titles and subtitles as separate reusable HTML elements; scope CSS to those elements so scene geometry is unaffected. Use local system-font fallbacks and no downloaded fonts. Respect the configured maximum subtitle lines, wrap at phrase boundaries, reserve their screen space, and avoid covering focal subjects. Keep text visible long enough to read; animate phrase containers rather than scattering individual letters unless the selected animation calls for it. Word highlighting requires actual word timestamps; otherwise use phrase highlighting. Never display debug timestamps or placeholder copy."}
 ${itemPrompt ? `INDIVIDUAL TEXT ITEMS — each item's settings override global defaults only for that item. Do not apply title/subtitle default placement or size to these items. Use installed font fallbacks. All item values must be derived deterministically from scene time.\n${itemPrompt}` : ""}
 `
     : ""
 }
-Additional requirements: ${draft.notes.trim() || "None."}
+Additional requirements: ${draft.notes.trim() || "None."}`;
+
+  const existingCode = code
+    ? `EXISTING CODE TO REPAIR / ADAPT${structured ? " (reference only)" : ""}
+HTML:
+${code.html}
+CSS:
+${code.css}
+JavaScript:
+${code.js}
+`
+    : "";
+
+  if (structured)
+    return `${direction}
+Background music (BGM): ${draft.bgm ? "Requested" : "Not requested"}.
+Sound effects (SFX): ${draft.sfx ? "Requested" : "Not requested"}.
+
+Use the creative direction above within the structured output contract. Approximate unsupported visuals with supported shapes and tracks. The contract has no audio, 3D renderer, custom code, timed captions, or advanced typography. If text is requested, use only wording explicitly requested for display and choose at most one static label. Keep the timeline name separate from on-screen text.
+
+${existingCode}`.trim();
+
+  return `${direction}
 Background music (BGM): ${draft.bgm ? "Required as actual synthesized soundtrack data inside the generated code, not a written plan." : "Not requested."}
 Sound effects (SFX): ${draft.sfx ? "Required as actual synthesized sound cues inside the generated code, synchronized to visual actions and narration." : "Not requested."}
 
@@ -691,18 +732,7 @@ FRAMESCRIPT REQUIREMENTS — FOLLOW EXACTLY
 9. Keep rendering practical for a modest computer. Prefer bounded object counts, cached geometry and simple effects. Do not produce an empty gradient or text-only placeholder when a visual animation is requested.
 10. When on-screen text is requested, use real HTML text elements with CSS or Web Animations where practical, so FrameScript can capture reusable typography styles and keyframes. Keep each reusable text treatment in its own element. Avoid drawing text into Canvas unless essential to the requested effect.
 
-${
-  code
-    ? `EXISTING CODE TO REPAIR / ADAPT
-HTML:
-${code.html}
-CSS:
-${code.css}
-JavaScript:
-${code.js}
-`
-    : ""
-}
+${existingCode}
 OUTPUT FORMAT
 ${draft.format === "document" ? "Return exactly ONE complete HTML document in one html code block, with inline <style> in <head> and an inline classic <script> after the body elements. FrameScript will split those into its HTML, CSS and JavaScript tabs, retaining the soundtrack JSON in HTML. Do not reference separate files." : "Return exactly THREE clearly labeled code blocks: HTML (body markup, including the inert soundtrack JSON script when requested), CSS, and JavaScript. Do not put <style> or executable <script> tags in the HTML block. The user will paste each block into the corresponding editor tab."}
 FINAL QUALITY GATE

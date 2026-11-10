@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "./bridge";
 import type { TerminalState } from "../shared/rpc";
+import { useStatusActivity } from "./editor-status";
 
 function terminalError(cause: unknown) {
   const message = cause instanceof Error ? cause.message : String(cause);
@@ -14,6 +15,11 @@ export function TerminalPanel({ id }: { id: string }) {
   const [command, setCommand] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  useStatusActivity(
+    busy || terminal?.running
+      ? "Running PowerShell command…"
+      : !terminal && !error ? "Connecting to PowerShell…" : "",
+  );
   const output = useRef<HTMLPreElement>(null);
   const follow = useRef(true);
   const generation = useRef(0);
@@ -70,15 +76,7 @@ export function TerminalPanel({ id }: { id: string }) {
         <span>
           <strong>PowerShell</strong>{" "}
           <span className="muted">
-            {!terminal
-              ? error
-                ? "Unavailable"
-                : "Connecting…"
-              : terminal.running
-                ? "Running…"
-                : terminal?.exitCode != null
-                  ? `Exit ${terminal.exitCode}`
-                  : "Ready"}
+            {!terminal && error ? "Unavailable" : terminal?.exitCode != null ? `Exit ${terminal.exitCode}` : ""}
           </span>
         </span>
         <div>

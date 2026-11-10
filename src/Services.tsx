@@ -1,3 +1,4 @@
+import { useStatusActivity } from "./editor-status";
 import { useEffect, useState } from "react";
 import { RefreshCw, ExternalLink, ShieldCheck, Plug } from "lucide-react";
 import { Modal } from "./components";
@@ -94,6 +95,13 @@ export function Services({
   const [remember, setRemember] = useState(
     () => localStorage.getItem("framescript.remember-connections") !== "false",
   );
+  useStatusActivity(
+    open && working
+      ? working === "refresh"
+        ? "Refreshing service connections…"
+        : `Updating ${info[working as ServiceId]?.name ?? "connection"}…`
+      : "",
+  );
   const refresh = async () => setServices(await bridge.call("servicesStatus"));
   useEffect(() => {
     if (!open) return;
@@ -182,13 +190,6 @@ export function Services({
       {(error || authError) && (
         <p role="alert" className="workflow-error">
           {error || authError}
-        </p>
-      )}
-      {working && (
-        <p role="status">
-          {working === "refresh"
-            ? "Refreshing service connections…"
-            : `Updating ${info[working as ServiceId]?.name ?? "connection"}…`}
         </p>
       )}
       <div className="services-grid">
@@ -309,12 +310,6 @@ export function Services({
                       >
                         Continue with ChatGPT
                       </button>
-                    )}
-                    {chatgpt.pending && (
-                      <p role="status">
-                        Finish signing in in the opened tab. Waiting for
-                        authorization…
-                      </p>
                     )}
                     {(chatgpt.connected || chatgpt.pending) && (
                       <button

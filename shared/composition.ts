@@ -20,7 +20,7 @@ export function composeProject(p: Project): Project {
   const html = scenes
     .map(
       (s, i) =>
-        `<iframe id="scene-${i}" data-start="${sceneOffset(p, s.id)}" title="${attr(s.title)}" sandbox="allow-scripts" srcdoc="${attr(documentFor({ ...p, assets: [], workflow: undefined, audio: undefined, html: s.html, css: s.css, js: s.js, settings: { ...p.settings, duration: s.duration } }, { sourceOffset: s.sourceOffset, textEditing: false }))}"></iframe>`,
+        `<iframe id="scene-${i}" data-start="${sceneOffset(p, s.id)}" title="${attr(s.title)}" sandbox="allow-scripts" srcdoc="${attr(documentFor({ ...p, assets: [], workflow: undefined, audio: undefined, html: s.html, css: s.css, js: s.js, settings: { ...p.settings, duration: s.duration } }, { sourceOffset: s.sourceOffset, visualDuration: s.visualDuration, visualContinuations: s.visualContinuations, textEditing: false }))}"></iframe>`,
     )
     .join("\n");
   const offsets = scenes.map((s) => ({

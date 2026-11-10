@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { promptContextSchema } from "./prompt-references";
+import { codeGenerateInputSchema } from "./code-generate";
+import { codeContinuationInputSchema } from "./code-continuation";
 import { extendInputSchema, type ExtendTask } from "./structured-extend";
 import {
   generateInputSchema,
@@ -44,6 +46,8 @@ export type TerminalState = {
   exitCode: number | null;
 };
 export const rpcSchemas = {
+  codeContinuationPackage: z.tuple([codeContinuationInputSchema]),
+  codeGeneratePackage: z.tuple([codeGenerateInputSchema]),
   structuredExtendPackage: z.tuple([extendInputSchema]),
   structuredExtendRequest: z.tuple([z.string().uuid()]),
   structuredGeneratePackage: z.tuple([generateInputSchema]),
@@ -180,6 +184,8 @@ export type ChatGPTStatus = {
   error?: string;
 };
 export interface RpcResults {
+  codeContinuationPackage: { prompt: string; name: string; url: string };
+  codeGeneratePackage: { prompt: string; name: string; url: string };
   structuredExtendPackage: {
     requestId: string;
     prompt: string;

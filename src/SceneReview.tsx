@@ -4,7 +4,7 @@ import type { Project } from "../shared/project";
 import { documentFor } from "../shared/runtime";
 import { Modal } from "./components";
 
-function ReviewFrame({
+export function ReviewFrame({
   project,
   time,
   title,
@@ -66,6 +66,8 @@ export function SceneReview({
   applyDisabled = false,
   actions,
   comparisonDuration,
+  beforeTime,
+  playFrom,
 }: {
   before?: Project;
   after: Project;
@@ -76,14 +78,34 @@ export function SceneReview({
   applyDisabled?: boolean;
   actions?: ReactNode;
   comparisonDuration?: number;
+  beforeTime?: number;
+  playFrom?: number;
 }) {
   const [time, setTime] = useState(initialTime);
+  const [playing, setPlaying] = useState(false);
+  const end = comparisonDuration ?? Math.min(
+    before?.settings.duration ?? after.settings.duration,
+    after.settings.duration,
+  );
+  useEffect(() => {
+    if (!playing || playFrom === undefined) return;
+    const started = performance.now();
+    let frame = 0;
+    const tick = (now: number) => {
+      const next = Math.min(end, playFrom + (now - started) / 1000);
+      setTime(next);
+      if (next < end) frame = requestAnimationFrame(tick);
+      else setPlaying(false);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, playFrom, end]);
   return (
     <Modal title="Review AI changes" wide open onClose={onDiscard}>
       <div>{explanation}</div>
       <div className={before ? "scene-review-grid" : undefined}>
         {before && (
-          <ReviewFrame project={before} time={time} title="Current scene" />
+          <ReviewFrame project={before} time={beforeTime ?? time} title="Current scene" />
         )}
         <ReviewFrame project={after} time={time} title="Proposed scene" />
       </div>
@@ -93,20 +115,15 @@ export function SceneReview({
           aria-label="Comparison time"
           type="range"
           min={0}
-          max={
-            comparisonDuration ??
-            Math.min(
-              before?.settings.duration ?? after.settings.duration,
-              after.settings.duration,
-            )
-          }
+          max={end}
           step={0.05}
           value={time}
-          onChange={(e) => setTime(Number(e.target.value))}
+          onChange={(e) => { setPlaying(false); setTime(Number(e.target.value)); }}
         />
       </label>
       <div className="modal-actions">
         {actions}
+        {playFrom !== undefined && <button onClick={() => setPlaying(!playing)}>{playing ? "Stop preview" : "Play across join"}</button>}
         <button onClick={onDiscard}>Discard changes</button>
         <button className="primary" onClick={onApply} disabled={applyDisabled}>
           Apply changes

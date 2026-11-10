@@ -23,9 +23,8 @@ export function PromptMascot({
         Include my mascot in this scene
       </label>
       <p className="type-control-help">
-        Attach the mascot reference image directly in your LLM chat when you
-        paste the generated prompt. No image upload is needed here. FrameScript
-        does not attach or send an image automatically.
+        Add a mascot reference image in Output to include it in the ZIP, or
+        attach it in your AI chat with the prompt and ZIP.
       </p>
       {!draft.mascotEnabled && (
         <p className="type-control-help">
@@ -87,9 +86,7 @@ export function PromptMascot({
             </label>
           ))}
           <p className="type-control-help">
-            The prompt requests a self-contained recreation from your reference.
-            Preview/export cannot load an image attached only in the LLM chat;
-            the generated code must contain the artwork.
+            The reference guides the mascot’s silhouette, palette, and identifying details.
           </p>
         </div>
       )}

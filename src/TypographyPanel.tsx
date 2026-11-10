@@ -1,3 +1,4 @@
+import { useStatusNotice } from "./editor-status";
 import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2, Type } from "lucide-react";
 import { useProjectState, useStudio } from "./store";
@@ -114,7 +115,7 @@ export function TypographyPanel({ master }: { master: boolean }) {
   const [search, setSearch] = useState("");
   const selectedId = useStudio((state) => state.selectedText);
   const setSelectedId = useStudio((state) => state.setSelectedText);
-  const [status, setStatus] = useState("");
+  const notify = useStatusNotice();
   const origin = selectedScene(project)?.sourceOffset ?? 0;
   const createDraft = (template = textTemplates[0]): TextLayer => ({
     id: "text-" + crypto.randomUUID(),
@@ -147,7 +148,7 @@ export function TypographyPanel({ master }: { master: boolean }) {
     }
     setSelectedId(null);
     setDraft(createDraft());
-    setStatus("");
+
   }, [sceneId]);
   useEffect(() => {
     if (!selectedId) return;
@@ -172,14 +173,14 @@ export function TypographyPanel({ master }: { master: boolean }) {
   const update = (patch: Partial<TextLayer>) => {
     const next = { ...draft, ...patch, ...(patch.start !== undefined ? { motionStart: Math.max(0, (draft.motionStart ?? draft.start) + patch.start - draft.start) } : {}) };
     setDraft(next);
-    setStatus("");
+
     if (!selectedId || locked) return;
     if (
       next.end <= next.start ||
       next.start < origin ||
       next.end > origin + project.settings.duration
     ) {
-      setStatus("Keep the text timing within this scene.");
+      notify("Keep the text timing within this scene.");
       return;
     }
     change({ html: writeTextLayer(project.html, next) }, "Edit text layer");
@@ -187,7 +188,7 @@ export function TypographyPanel({ master }: { master: boolean }) {
   const apply = () => {
     if (locked) return;
     if (!draft.text.trim()) {
-      setStatus("Enter text first.");
+      notify("Enter text first.");
       return;
     }
     if (
@@ -195,7 +196,7 @@ export function TypographyPanel({ master }: { master: boolean }) {
       draft.end > origin + project.settings.duration ||
       draft.start < origin
     ) {
-      setStatus("End must be after Start and within this scene’s duration.");
+      notify("End must be after Start and within this scene’s duration.");
       return;
     }
     const layer = { ...draft, id: selectedId ?? "text-" + crypto.randomUUID() };
@@ -215,7 +216,7 @@ export function TypographyPanel({ master }: { master: boolean }) {
             sourceOffset,
         ),
       );
-    setStatus(selectedId ? "Text updated." : "Text added to this scene.");
+    notify(selectedId ? "Text updated." : "Text added to this scene.");
   };
   return (
     <section className="typography-panel" aria-label="Typography templates">
@@ -289,7 +290,7 @@ export function TypographyPanel({ master }: { master: boolean }) {
               onClick={() => {
                 setSelectedId(null);
                 setDraft(createDraft(draft.template));
-                setStatus("");
+
               }}
             >
               <Plus size={14} /> New
@@ -427,7 +428,7 @@ export function TypographyPanel({ master }: { master: boolean }) {
                     sample: draft.text.slice(0, 500),
                   },
                 ]);
-                setStatus("Style saved to the library.");
+                notify("Style saved to the library.");
               }}
             >
               Save style
@@ -444,9 +445,6 @@ export function TypographyPanel({ master }: { master: boolean }) {
               </button>
             )}
           </div>
-          <p role="status" className="type-hint">
-            {status}
-          </p>
         </div>
         <div className="type-section-heading">
           <strong>Text in this scene</strong>
@@ -468,7 +466,7 @@ export function TypographyPanel({ master }: { master: boolean }) {
               onClick={() => {
                 setSelectedId(layer.id);
                 setDraft(layer);
-                setStatus("");
+
               }}
             >
               <Type size={13} />

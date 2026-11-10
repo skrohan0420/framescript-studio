@@ -1,5 +1,6 @@
 import type { Project, AudioClip } from "./project";
 import { activateScene, initialWorkflow } from "./workflow";
+import { readTextLayers } from "./typography";
 
 export function splitVisual(
   project: Project,
@@ -10,6 +11,8 @@ export function splitVisual(
   const index = workflow.scenes.findIndex((scene) => scene.id === id);
   const scene = workflow.scenes[index];
   if (!scene || scene.locked) throw Error("Select an unlocked visual clip.");
+  if (scene.visualContinuations?.length)
+    throw Error("Remove the visual continuations before splitting this timeline.");
   if (workflow.scenes.length >= 30)
     throw Error("A project supports up to 30 visual clips.");
   if (time < 0.1 || scene.duration - time < 0.1)
@@ -22,10 +25,13 @@ export function splitVisual(
     title: `${scene.title} (split)`,
     duration: scene.duration - time,
     sourceOffset: (scene.sourceOffset ?? 0) + time,
+    visualDuration: scene.visualDuration === undefined
+      ? undefined
+      : Math.min(scene.duration - time, Math.max(0, scene.visualDuration - time)),
   };
   const scenes = [
     ...workflow.scenes.slice(0, index),
-    { ...scene, duration: time },
+    { ...scene, duration: time, visualDuration: scene.visualDuration === undefined ? undefined : Math.min(time, scene.visualDuration) },
     right,
     ...workflow.scenes.slice(index + 1),
   ];
@@ -70,25 +76,33 @@ export function resizeVisual(
       (sum, item) => sum + (item.id === id ? 0 : item.duration),
       0,
     );
-  const length = Math.max(0.1, Math.min(remaining, duration));
+  const length = Math.max(0.1, Math.min(remaining, duration, scene.visualContinuations?.[0]?.start ?? Infinity));
+  const origin = scene.sourceOffset ?? 0;
+  const textEnd = (scene.html.includes("data-fs-text") ? readTextLayers(scene.html) : []).reduce(
+    (end, layer) => layer.start < origin + scene.duration ? Math.max(end, layer.end - origin) : end,
+    0,
+  );
+  const audioEnd = (project.audio ?? []).reduce((end, clip) => {
+    const clipEnd = clip.start + clip.length;
+    if (clip.sceneId === id) return Math.max(end, clipEnd);
+    if (!clip.sceneId)
+      return Math.max(end, clipEnd - (600 - remaining));
+    return end;
+  }, 0);
+  const continuationEnd = Math.max(0, ...(scene.visualContinuations ?? []).map((segment) => segment.start + segment.duration));
+  const sceneLength = Math.max(length, continuationEnd, Math.min(scene.duration, Math.max(audioEnd, textEnd)));
   const next = {
     ...workflow,
     scenes: workflow.scenes.map((item) =>
-      item.id === id ? { ...item, duration: length } : item,
+      item.id === id
+        ? { ...item, duration: sceneLength, visualDuration: length }
+        : item,
     ),
   };
-  const audio = project.audio
-    ?.filter((clip) => clip.sceneId !== id || clip.start < length)
-    .map((clip) =>
-      clip.sceneId === id
-        ? { ...clip, length: Math.min(clip.length, length - clip.start) }
-        : clip,
-    );
   return {
     workflow: next,
     ...(workflow.selectedId === id
-      ? { settings: { ...project.settings, duration: length } }
+      ? { settings: { ...project.settings, duration: sceneLength } }
       : {}),
-    audio,
   };
 }

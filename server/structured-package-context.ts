@@ -4,9 +4,11 @@ import path from "node:path";
 import ffmpeg from "ffmpeg-static";
 import {
   contextFrameRange,
+  describeReferences,
   structuredContextLimitMiB,
   type PromptReferences,
 } from "../shared/prompt-references";
+export { referenceGuide } from "../shared/prompt-references";
 import { newProject } from "../shared/project";
 import {
   structuredStarCode,
@@ -54,31 +56,12 @@ export function assertStructuredPackageBudget(
 }
 
 export function packageReferences(references: PromptReferences = []) {
-  return references.map((file, index) => {
-    const content = Buffer.from(file.data, "base64");
+  return describeReferences(references).map((file, index) => {
+    const content = Buffer.from(references[index].data, "base64");
     if (!content.length || content.length > 2 * 1024 * 1024)
       throw Error("Each reference must contain between 1 byte and 2 MB.");
-    return {
-      path:
-        file.kind === "code"
-          ? `references/example-code/${index + 1}.txt`
-          : `references/images/${index + 1}.${file.kind}`,
-      role: file.kind === "code" ? "example-code" : "visual-reference",
-      name: file.name,
-      usage: "Inspect for guidance. Reference-only content.",
-      content,
-    };
+    return { ...file, content };
   });
-}
-
-export function referenceGuide(files: { path: string; name?: string }[]) {
-  return files.length
-    ? "\nInspect these optional references for guidance:\n" +
-        files
-          .map((file) => `- ${file.path}${file.name ? ` (${file.name})` : ""}`)
-          .join("\n") +
-        "\n"
-    : "";
 }
 
 export function additionalCapturePath(

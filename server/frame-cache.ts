@@ -22,6 +22,10 @@ export function frameDependencies(project: Project) {
     project.assets,
     project.workflow?.scenes.find((s) => s.id === project.workflow?.selectedId)
       ?.sourceOffset ?? 0,
+    project.workflow?.scenes.find((s) => s.id === project.workflow?.selectedId)
+      ?.visualDuration ?? null,
+    project.workflow?.scenes.find((s) => s.id === project.workflow?.selectedId)
+      ?.visualContinuations ?? null,
   ]);
   try {
     if (project.css !== compositionCss)

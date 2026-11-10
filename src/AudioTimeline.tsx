@@ -1,3 +1,4 @@
+import { useStatusNotice } from "./editor-status";
 import { memo, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { useProjectState, useStudio } from "./store";
@@ -32,7 +33,7 @@ export const AudioTimeline = memo(function AudioTimeline({
   const [draft, setDraft] = useState<AudioClip | null>(null);
   const draftRef = useRef<AudioClip | null>(null);
   const activeGesture = useRef(false);
-  const [message, setMessage] = useState("");
+  const notify = useStatusNotice();
   const offset =
     !master && p.workflow ? sceneOffset(p, p.workflow.selectedId) : 0;
   const visible = (p.audio ?? []).filter(
@@ -48,7 +49,7 @@ export const AudioTimeline = memo(function AudioTimeline({
   const commit = (clip: AudioClip, revision: number) => {
     const current = useStudio.getState();
     if (current.revision !== revision) {
-      setMessage("Project changed during audio edit. Try again.");
+      notify("Project changed during audio edit. Try again.");
       return;
     }
     change(
@@ -57,7 +58,7 @@ export const AudioTimeline = memo(function AudioTimeline({
       },
       "Move / trim audio",
     );
-    setMessage(
+    notify(
       `${clip.name}: starts at ${clip.start.toFixed(2)}s, length ${clip.length.toFixed(2)}s`,
     );
   };
@@ -337,9 +338,6 @@ export const AudioTimeline = memo(function AudioTimeline({
           </div>
         </div>
       ))}
-      <span className="sr-only" role="status">
-        {message}
-      </span>
     </section>
   );
 });

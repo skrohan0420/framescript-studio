@@ -1,3 +1,4 @@
+import { useStatusActivity } from "./editor-status";
 import { useEffect, useRef, useState } from "react";
 import type { CodeSnapshot } from "../shared/rpc";
 import SyntaxWorker from "./code-syntax.worker?worker";
@@ -103,6 +104,7 @@ export function CodeProblems({
   onJump: (language: ProblemLanguage, location: Location) => void;
 }) {
   const { problems, failure, checking, checkNow } = syntax;
+  useStatusActivity(!failure && checking ? "Checking syntax…" : "");
   return (
     <section className="code-problems" aria-label="Code problems">
       <header>
@@ -112,7 +114,6 @@ export function CodeProblems({
         </button>
       </header>
       {failure && <p role="alert">The syntax checker couldn’t load.</p>}
-      {!failure && checking && <p role="status">Checking syntax…</p>}
       {!failure && !checking && problems.length === 0 && !parseError && (
         <p role="status">No syntax errors found.</p>
       )}

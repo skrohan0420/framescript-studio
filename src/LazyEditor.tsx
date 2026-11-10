@@ -1,5 +1,6 @@
 import { Component, lazy, Suspense, type ReactNode } from "react";
 import type { ChangesEditorProps, SourceEditorProps } from "./CodeEditor";
+import { StatusActivity } from "./editor-status";
 const Editor = lazy(() => import("./CodeEditor"));
 const Changes = lazy(() =>
   import("./CodeEditor").then((module) => ({ default: module.ChangesEditor })),
@@ -34,11 +35,7 @@ function EditorLoader({ children }: { children: ReactNode }) {
   return (
     <EditorBoundary>
       <Suspense
-        fallback={
-          <div role="status" className="editor-loading">
-            Loading code editor…
-          </div>
-        }
+        fallback={<StatusActivity message="Loading code editor…" />}
       >
         {children}
       </Suspense>

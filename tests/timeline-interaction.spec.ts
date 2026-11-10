@@ -327,7 +327,22 @@ test("lane labels remain visible when zoomed and horizontally scrolled", async (
   page,
 }) => {
   await page.getByRole("slider", { name: "Timeline zoom" }).fill("4");
-  await page.locator(".timeline-track-scroll").evaluate((el) => {
+  const scroller = page.locator(".timeline-track-scroll");
+  await scroller.evaluate((el) => { el.scrollLeft = 24; });
+  await expect.poll(() => scroller.evaluate((el) => el.style.getPropertyValue("--timeline-scroll-left"))).toBe("24px");
+  const playhead = page.locator(".timeline-cursor");
+  const clipped = await playhead.evaluate((element) => {
+    const cursor = element.getBoundingClientRect();
+    const viewport = element.closest(".timeline-track-scroll")!.getBoundingClientRect();
+    const x = cursor.left + 6;
+    return {
+      inGutter: x > viewport.left && x < viewport.left + 96,
+      cursorHit: document.elementFromPoint(x, cursor.top + 4) === element,
+      rulerHit: !!document.elementFromPoint(x, cursor.top - 4)?.closest(".ruler"),
+    };
+  });
+  expect(clipped).toEqual({ inGutter: true, cursorHit: false, rulerHit: false });
+  await scroller.evaluate((el) => {
     el.scrollLeft = el.scrollWidth - el.clientWidth;
   });
   const viewport = (await page
@@ -353,6 +368,40 @@ test("zoom retains the playhead position in the visible viewport", async ({
       return Math.abs(current.x - before.x);
     })
     .toBeLessThan(2);
+});
+
+test("the visual can end while both narration clips keep playing on the timeline", async ({ page }) => {
+  const project = newProject();
+  project.workflow = initialWorkflow(project);
+  const sceneId = project.workflow.selectedId;
+  project.audio = [
+    { ...clipFromAudio(synthesizeSound("Ambient loop"), "voice", sceneId), length: 2 },
+    { ...clipFromAudio(synthesizeSound("Gentle pulse"), "voice", sceneId), start: 2, length: 3 },
+  ];
+  let saved: Project | undefined;
+  await page.route("**/api/workspaceGet", (route) => route.fulfill({ json: { result: project } }));
+  await page.route("**/api/autosave", (route) => {
+    saved = route.request().postDataJSON().args[0];
+    return route.fulfill({ json: { result: true } });
+  });
+  await page.reload();
+  const ruler = (await page.locator(".ruler").boundingBox())!;
+  const handle = (await page.getByRole("button", { name: "Trim end of visual clip", exact: true }).boundingBox())!;
+  const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - ruler.width * 0.8, y, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => saved?.settings.duration).toBe(5);
+  expect(saved?.workflow?.scenes[0].visualDuration).toBe(2);
+  expect(saved?.audio?.map(({ start, length }) => [start, length])).toEqual([[0, 2], [2, 3]]);
+  await expect(page.locator(".audio-edit-clip")).toHaveCount(2);
+  const position = page.getByRole("slider", { name: "Timeline position" });
+  const visual = page.frameLocator('iframe[title="Animation preview"]').locator("#ball");
+  await position.fill("3");
+  await expect(visual).toBeHidden();
+  await position.fill("1");
+  await expect(visual).toBeVisible();
 });
 
 test("audio dragging and trimming apply the change and undo restores it", async ({

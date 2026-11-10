@@ -19,9 +19,24 @@ export const assetSchema = z.object({
   kind: z.enum(["image", "reference", "variant"]).optional(),
   mascot: z.string().optional(),
 });
+export const visualCodeSchema = z.object({
+  html: z.string().max(2_000_000),
+  css: z.string().max(2_000_000),
+  js: z.string().max(2_000_000),
+});
+export const visualContextSchema = z.string().max(300_000);
+const visualContinuationSchema = visualCodeSchema.extend({
+  id: z.string().uuid(),
+  start: z.number().min(0).max(600),
+  duration: z.number().min(0.1).max(600),
+  context: visualContextSchema.optional(),
+});
 export const sceneSchema = z.object({
   structuredEdit: editSceneSchema.optional(),
   sourceOffset: z.number().min(0).max(600).optional(),
+  visualDuration: z.number().min(0).max(600).optional(),
+  visualContext: visualContextSchema.optional(),
+  visualContinuations: z.array(visualContinuationSchema).max(29).optional(),
   id: z.string(),
   title: z.string().min(1).max(200),
   narration: z.string().max(30000),
@@ -32,7 +47,15 @@ export const sceneSchema = z.object({
   html: z.string().max(2_000_000),
   css: z.string().max(2_000_000),
   js: z.string().max(2_000_000),
-});
+}).refine((scene) => {
+  if (!scene.visualContinuations?.length) return true;
+  let end = scene.visualDuration ?? scene.duration;
+  for (const segment of scene.visualContinuations) {
+    if (segment.start < end - 1e-9) return false;
+    end = segment.start + segment.duration;
+  }
+  return end <= scene.duration + 1e-9;
+}, "Visual continuations must fit inside the timeline without overlapping.");
 export type Scene = z.infer<typeof sceneSchema>;
 export const workflowSchema = z
   .object({

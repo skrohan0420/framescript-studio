@@ -11,6 +11,14 @@ export function narrationLength(clip: AudioClip) {
     throw Error("Choose an active, non-looping narration take.");
   return Math.min(clip.length, clip.duration - clip.trimIn);
 }
+
+export function sceneNarrationEnd(project: Project, sceneId: string) {
+  return (project.audio ?? []).reduce((end, clip) => {
+    if (clip.sceneId !== sceneId || clip.lane !== "voice" || clip.muted || clip.loop)
+      return end;
+    return Math.max(end, clip.start + narrationLength(clip));
+  }, 0);
+}
 /** Duration matching is proportional to text, not word-level forced alignment. */
 export function timeScenesToNarration(
   scenes: Scene[],

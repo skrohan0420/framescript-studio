@@ -217,6 +217,8 @@ export function Preview({
     clip?.id,
     clip?.locked,
     clip?.sourceOffset,
+    clip?.visualDuration,
+    clip?.visualContinuations,
     clip?.structuredEdit,
     textEditing,
     resolutionScale,

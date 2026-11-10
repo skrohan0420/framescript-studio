@@ -1,9 +1,9 @@
+import { useStatusActivity, useStatusNotice } from "./editor-status";
 import { PromptAnimation } from "./PromptAnimation";
 import { restoreTechniques } from "../shared/animation-techniques";
 import { useEffect, useRef, useState } from "react";
 import {
   Clipboard,
-  ClipboardPaste,
   RotateCcw,
   Timer,
   Music,
@@ -20,7 +20,7 @@ import {
   Cat,
   SlidersHorizontal,
 } from "lucide-react";
-import { useProjectState } from "./store";
+import { useProjectState, useStudio } from "./store";
 import { sceneOffset } from "../shared/workflow";
 import { transcriptSrt, voiceoverWordsForScene } from "../shared/transcript";
 import { parseNarrationInput } from "../shared/narration-input";
@@ -31,12 +31,36 @@ import { PromptDirectionStudio } from "./PromptDirectionStudio";
 import { promptTextListSchema } from "../shared/prompt-text";
 import {
   buildCodePrompt,
+  buildStructuredSceneBrief,
   artStyles,
   promptTemplates,
   type PromptDraft,
 } from "../shared/prompt-templates";
+import {
+  buildGeneratePrompt,
+  generateInputSchema,
+  type GenerateInput,
+} from "../shared/structured-generate";
+import {
+  buildCodeGeneratePrompt,
+  codeGenerateInputSchema,
+  type CodeGenerateInput,
+} from "../shared/code-generate";
+import type { PromptReferences as References } from "../shared/prompt-references";
+import { PromptReferences } from "./PromptReferences";
+import { bridge, download } from "./bridge";
 
 const storageKey = "framescript.prompt-draft.v1";
+const outputKey = "framescript.prompt-output";
+type GenerateOutput = CodeGenerateInput["format"] | "structured";
+type GeneratePackage =
+  | { kind: "code"; input: CodeGenerateInput }
+  | { kind: "structured"; input: GenerateInput };
+const outputLabels: Record<GenerateOutput, string> = {
+  document: "Full HTML document",
+  separate: "Separate HTML, CSS, and JavaScript",
+  structured: "Editable structured scene",
+};
 const fieldSuggestions = {
   script: [
     [
@@ -133,15 +157,17 @@ const fieldSuggestions = {
   ],
 } as const;
 export function PromptTemplates({
-  onPaste,
   master = false,
   onClose,
-  onGenerateScene,
+  onReviewGeneratedScene,
+  onOpenCode,
+  onCodeTaskExported,
 }: {
-  onPaste: () => void;
   master?: boolean;
   onClose?: () => void;
-  onGenerateScene?: (brief: string, duration: number) => void;
+  onReviewGeneratedScene: () => void;
+  onOpenCode: (pasteDocument: boolean) => void;
+  onCodeTaskExported: (context: string, sceneId: string, session: number) => void;
 }) {
   const { project } = useProjectState();
   const defaults: PromptDraft = {
@@ -256,16 +282,30 @@ export function PromptTemplates({
         saved.duration <= 600
       )
         restored.duration = saved.duration;
-      if (["document", "separate"].includes(saved.format))
-        restored.format = saved.format;
       return restored;
     } catch {
       return defaults;
     }
   });
   const [includeCode, setIncludeCode] = useState(false);
+  const [output, setOutput] = useState<GenerateOutput>(() => {
+    try {
+      const saved = localStorage.getItem(outputKey);
+      if (saved === "separate" || saved === "structured") return saved;
+    } catch {}
+    return "document";
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(outputKey, output);
+    } catch {}
+  }, [output]);
+  const [references, setReferences] = useState<References>([]);
+  const [busy, setBusy] = useState(false);
   const [durationInput, setDurationInput] = useState<string | null>(null);
-  const [status, setStatus] = useState("");
+  const notify = useStatusNotice();
+  useStatusActivity(busy ? "Preparing prompt package…" : "");
+  const [uncopiedPrompt, setUncopiedPrompt] = useState("");
   const [timedVoiceId, setTimedVoiceId] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeSection, setActiveSection] = useState(() => {
@@ -318,7 +358,7 @@ export function PromptTemplates({
       [key]: value,
       ...(key === "script" ? { timedNarration: "" } : {}),
     }));
-    setStatus("");
+
   };
   const suggestions = (key: keyof typeof fieldSuggestions) => (
     <div
@@ -385,7 +425,7 @@ export function PromptTemplates({
       )
       .sort((a, b) => a.start - b.start);
     if (!words.length) {
-      setStatus(
+      notify(
         "No timed speech falls inside this scene. Check the clip’s position and trim.",
       );
       return;
@@ -397,22 +437,79 @@ export function PromptTemplates({
       duration: project.settings.duration,
     }));
     setDurationInput(null);
-    setStatus(
+    notify(
       "Timed voiceover added. Cue times follow the audio’s trim and position in this scene.",
     );
   };
+  let request: GeneratePackage | undefined;
   let prompt = "",
     promptError = "";
   try {
-    prompt = buildCodePrompt(
-      draft,
-      project.settings.width,
-      project.settings.height,
-      includeCode ? project : undefined,
-    );
+    const { width, height, fps } = project.settings;
+    const source = includeCode ? project : undefined;
+    if (output === "structured") {
+      const input = generateInputSchema.parse({
+        brief: buildStructuredSceneBrief(draft, width, height, source),
+        width,
+        height,
+        fps,
+        durationFrames: Math.max(
+          Math.ceil(fps / 10),
+          Math.round(draft.duration * fps),
+        ),
+        references,
+      });
+      request = { kind: "structured", input };
+      prompt = buildGeneratePrompt(input);
+    } else {
+      const input = codeGenerateInputSchema.parse({
+        format: output,
+        prompt: buildCodePrompt({ ...draft, format: output }, width, height, source),
+        references,
+      });
+      request = { kind: "code", input };
+      prompt = buildCodeGeneratePrompt(input);
+    }
   } catch (error) {
     promptError = (error as Error).message;
   }
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+
+    try {
+      await action();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyAndDownload = (request: GeneratePackage) =>
+    run(async () => {
+      notify("Ready");
+      setUncopiedPrompt("");
+      const { session, project: currentProject } = useStudio.getState();
+      const sceneId = currentProject.workflow?.selectedId ?? "scene-1";
+      const result = request.kind === "structured"
+        ? await bridge.call("structuredGeneratePackage", request.input)
+        : await bridge.call("codeGeneratePackage", request.input);
+      if (useStudio.getState().session !== session)
+        throw Error("The project changed. Open its Prompt Builder and try again.");
+      download(result);
+      if (request.kind === "code" && request.input.format === "document") {
+        const { script, timedNarration, ...context } = draft;
+        onCodeTaskExported(JSON.stringify({ ...context, format: "document" }, null, 2), sceneId, session);
+      }
+      try {
+        await navigator.clipboard.writeText(result.prompt);
+        notify("Prompt copied and ZIP download started.");
+      } catch {
+        setUncopiedPrompt(result.prompt);
+        selectSection("output");
+        notify("ZIP download started. Clipboard access was unavailable. Copy the exported prompt in Output.");
+      }
+    });
   const icons = {
     canvas: Orbit,
     motion: Layers,
@@ -449,7 +546,7 @@ export function PromptTemplates({
     <section className="prompt-templates" aria-label="Prompt templates">
       <div className="prompt-heading">
         <div>
-          <h3 title="Describe your animation, copy the prompt to GPT, then paste the generated code.">
+          <h3 title="Describe your scene, then copy the prompt and download its task ZIP.">
             <Sparkles size={17} /> Prompt builder
           </h3>
           <p>Brief → style → copy → create.</p>
@@ -461,7 +558,7 @@ export function PromptTemplates({
             setDraft(defaults);
             setDurationInput(null);
             setIncludeCode(false);
-            setStatus("");
+
           }}
         >
           <RotateCcw size={16} />
@@ -645,7 +742,7 @@ export function PromptTemplates({
                     script: parsed.script,
                     timedNarration: parsed.timedNarration,
                   }));
-                  setStatus("");
+
                 }}
               />
               <small className="prompt-input-format">
@@ -763,8 +860,9 @@ export function PromptTemplates({
             </div>
             {(draft.bgm || draft.sfx) && (
               <p className="type-hint">
-                The generated code will include a soundtrack. Paste the full
-                response to create real BGM/SFX tracks automatically.
+                {output === "structured"
+                  ? "These preferences guide the brief. Structured scenes do not include audio tracks."
+                  : "The prompt requests soundtrack data for editable music and sound effects."}
               </p>
             )}
           </div>
@@ -991,46 +1089,70 @@ export function PromptTemplates({
             open
           >
             <summary>
-              Output settings{" "}
-              <small>
-                {draft.format === "document"
-                  ? "Single HTML document"
-                  : "Three code blocks"}
-              </small>
+              Output settings <small>{outputLabels[output]}</small>
             </summary>
             <div className="prompt-options-content">
               <label className="field">
-                <span>GPT output format</span>
+                Output format
                 <select
-                  aria-label="Prompt output format"
-                  value={draft.format}
-                  onChange={(event) =>
-                    update(
-                      "format",
-                      event.target.value as PromptDraft["format"],
-                    )
-                  }
+                  aria-label="Output format"
+                  value={output}
+                  onChange={(event) => setOutput(event.target.value as GenerateOutput)}
                 >
-                  <option value="document">One complete HTML document</option>
-                  <option value="separate">
-                    Separate HTML / CSS / JavaScript blocks
-                  </option>
+                  {Object.entries(outputLabels).map(([format, label]) => (
+                    <option key={format} value={format}>
+                      {label}
+                    </option>
+                  ))}
                 </select>
               </label>
+              <p>
+                {output === "document"
+                  ? "One pasteable HTML document with CSS and JavaScript embedded. FrameScript splits it into the three editor tabs."
+                  : output === "separate"
+                    ? "Paste each returned block into its matching code editor tab."
+                    : "One scene module with editable native shapes, a built-in star, or a static label."}
+              </p>
               <label className="prompt-check">
                 <input
                   type="checkbox"
                   checked={includeCode}
                   onChange={(event) => setIncludeCode(event.target.checked)}
                 />{" "}
-                Include active timeline code for repair or adaptation
+                Include active timeline code as a reference
               </label>
+              <PromptReferences
+                references={references}
+                busy={busy}
+                run={run}
+                onChange={setReferences}
+              />
+              <button
+                disabled={busy || (master && output !== "structured")}
+                onClick={
+                  output === "structured"
+                    ? onReviewGeneratedScene
+                    : () => onOpenCode(output === "document")
+                }
+              >
+                {output === "structured"
+                  ? "Import generated scene"
+                  : output === "document"
+                    ? "Paste full HTML document"
+                    : "Open code editor"}
+              </button>
             </div>
           </details>
           <p className="muted">
             Draft saved on this device. No AI connection required. Text stays
             off-screen unless you specify it.
           </p>
+          {uncopiedPrompt && (
+            <label className="field">
+              Exported prompt
+              <textarea rows={6} value={uncopiedPrompt} readOnly />
+            </label>
+          )}
           <details>
             <summary>Preview generated prompt</summary>
             <textarea
@@ -1048,54 +1170,20 @@ export function PromptTemplates({
           <span className="live-dot" />
           <span>
             {Number(draft.duration.toFixed(2))}s ·{" "}
-            {draft.format === "document" ? "HTML document" : "3 code blocks"}
+            {outputLabels[output]}
           </span>
         </div>
         <div className="prompt-action-buttons">
-          {onGenerateScene && (
-            <button
-              onClick={() =>
-                onGenerateScene(
-                  [draft.visuals, draft.timedNarration || draft.script]
-                    .filter(Boolean)
-                    .join("\n\n")
-                    .slice(0, 12000),
-                  draft.duration,
-                )
-              }
-            >
-              Generate structured scene
-            </button>
-          )}
           <button
             className="primary"
-            title="Copy prompt"
-            disabled={!!promptError}
-            aria-label="Copy prompt"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(prompt);
-                setStatus("Prompt copied. Paste it into GPT.");
-              } catch {
-                setStatus(
-                  "Clipboard unavailable. Expand the prompt preview and copy its text.",
-                );
-              }
-            }}
+            aria-busy={busy}
+            disabled={busy || !request || !!promptError}
+            onClick={() => request && void copyAndDownload(request)}
           >
-            <Clipboard size={17} />
-            Copy
-          </button>
-          <button
-            title="Paste GPT response"
-            aria-label="Paste GPT response"
-            onClick={onPaste}
-          >
-            <ClipboardPaste size={17} />
-            Paste
+            <Clipboard size={17} aria-hidden="true" />
+            Copy and Download
           </button>
         </div>
-        <span role="status">{status}</span>
       </div>
     </section>
   );

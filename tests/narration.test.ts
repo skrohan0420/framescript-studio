@@ -8,6 +8,7 @@ import {
 } from "../shared/workflow";
 import {
   narrationLength,
+  sceneNarrationEnd,
   timeScenesToNarration,
   withAudioClip,
 } from "../shared/narration";
@@ -62,6 +63,17 @@ it("uses playable audio after trim and rejects changed scripts or locked timing"
       script,
     ),
   ).toThrow("Unlock");
+});
+it("matches a scene to its latest active voice clip, accounting for trim", () => {
+  const { p, voice } = setup();
+  const sceneId = p.workflow!.selectedId;
+  p.audio = [
+    { ...voice, sceneId, start: 0, length: 2 },
+    { ...voice, sceneId, start: 2, trimIn: 5, length: 5 },
+    { ...voice, sceneId, start: 8, muted: true },
+    { ...voice, sceneId: "other-scene", start: 10 },
+  ];
+  expect(sceneNarrationEnd(p, sceneId)).toBe(5);
 });
 it("fits scene narration atomically and replaces old takes without removing effects", () => {
   const { p } = setup();

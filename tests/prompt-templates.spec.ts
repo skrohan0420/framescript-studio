@@ -2,6 +2,25 @@ import { test, expect } from "@playwright/test";
 import { newProject } from "../shared/project";
 import { synthesizeSound } from "../shared/audio";
 import { clipFromAudio } from "../src/audio";
+import { readFile } from "node:fs/promises";
+import { inflateRawSync } from "node:zlib";
+
+function readZipText(zip: Buffer, path: string) {
+  const end = zip.lastIndexOf(Buffer.from("504b0506", "hex"));
+  let entry = zip.readUInt32LE(end + 16);
+  while (entry < end) {
+    const nameLength = zip.readUInt16LE(entry + 28);
+    const name = zip.toString("utf8", entry + 46, entry + 46 + nameLength);
+    if (name === path) {
+      const local = zip.readUInt32LE(entry + 42);
+      const start = local + 30 + zip.readUInt16LE(local + 26) + zip.readUInt16LE(local + 28);
+      const compressed = zip.subarray(start, start + zip.readUInt32LE(entry + 20));
+      return inflateRawSync(compressed).toString("utf8");
+    }
+    entry += 46 + nameLength + zip.readUInt16LE(entry + 30) + zip.readUInt16LE(entry + 32);
+  }
+  throw Error(`${path} is missing from the generated ZIP.`);
+}
 test("generated scene code creates real BGM and SFX audio tracks with undo", async ({
   page,
 }) => {
@@ -167,7 +186,14 @@ test("timed voiceover fills the prompt with scene-aligned cues", async ({
   await expect(page.getByLabel("Prompt script", { exact: true })).toHaveValue(
     "1\n00:00:02,200 --> 00:00:02,800\nExplosion.\n",
   );
-  await page.getByRole("button", { name: "Copy prompt", exact: true }).click();
+  const copy = async () => {
+    const status = page.locator(".status-bar .status-notice");
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Copy and Download", exact: true }).click();
+    await download;
+    await expect(status).toHaveText("Prompt copied and ZIP download started.");
+  };
+  await copy();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toContain("00:00:02,200 --> 00:00:02,800");
   expect(copied).toContain("timing authority");
@@ -176,7 +202,7 @@ test("timed voiceover fills the prompt with scene-aligned cues", async ({
   await expect(page.locator(".prompt-input-format")).toContainText(
     "VTT · timing detected",
   );
-  await page.getByRole("button", { name: "Copy prompt", exact: true }).click();
+  await copy();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
     "00:01.000 --> 00:03.000",
   );
@@ -191,7 +217,7 @@ test("timed voiceover fills the prompt with scene-aligned cues", async ({
   await expect(page.locator(".prompt-input-format")).toContainText(
     "Plain text",
   );
-  await page.getByRole("button", { name: "Copy prompt", exact: true }).click();
+  await copy();
   expect(
     await page.evaluate(() => navigator.clipboard.readText()),
   ).not.toContain("TIMED NARRATION — SCENE-LOCAL SECONDS");
@@ -244,6 +270,14 @@ test("prompt templates build, copy and preserve a brief without an AI connection
   await panel
     .getByLabel("Character / subject identity", { exact: true })
     .fill("A small robot with one blue eye");
+  await select("Animation");
+  await panel.getByLabel("Rendering mode", { exact: true }).selectOption("2.5d");
+  await panel.getByRole("button", { name: "Camera movement", exact: true }).click();
+  await select("Mascot");
+  await panel.getByLabel("Include mascot in prompt", { exact: true }).check();
+  await panel.getByLabel("Mascot name (optional)", { exact: true }).fill("Orbit the guide");
+  await select("Details");
+  await panel.getByLabel("Additional requirements", { exact: true }).fill("Hold the final pose.");
   await select("Typography");
   await panel
     .getByLabel("Include typography in prompt", { exact: true })
@@ -302,14 +336,60 @@ test("prompt templates build, copy and preserve a brief without an AI connection
       exact: true,
     })
     .click();
-  await panel.getByRole("button", { name: "Copy prompt", exact: true }).click();
-  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  await select("Output");
+  await expect(panel.getByLabel("Output format")).toHaveValue("document");
+  await panel.getByLabel("Reference images and example code").setInputFiles({
+    name: "motion-reference.js",
+    mimeType: "text/javascript",
+    buffer: Buffer.from("// Example motion"),
+  });
+  await expect(panel).toContainText("motion-reference.js");
+  await expect(panel.locator(".prompt-actions button")).toHaveCount(1);
+  const preview = await panel.getByLabel("Generated prompt").inputValue();
+  const copyButton = panel.getByRole("button", { name: "Copy and Download", exact: true });
+  const idleSize = await copyButton.boundingBox();
+  let releasePackage!: () => void;
+  const packageReady = new Promise<void>((resolve) => { releasePackage = resolve; });
+  await page.route("**/api/codeGeneratePackage", async (route) => {
+    await packageReady;
+    await route.continue();
+  }, { times: 1 });
+  const download = page.waitForEvent("download");
+  try {
+    await copyButton.click();
+    await expect(copyButton).toHaveAttribute("aria-busy", "true");
+    await expect(copyButton).toBeDisabled();
+    await expect(page.locator(".status-bar .status-activity")).toContainText("Preparing prompt package");
+    const busySize = await copyButton.boundingBox();
+    expect(busySize?.width).toBe(idleSize?.width);
+    expect(busySize?.height).toBe(idleSize?.height);
+  } finally {
+    releasePackage();
+  }
+  await expect(page.locator(".status-bar .status-notice")).toContainText("Prompt copied");
+  await expect(panel).not.toContainText("Prompt copied");
+  await expect(page.getByRole("dialog", { name: "Import generated scene" })).toHaveCount(0);
+  const copied = (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, "\n");
+  expect(copied).toBe(preview);
+  const taskZip = await readFile(await (await download).path());
+  expect(readZipText(taskZip, "TASK.md")).toBe(copied);
+  expect(readZipText(taskZip, "references/example-code/1.txt")).toBe("// Example motion");
+  expect(JSON.parse(readZipText(taskZip, "manifest.json"))).toMatchObject({
+    mode: "generate-code",
+    format: "document",
+  });
   for (const value of [
     "Zoom into the Milky Way.",
     "Ink blue and warm gold",
     "Duration: 1.2 seconds",
+    "perspective and parallax",
+    "RENDERING: 2.5D",
+    "Camera movement",
+    "Orbit the guide",
+    "Hold the final pose.",
+    "references/example-code/1.txt (motion-reference.js)",
+    "Return exactly ONE complete HTML document",
     "window.renderFrame",
-    "preserve-3d",
     "A small robot with one blue eye",
     "CONTINUITY LOCK",
     "Kurzgesagt-inspired",
@@ -323,7 +403,6 @@ test("prompt templates build, copy and preserve a brief without an AI connection
   ])
     expect(copied).toContain(value);
   await select("Output");
-  await panel.getByLabel("Prompt output format").selectOption("separate");
   await page.getByRole("button", { name: "Code panel", exact: true }).click();
   await page
     .getByRole("button", { name: "Prompts panel", exact: true })
@@ -338,9 +417,7 @@ test("prompt templates build, copy and preserve a brief without an AI connection
   await expect(
     tabs.getByRole("tab", { name: "Output", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
-  await expect(panel.getByLabel("Prompt output format")).toHaveValue(
-    "separate",
-  );
+  await expect(panel.getByLabel("Output format")).toHaveValue("document");
   await select("Typography");
   await expect(panel.getByLabel("Subtitles", { exact: true })).toHaveValue(
     "Phrase subtitles",
@@ -358,7 +435,7 @@ test("prompt templates build, copy and preserve a brief without an AI connection
   await select("Output");
   await expect(
     panel.getByRole("checkbox", {
-      name: "Include active timeline code for repair or adaptation",
+      name: "Include active timeline code as a reference",
     }),
   ).toBeChecked();
   await panel.getByText("Preview generated prompt", { exact: true }).click();
@@ -376,12 +453,12 @@ test("prompt templates build, copy and preserve a brief without an AI connection
   const body = (await panel.locator(".prompt-form-scroll").boundingBox())!;
   expect(footer.y).toBeGreaterThanOrEqual(body.y + body.height - 1);
   await expect(
-    panel.getByRole("button", { name: "Copy prompt", exact: true }),
+    panel.getByRole("button", { name: "Copy and Download", exact: true }),
   ).toBeInViewport();
   await page.screenshot({ path: "test-results/prompt-templates.png" });
   await page.setViewportSize({ width: 1280, height: 720 });
   await expect(
-    panel.getByRole("button", { name: "Copy prompt", exact: true }),
+    panel.getByRole("button", { name: "Copy and Download", exact: true }),
   ).toBeInViewport();
   expect(
     await panel
@@ -392,8 +469,19 @@ test("prompt templates build, copy and preserve a brief without an AI connection
     .getByRole("button", { name: "Switch to light theme", exact: true })
     .click();
   await page.screenshot({ path: "test-results/prompt-builder-light.png" });
-  await panel.getByRole("button", { name: "Paste GPT response" }).click();
-  await expect(
-    page.getByRole("dialog", { name: "Paste full HTML document", exact: true }),
-  ).toBeVisible();
+  await select("Output");
+  const format = panel.getByLabel("Output format");
+  await format.selectOption("separate");
+  const blocksZip = page.waitForEvent("download");
+  await copyButton.click();
+  const blocksTask = readZipText(await readFile(await (await blocksZip).path()), "TASK.md");
+  await expect(copyButton).toBeEnabled();
+  expect(blocksTask).toContain("Return exactly THREE clearly labeled code blocks");
+  expect((await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, "\n")).toBe(blocksTask);
+  await format.selectOption("document");
+  await panel.getByRole("button", { name: "Paste full HTML document" }).click();
+  const dialog = page.getByRole("dialog", { name: "Paste full HTML document", exact: true });
+  await dialog.getByLabel("HTML document to import").fill(`<!doctype html><html><head><style>#generated { color: red; }</style></head><body><div id="generated"></div><script>window.renderFrame = () => { document.querySelector('#generated').textContent = 'Imported animation'; };</script></body></html>`);
+  await dialog.getByRole("button", { name: "Apply pasted document", exact: true }).click();
+  await expect(page.frameLocator('iframe[title="Animation preview"]').locator("#generated")).toHaveText("Imported animation");
 });

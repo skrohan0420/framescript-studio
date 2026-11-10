@@ -1,4 +1,4 @@
-import type { Project } from "./project";
+import type { Project, Scene } from "./project";
 import { typographyRuntime } from "./typography-runtime";
 import { threeSource } from "./three-source.generated";
 import { threeRuntime } from "./three-runtime";
@@ -10,6 +10,7 @@ function runtime(
   duration = 10,
   speed = 1,
   sourceOffset = 0,
+  visualDuration: number | null = null,
 ) {
   const w = window as any;
   let current = 0;
@@ -60,14 +61,20 @@ function runtime(
     }
     send("error", { message: String(e.reason), ...source });
   });
+  w.__fsVisualGap = (time: number) => {
+    const gap = visualDuration !== null && time >= visualDuration;
+    document.documentElement.toggleAttribute("data-fs-visual-gap", gap);
+    return gap;
+  };
   w.__fsSeek = (time: number) => {
+    const gap = w.__fsVisualGap(time);
     time += sourceOffset;
     current = time;
     document.getAnimations().forEach((a) => {
       a.pause();
       a.currentTime = time * 1000;
     });
-    if (typeof w.renderFrame === "function") w.renderFrame(time);
+    if (!gap && typeof w.renderFrame === "function") w.renderFrame(time);
     w.__fsTypography?.(time);
     w.__fsShapeOutline?.();
   };
@@ -216,9 +223,44 @@ export function documentFor(
     transparent?: boolean;
     standalone?: boolean;
     sourceOffset?: number;
+    visualDuration?: number;
+    visualContinuations?: Scene["visualContinuations"];
+    transparentVisualGap?: boolean;
     textEditing?: boolean;
   },
 ) {
+  const scene = p.workflow?.scenes.find((item) => item.id === p.workflow?.selectedId);
+  const continuations = options?.visualContinuations ?? scene?.visualContinuations;
+  if (continuations?.length) {
+    const bare = { ...p, workflow: undefined };
+    const child = { ...options, standalone: false, visualContinuations: [], sourceOffset: 0 };
+    const base = documentFor({ ...bare, assets: [] }, {
+      ...child,
+      sourceOffset: options?.sourceOffset ?? scene?.sourceOffset,
+      visualDuration: options?.visualDuration ?? scene?.visualDuration,
+      transparentVisualGap: true,
+    });
+    const attr = (value: string) => value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+    const frame = (name: string, start: number, source: string, base = false) =>
+      `<iframe data-start="${start}"${base ? " data-base" : ""} title="${name}" sandbox="allow-scripts" srcdoc="${attr(source)}"></iframe>`;
+    const html = frame("Original visual", 0, base, true) + continuations.map((segment) => frame(
+      "Visual continuation", segment.start, documentFor({
+        ...bare, assets: [], html: segment.html, css: segment.css, js: segment.js,
+        settings: { ...p.settings, duration: segment.duration },
+      }, { ...child, visualDuration: undefined, textEditing: false }),
+    )).join("");
+    return documentFor({
+      ...bare,
+      html,
+      css: "iframe{position:absolute;inset:0;width:100%;height:100%;border:0;visibility:hidden}iframe[data-base]{visibility:visible;z-index:1}",
+      js: `const segments=${JSON.stringify(continuations.map(({start,duration}) => [start,duration]))};
+const frames=[...document.querySelectorAll('iframe')];
+const send=(frame,time)=>frame.contentWindow.postMessage({framescript:true,type:'seek',value:time},'*');
+let current=0;
+window.renderFrame=time=>{current=time;send(frames[0],time);let active=false;segments.forEach(([start,duration],i)=>{const show=time>=start&&time<start+duration;const frame=frames[i+1];frame.style.visibility=show?'visible':'hidden';if(show){active=true;send(frame,time-start);}});frames[0].style.pointerEvents=active?'none':'auto';};
+frames.forEach(frame=>frame.addEventListener('load',()=>window.renderFrame(current)));`,
+    }, { ...options, textEditing: false, sourceOffset: 0, visualDuration: undefined, visualContinuations: [] });
+  }
   let html = p.html,
     css = p.css,
     js = p.js;
@@ -243,12 +285,12 @@ export function documentFor(
   const csp = `default-src 'none'; frame-src about:; script-src 'unsafe-inline'${remote}; style-src 'unsafe-inline'${remote}; img-src data: blob:${remote}; font-src data:${remote}; media-src data:; connect-src${remote + transport || " 'none'"}; base-uri 'none'; form-action 'none';`;
   const safe = (s: string, tag: string) =>
     s.replace(new RegExp(`</${tag}`, "gi"), `<\\/${tag}`);
-  const sourceOffset =
-    options?.sourceOffset ??
-    p.workflow?.scenes.find((scene) => scene.id === p.workflow?.selectedId)
-      ?.sourceOffset ??
-    0;
-  const prefix = `<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:${options?.transparent ? "transparent" : p.settings.background}}${safe(css, "style")}</style><script>(()=>{const __name=(fn)=>fn;(${typographyRuntime.toString()})(${options?.textEditing !== false && !options?.export && !options?.standalone && !p.workflow?.scenes.find((scene) => scene.id === p.workflow?.selectedId)?.locked});(${runtime.toString()})(${!!options?.export && p.settings.timing === "replay"},${!!options?.standalone},${p.settings.duration},${p.settings.speed},${sourceOffset})})()</script></head><body>${html}`;
+  const sourceOffset = options?.sourceOffset ?? scene?.sourceOffset ?? 0;
+  const visualEnd = options?.visualDuration ?? scene?.visualDuration;
+  const visualDuration = visualEnd !== undefined && visualEnd < p.settings.duration ? visualEnd : null;
+  const background = options?.transparent ? "transparent" : p.settings.background;
+  const gapStyle = visualDuration === null ? "" : `html[data-fs-visual-gap]{background:${options?.transparentVisualGap ? "transparent" : background}!important}html[data-fs-visual-gap] body,html[data-fs-visual-gap] body *:not([data-fs-text], [data-fs-text] *){visibility:hidden!important}html[data-fs-visual-gap] [data-fs-text]{visibility:visible}${options?.transparentVisualGap ? "html[data-fs-visual-gap] body{background:transparent!important}" : ""}`;
+  const prefix = `<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:${background}}${safe(css, "style")}${gapStyle}</style><script>(()=>{const __name=(fn)=>fn;(${typographyRuntime.toString()})(${options?.textEditing !== false && !options?.export && !options?.standalone && !scene?.locked});(${runtime.toString()})(${!!options?.export && p.settings.timing === "replay"},${!!options?.standalone},${p.settings.duration},${p.settings.speed},${sourceOffset},${visualDuration})})()</script></head><body>${html}`;
   const three = /\b(?:THREE|FrameScript3D)\b/.test(js)
     ? `<script>${safe(threeSource, "script")}</script><script>(()=>{const __name=(fn)=>fn;(${threeRuntime.toString()})()})()</script>`
     : "";

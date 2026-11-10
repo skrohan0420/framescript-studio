@@ -1,21 +1,32 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 
-const widthKey = "framescript.prompt-width.v1";
+const defaultWidthKey = "framescript.prompt-width.v1";
 const minimumWidth = 560;
 export function PromptDrawer({
   open,
+  obscured = false,
+  id = "prompt-builder-panel",
+  label = "Prompt builder panel",
   onClose,
   children,
 }: {
   open: boolean;
+  obscured?: boolean;
+  id?: string;
+  label?: string;
   onClose: () => void;
   children: ReactNode;
 }) {
+  const widthKey =
+    id === "prompt-builder-panel" ? defaultWidthKey : defaultWidthKey + "." + id;
   const [present, setPresent] = useState(open);
+  const [resizing, setResizing] = useState(false);
   const [preferred, setPreferred] = useState(() => {
     try {
-      const value = Number(localStorage.getItem(widthKey));
+      const value = Number(
+        localStorage.getItem(widthKey) ?? localStorage.getItem(defaultWidthKey),
+      );
       return Number.isFinite(value) && value > 0
         ? Math.max(minimumWidth, Math.min(value, 3000))
         : 820;
@@ -54,7 +65,7 @@ export function PromptDrawer({
     try {
       localStorage.setItem(widthKey, String(preferred));
     } catch {}
-  }, [preferred]);
+  }, [preferred, widthKey]);
   const minimum = Math.min(minimumWidth, available);
   const width = Math.min(Math.max(minimumWidth, preferred), available);
   const clamp = (value: number) =>
@@ -63,13 +74,14 @@ export function PromptDrawer({
   return (
     <aside
       ref={panel}
-      id="prompt-builder-panel"
+      id={id}
       className="prompt-drawer"
       data-state={open ? "open" : "closing"}
+      data-resizing={open && resizing ? "" : undefined}
       data-flush={available - width < 32}
-      aria-label="Prompt builder panel"
-      style={{ width }}
-      inert={!open}
+      aria-label={label}
+      style={{ width, visibility: obscured ? "hidden" : undefined }}
+      inert={!open || obscured}
     >
       <button
         type="button"
@@ -119,6 +131,7 @@ export function PromptDrawer({
             previous: preferred,
             pointer: event.pointerId,
           };
+          setResizing(true);
         }}
         onPointerMove={(event) => {
           const drag = gesture.current;
@@ -127,15 +140,18 @@ export function PromptDrawer({
         }}
         onPointerUp={(event) => {
           gesture.current = null;
+          setResizing(false);
           if (event.currentTarget.hasPointerCapture(event.pointerId))
             event.currentTarget.releasePointerCapture(event.pointerId);
         }}
         onPointerCancel={() => {
           if (gesture.current) setPreferred(gesture.current.previous);
           gesture.current = null;
+          setResizing(false);
         }}
         onLostPointerCapture={() => {
           gesture.current = null;
+          setResizing(false);
         }}
       >
         <span />

@@ -602,21 +602,28 @@ async function renderExportAttempt(
       const t = times[index];
       if (p.settings.timing === "replay") {
         await page.clock.runFor(Math.max(0, (t - previous) * 1000));
+        await page.evaluate((time) => (window as any).__fsVisualGap(time), t);
         previous = t;
       } else await page.evaluate((t) => (window as any).__fsSeek(t), t);
       if (renderer.error())
         throw Error("Animation failed: " + renderer.error());
+      const frameTimes = new Map([[page.mainFrame(), t]]);
       for (const child of page.frames().slice(1)) {
+        const parentTime = frameTimes.get(child.parentFrame()!);
+        if (parentTime === undefined) continue;
         const element = await child.frameElement();
         const info = await element.evaluate((el) => ({
           visible: getComputedStyle(el as Element).visibility !== "hidden",
           start: (el as HTMLElement).dataset.start,
         }));
-        if (info.visible && info.start !== undefined)
+        if (info.visible && info.start !== undefined) {
+          const time = Math.max(0, parentTime - Number(info.start));
+          frameTimes.set(child, time);
           await child.evaluate(
             (time) => (window as any).__fsSeek?.(time),
-            Math.max(0, t - Number(info.start)),
+            time,
           );
+        }
       }
       metrics.seekMs += performance.now() - seekStart;
       const captureStart = performance.now();

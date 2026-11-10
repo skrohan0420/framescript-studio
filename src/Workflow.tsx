@@ -1,3 +1,4 @@
+import { useStatusActivity } from "./editor-status";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
@@ -28,7 +29,7 @@ import {
 import {
   timeScenesToNarration,
   withAudioClip,
-  narrationLength,
+  sceneNarrationEnd,
 } from "../shared/narration";
 import type { Project, Scene, AudioClip } from "../shared/project";
 import { builtinSounds, synthesizeSound } from "../shared/audio";
@@ -90,7 +91,6 @@ export function Workflow({
     [sfxPrompt, setSFXPrompt] = useState("A soft, short cinematic whoosh");
   const [audioLane, setAudioLane] = useState<AudioClip["lane"]>("voice");
   const [audioDragging, setAudioDragging] = useState(false);
-  const [importNotice, setImportNotice] = useState("");
   const [voiceScope, setVoiceScope] = useState<"auto" | "script" | "scene">(
     "auto",
   );
@@ -187,6 +187,7 @@ export function Workflow({
       cancelled = true;
     };
   }, [open, tab, preferencesReady]);
+  useStatusActivity(open ? working : "");
   const task = async (label: string, fn: () => Promise<void>) => {
     if (working || busy) return;
     setWorking(label);
@@ -304,7 +305,6 @@ export function Workflow({
     );
   };
   const importAudioFiles = async (files: File[], lane: AudioClip["lane"]) => {
-    setImportNotice("");
     for (const file of files) {
       if (
         !file.type.startsWith("audio/") &&
@@ -349,8 +349,7 @@ export function Workflow({
           : {}),
         ...(lane === "sfx" ? { start: placement } : {}),
       });
-      setImportNotice(`${file.name} · ${details.duration.toFixed(2)}s loaded`);
-      onNotice(`Imported audio · ${file.name}`);
+      onNotice(`Imported audio · ${file.name} · ${details.duration.toFixed(2)}s`);
     }
   };
   const insertAsset = (id: string) => {
@@ -401,11 +400,8 @@ export function Workflow({
         </span>
       </div>
       {(working || error) && (
-        <div
-          className={error ? "workflow-error" : "workflow-working"}
-          role={error ? "alert" : "status"}
-        >
-          {error || working}
+        <div className={error ? "workflow-error" : "workflow-working"}>
+          {error && <span role="alert">{error}</span>}
           {working && (
             <button
               onClick={() =>
@@ -1187,11 +1183,6 @@ export function Workflow({
                         : "Imports into the selected scene and fits its duration automatically."}
                     </small>
                   </div>
-                  {importNotice && (
-                    <p role="status" className="audio-import-status">
-                      {importNotice}
-                    </p>
-                  )}
                 </section>
                 <details className="media-configuration" open>
                   <summary>ElevenLabs voice generation</summary>{" "}
@@ -1604,12 +1595,12 @@ export function Workflow({
                           updateScene(clip.sceneId!, {
                             duration: Math.max(
                               0.1,
-                              clip.start + narrationLength(clip),
+                              sceneNarrationEnd(current(), clip.sceneId!),
                             ),
                           })
                         }
                       >
-                        Fit scene to this narration take
+                        Fit scene to narration
                       </button>
                     )}
                     {clip.lane === "voice" && !clip.sceneId && !clip.muted && (

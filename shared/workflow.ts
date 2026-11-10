@@ -204,8 +204,11 @@ export function activateScene(p: Project, id: string): Partial<Project> {
 }
 export function synchronizeScene(p: Project) {
   if (!p.workflow) return p;
+  const extensions = selectedScene(p)?.visualContinuations ?? [];
+  const duration = Math.max(p.settings.duration, ...extensions.map((segment) => segment.start + segment.duration));
   return {
     ...p,
+    settings: duration === p.settings.duration ? p.settings : { ...p.settings, duration },
     workflow: {
       ...p.workflow,
       scenes: p.workflow.scenes.map((s) =>
@@ -215,7 +218,10 @@ export function synchronizeScene(p: Project) {
               html: p.html,
               css: p.css,
               js: p.js,
-              duration: p.settings.duration,
+              duration,
+              visualDuration: s.visualDuration === undefined
+                ? undefined
+                : Math.min(s.visualDuration, duration),
             }
           : s,
       ),

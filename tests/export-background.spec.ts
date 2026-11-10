@@ -85,24 +85,22 @@ test("minimizing keeps export running, preserves its settings and leaves editing
   await expect(dialog).toBeHidden();
   const dock = page.getByRole("region", { name: "Background export" });
   await expect(dock).toContainText("Background film.mp4");
-  await expect(dock.getByRole("progressbar")).toBeVisible();
-  await expect(dock).toContainText("24%");
+  const activity = page.locator(".status-bar .status-activity");
+  await expect(activity).toContainText("24%");
+  await expect(dock.getByRole("progressbar")).toHaveCount(0);
   await dock
     .getByRole("button", { name: "Dismiss exports panel", exact: true })
     .click();
-  await expect(dock.getByRole("progressbar")).toBeHidden();
+  await expect(activity).toContainText("24%");
   expect(cancelled).toBe(0);
   await dock
     .getByRole("button", { name: "Expand exports panel", exact: true })
     .click();
-  await expect(dock.getByRole("progressbar")).toBeVisible();
+  await expect(activity).toBeVisible();
   await expect(
     dock.getByRole("button", { name: "Cancel all exports", exact: true }),
   ).toBeVisible();
-  await expect(dock.getByRole("progressbar")).toHaveAttribute(
-    "title",
-    "167/684 frames",
-  );
+  await expect(activity).toContainText("167/684 frames");
   await page
     .getByRole("textbox", { name: "Project name", exact: true })
     .fill("Editing while exporting");

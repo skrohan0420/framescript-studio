@@ -177,7 +177,7 @@ test("audio library, narration timing and mascot references persist in a saved p
   });
   await expect(dialog.locator(".audio-clip")).toHaveCount(1);
   await dialog
-    .getByRole("button", { name: "Fit scene to this narration take" })
+    .getByRole("button", { name: "Fit scene to narration" })
     .click();
   await dialog
     .locator(".workflow-tabs")

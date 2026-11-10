@@ -480,7 +480,12 @@ export function previewDocument(
       workflow: undefined,
     };
   }
-  const source = documentFor(p, { textEditing, sourceOffset });
+  const source = documentFor(p, {
+    textEditing,
+    sourceOffset,
+    visualDuration: composition ? undefined : clip?.visualDuration,
+    visualContinuations: composition ? undefined : clip?.visualContinuations,
+  });
   const scene = clip?.structuredEdit;
   const shapeScript =
     !composition && clip && !clip.locked && scene?.objects?.length &&

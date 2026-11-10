@@ -120,10 +120,10 @@ test("drawer content adapts to narrow, medium and full desktop widths", async ({
   await expect.poll(columns).toBe(4);
   const footer = await panel.locator(".prompt-actions").boundingBox();
   const copy = await panel
-    .getByRole("button", { name: "Copy prompt", exact: true })
+    .getByRole("button", { name: "Copy and Download", exact: true })
     .boundingBox();
   expect(footer!.height).toBeLessThanOrEqual(56);
-  expect(copy!.width).toBeLessThan(150);
+  expect(copy!.width).toBeLessThan(200);
   await expect
     .poll(() =>
       panel
@@ -146,11 +146,11 @@ test("drawer content adapts to narrow, medium and full desktop widths", async ({
   await handle.press("Home");
   await expect.poll(columns).toBe(2);
   await expect(
-    panel.getByRole("button", { name: "Copy prompt", exact: true }),
+    panel.getByRole("button", { name: "Copy and Download", exact: true }),
   ).toBeInViewport();
   await expect(
-    panel.getByRole("button", { name: "Paste GPT response", exact: true }),
-  ).toBeInViewport();
+    panel.locator(".prompt-actions button"),
+  ).toHaveCount(1);
   expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
     true,
   );

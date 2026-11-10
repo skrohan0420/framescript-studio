@@ -134,7 +134,7 @@ export function ExportDock({
         <strong>
           Exports{" "}
           <span className="export-job-count">
-            {running > 0 ? `${running} in progress` : `${jobs.length} finished`}
+            {jobs.length}
           </span>
         </strong>
         <div className="export-panel-controls">
@@ -172,12 +172,8 @@ export function ExportDock({
       </div>
       <div className="export-job-list" hidden={minimized}>
         {jobs.map((job) => {
-          const done = job.progress?.done ?? 0,
-            total = job.progress?.total ?? 0;
           const active = job.status === "running";
-          const stage = active
-            ? (job.progress?.stage ?? "Submitting export")
-            : job.status === "completed"
+          const outcome = job.status === "completed"
               ? "Complete"
               : job.status === "cancelled"
                 ? "Cancelled"
@@ -231,29 +227,8 @@ export function ExportDock({
               </div>
               <div className="export-job-meta">
                 <small className="export-job-timeline">{job.timeline}</small>
-                <p role="status">
-                  {stage}
-                  {active && total > 0 && done > 0
-                    ? ` · ${Math.round((done / total) * 100)}%`
-                    : active
-                      ? "…"
-                      : ""}
-                </p>
+                {!active && <p>{outcome}</p>}
               </div>
-              <progress
-                title={`${done}/${total} frames`}
-                aria-label={`Export progress ${job.name}`}
-                max={active ? total || 1 : 1}
-                value={
-                  active
-                    ? done > 0
-                      ? done
-                      : undefined
-                    : job.status === "completed"
-                      ? 1
-                      : 0
-                }
-              />
               {job.error && <p role="alert">{job.error}</p>}
               {job.diagnostics && (
                 <details className="export-diagnostics">

@@ -27,7 +27,7 @@ it("splits visuals with continuous source time and divides attached audio", () =
   p.workflow.scenes[0].locked = true;
   expect(() => splitVisual(p, p.workflow!.selectedId, 3)).toThrow();
 });
-it("trimming caps duration and prevents attached audio extending beyond the visual", () => {
+it("trims the visual independently and keeps the scene long enough for its audio", () => {
   const p = newProject();
   p.settings.duration = 8;
   p.workflow = initialWorkflow(p);
@@ -39,9 +39,8 @@ it("trimming caps duration and prevents attached audio extending beyond the visu
   clip.length = 6;
   p.audio = [clip];
   const result = resizeVisual(p, p.workflow.selectedId, 2);
-  expect(result.settings!.duration).toBe(2);
-  expect(result.audio![0].length).toBe(2);
-  expect(resizeVisual(p, p.workflow.selectedId, -10).settings!.duration).toBe(
-    0.1,
-  );
+  expect(result.settings!.duration).toBe(6);
+  expect(result.workflow!.scenes[0].visualDuration).toBe(2);
+  expect({ ...p, ...result }.audio).toEqual([clip]);
+  expect(resizeVisual({ ...p, audio: [] }, p.workflow.selectedId, -10).settings!.duration).toBe(0.1);
 });

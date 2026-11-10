@@ -17,7 +17,11 @@ import { ExportQueue } from "./export-queue";
 import { ExportRetention } from "./export-retention";
 import { archiveSequence } from "./archive";
 import { writeStructuredEditPackage } from "./structured-edit-package";
-import { writeGeneratePackage } from "./structured-generate-package";
+import {
+  writeCodeGeneratePackage,
+  writeGeneratePackage,
+} from "./structured-generate-package";
+import { writeCodeContinuationPackage } from "./code-continuation-package";
 import { writeExtendPackage } from "./structured-extend-package";
 import type { ExtendTask } from "../shared/structured-extend";
 import type { GenerateRequest } from "../shared/structured-generate";
@@ -218,6 +222,21 @@ async function invoke(
       if (saved && saved.projectId !== (client.current ?? null))
         throw Error("This request belongs to a different project.");
       return saved?.task ?? null;
+    }
+    case "codeContinuationPackage": {
+      const id = randomUUID();
+      const destination = path.join(exportsDir, id + ".zip");
+      const prompt = await writeCodeContinuationPackage(args[0], destination);
+      return { prompt, ...download(destination, "framescript-extend-code-" + id + ".zip", owner) };
+    }
+    case "codeGeneratePackage": {
+      const id = randomUUID();
+      const destination = path.join(exportsDir, id + ".zip");
+      const prompt = await writeCodeGeneratePackage(args[0], destination);
+      return {
+        prompt,
+        ...download(destination, "framescript-code-" + id + ".zip", owner),
+      };
     }
     case "structuredGeneratePackage": {
       const requestId = randomUUID();
@@ -866,6 +885,17 @@ async function start() {
         server: {
           middlewareMode: true,
           hmr: { host: "127.0.0.1", port: port + 10000 },
+          watch: {
+            // Export packages stage HTML here. It must not trigger Vite reloads.
+            ignored: (file) => {
+              const relative = path.relative(dataDir, file);
+              return (
+                relative !== ".." &&
+                !relative.startsWith(".." + path.sep) &&
+                !path.isAbsolute(relative)
+              );
+            },
+          },
         },
         appType: "spa",
       })

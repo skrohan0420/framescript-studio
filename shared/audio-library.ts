@@ -6,10 +6,14 @@ export function retainAudioSources(
 ): Project {
   const sources = new Map<string, AudioClip>();
   const library = project.audioLibrary ?? previous?.audioLibrary;
-  const allowed = new Set(library?.map((source) => source.id));
+  const allowed = new Map(library?.map((source) => [source.id, source.data]));
   for (const clip of [
     ...(library ?? []),
-    ...(previous?.audio ?? []),
+    ...(previous?.audio ?? []).filter((clip) => {
+      // A replaced source keeps its ID. Its old timeline bytes belong to Undo.
+      const currentData = clip.sourceId && allowed.get(clip.sourceId);
+      return !currentData || currentData === clip.data;
+    }),
     ...(project.audio ?? []),
   ]) {
     if (library && clip.sourceId && !allowed.has(clip.sourceId)) continue;

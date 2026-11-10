@@ -13,7 +13,7 @@ import type { editor as Monaco } from "monaco-editor";
 import { PromptTemplates } from "./PromptTemplates";
 import { PromptDrawer } from "./PromptDrawer";
 import { StructuredGeneratePanel } from "./StructuredGeneratePanel";
-import type { GenerateInput } from "../shared/structured-generate";
+import { CodeContinuationPanel } from "./CodeContinuationPanel";
 import { readEditorTabs, saveEditorTabs } from "./editor-tabs";
 import { ClipsPanel } from "./ClipsPanel";
 import { TypographyPanel } from "./TypographyPanel";
@@ -21,6 +21,7 @@ import { ProjectHome } from "./ProjectHome";
 import { chooseExportFile, supportsExportPicker } from "./bridge";
 import { ExportSettings } from "./ExportSettings";
 import { ExportDock } from "./ExportDock";
+import { EditorStatus, StatusActivity } from "./editor-status";
 import { TabIdentity } from "./TabIdentity";
 import { useExports } from "./useExports";
 import {
@@ -93,7 +94,11 @@ import {
   type ExportOptions,
 } from "../shared/project";
 import { useStudio, useProjectState } from "./store";
-import { Timeline, type TimelineActions } from "./Timeline";
+import {
+  Timeline,
+  type TimelineActions,
+  type TimelineSelection,
+} from "./Timeline";
 import { StructuredEditPanel } from "./StructuredEditPanel";
 import { StructuredExtendPanel } from "./StructuredExtendPanel";
 import { StructuredShapeInspector } from "./StructuredShapeInspector";
@@ -119,7 +124,6 @@ import { ProjectInspector } from "./ProjectInspector";
 import { bridge } from "./bridge";
 import { Preview } from "./Preview";
 import { Field, Modal } from "./components";
-import { GenerationProgress } from "./GenerationProgress";
 import { SceneRail, SceneInspector, ManualTimelines } from "./ScenePanels";
 import { AudioPlayback } from "./AudioPlayback";
 import {
@@ -162,8 +166,15 @@ export function App() {
     {},
   );
   const timelineActions = useRef<TimelineActions>(null);
+  const [timelineFocus, setTimelineFocus] = useState<{
+    session: number;
+    selection: TimelineSelection;
+  }>();
   const [structuredEditClip, setStructuredEditClip] = useState<string>();
   const [structuredExtendClip, setStructuredExtendClip] = useState<string>();
+  const [codeExtend, setCodeExtend] = useState<{ sceneId: string; segmentId?: string; session: number; open: boolean }>();
+  const generatedContext = useRef<{ session: number; sceneId: string; context: string } | undefined>(undefined);
+  const pasteContext = useRef<string | undefined>(undefined);
   const shortcutHandler = useRef<
     (event: KeyboardEvent, capture: boolean) => void
   >(() => {});
@@ -214,7 +225,7 @@ export function App() {
   const [productionMode, setProductionMode] = useState(true);
   const [leftView, setLeftView] = useState("code");
   const [promptsOpen, setPromptsOpen] = useState(false);
-  const [generateScene, setGenerateScene] = useState<GenerateInput>();
+  const [importGeneratedScene, setImportGeneratedScene] = useState(false);
   const [previewRulers, setPreviewRulers] = useState(() => {
     try {
       return localStorage.getItem("framescript.preview-rulers.v1") !== "false";
@@ -312,6 +323,23 @@ export function App() {
   } | null>(null);
   const playbackDuration = masterMode ? totalDuration(p) : p.settings.duration;
   const sceneLocked = !!selectedScene(p)?.locked;
+  const timelinePick =
+    timelineFocus?.session === s.session ? timelineFocus.selection : null;
+  const continuationScene =
+    timelinePick?.kind === "continuation" &&
+    (masterMode || timelinePick.id === p.workflow?.selectedId)
+      ? p.workflow?.scenes.find((scene) => scene.id === timelinePick.id)
+      : undefined;
+  const continuation = continuationScene?.visualContinuations?.find(
+    (segment) => segment.id === timelinePick?.segmentId,
+  );
+  const timelineSelection =
+    timelinePick?.kind === "continuation" && !continuation ? null : timelinePick;
+  const sourceScene = continuation ? continuationScene : selectedScene(p);
+  const sourceReadOnly = masterMode || sceneLocked || !!continuation;
+  const sourcePath = continuation
+    ? "continuation/" + continuation.id
+    : (p.workflow?.selectedId ?? "project");
   const changeScope = (master: boolean) => {
     setMasterMode(master);
     s.setTime(0);
@@ -388,7 +416,24 @@ export function App() {
   );
   const exporting = selectingExportFile || selectedExport?.status === "running";
   const exportError = exportFormError || selectedExport?.error || "";
-  const progress = selectedExport?.progress;
+  const [statusActivities, setStatusActivities] = useState<Record<string, string>>({});
+  const setStatusActivity = useCallback((id: string, message: string) => {
+    setStatusActivities((previous) => {
+      if ((previous[id] ?? "") === message) return previous;
+      const next = { ...previous };
+      if (message) next[id] = message;
+      else delete next[id];
+      return next;
+    });
+  }, []);
+  const editorStatus = useMemo(
+    () => ({
+      announcement: notice === "Ready" ? "" : notice,
+      notify: setNotice,
+      activity: setStatusActivity,
+    }),
+    [notice, setStatusActivity],
+  );
   const [chooseExportLocation, setChooseExportLocation] = useState(false);
   const [leftWidth, setLeftWidth] = useState(340),
     [rightWidth, setRightWidth] = useState(340),
@@ -551,6 +596,13 @@ export function App() {
     [notify],
   );
   const [storageReady, setStorageReady] = useState(false);
+  useEffect(() => {
+    if (!storageReady || notice === "Ready") return;
+    const timeout = setTimeout(() => {
+      setNotice((current) => (current === notice ? "Ready" : current));
+    }, 8000);
+    return () => clearTimeout(timeout);
+  }, [notice, storageReady]);
   useEffect(() => {
     const element = workspaceRef.current;
     if (!storageReady || !element) return;
@@ -917,7 +969,7 @@ export function App() {
       setCombinedDraft(combined(p));
   }, [tab, s.revision]);
   const changeTab = (next: Tab) => {
-    if (parseError && next !== "all") {
+    if (!continuation && parseError && next !== "all") {
       setNotice(
         "Fix or discard the combined document before switching editors.",
       );
@@ -938,6 +990,8 @@ export function App() {
   };
   const importDocument = (text: string) => {
     try {
+      if (continuation)
+        throw Error("Select the original visual before applying code.");
       const current = useStudio.getState();
       if (masterMode)
         throw Error("Switch to editing a timeline before applying code.");
@@ -959,7 +1013,13 @@ export function App() {
             .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
             .join("\n"),
         );
-      current.change(parsed, "Paste full HTML document");
+      const workflow = current.project.workflow ?? initialWorkflow(current.project);
+      current.change({ ...parsed, workflow: {
+        ...workflow,
+        scenes: workflow.scenes.map((scene) => scene.id === workflow.selectedId
+          ? { ...scene, visualContext: pasteContext.current }
+          : scene),
+      } }, "Paste full HTML document");
       const result = useStudio.getState();
       if (
         result.project.html !== parsed.html ||
@@ -972,6 +1032,9 @@ export function App() {
         );
       setParseError("");
       setPasteError("");
+      if (pasteContext.current === generatedContext.current?.context)
+        generatedContext.current = undefined;
+      pasteContext.current = undefined;
       setModal("");
       setTab("html");
       setNotice(
@@ -1412,7 +1475,8 @@ export function App() {
       : (gutterCode ?? { html: "", css: "", js: "" });
   const showChanges =
     changes?.session === s.session && changes.scene === codeScene;
-  const changesBase = showChanges ? (changes.code ?? workingBase) : null;
+  const changesBase =
+    showChanges && !continuation ? (changes.code ?? workingBase) : null;
   const renderChanges = (
     language: "html" | "css" | "js" | "all",
     original: string,
@@ -1459,21 +1523,25 @@ export function App() {
       )
     ) : (
       <Editor
-        key={language}
+        key={continuation ? sourcePath + "/" + language : language}
         height={height}
         language={language === "js" ? "javascript" : language}
-        path={(p.workflow?.selectedId ?? "project") + "/" + language}
+        path={sourcePath + "/" + language}
         keepCurrentModel
         theme={light ? "framescript-light" : "framescript-dark"}
-        value={p[language]}
+        value={continuation?.[language] ?? p[language]}
         gutterBaseline={
-          masterMode || !gutterProject ? undefined : workingBase[language]
+          masterMode || continuation || !gutterProject
+            ? undefined
+            : workingBase[language]
         }
         onMount={(e) => trackEditor(e, language)}
-        onChange={(v) => s.change({ [language]: v ?? "" })}
+        onChange={
+          continuation ? undefined : (v) => s.change({ [language]: v ?? "" })
+        }
         options={{
           fontSize,
-          readOnly: masterMode || sceneLocked,
+          readOnly: sourceReadOnly,
           fontFamily: "'Cascadia Code', Consolas, monospace",
           lineHeight: Math.round(fontSize * 1.57),
           ...editorDisplay,
@@ -1548,6 +1616,7 @@ export function App() {
     }
   }, [queuedSceneGeneration, p.workflow?.selectedId, busy]);
   const selectLeftView = (view: string) => {
+    setCodeExtend((current) => current?.open ? { ...current, open: false } : current);
     if (view === "prompts") {
       setPromptsOpen((value) => !value);
       return;
@@ -1556,6 +1625,11 @@ export function App() {
     setLeftView(view);
     setProductionMode(view !== "code");
     setLeftHidden(false);
+  };
+  const setTimelineSelection = (selection: TimelineSelection) => {
+    setTimelineFocus({ session: s.session, selection });
+    if (selection?.kind === "continuation") selectLeftView("code");
+    else if (continuation && parseError) setTab("all");
   };
   const selectedText = useStudio((state) => state.selectedText);
   useEffect(() => {
@@ -1738,7 +1812,8 @@ export function App() {
   };
   const toggleDiff = () =>
     setChanges(showChanges ? null : { session: s.session, scene: codeScene });
-  const openPaste = () => {
+  const openPaste = (context?: string) => {
+    pasteContext.current = context;
     setPasteError("");
     setModal("paste-code");
   };
@@ -1806,10 +1881,12 @@ export function App() {
     commands: () => runEditorAction(editorActions.commands!),
     format: () => runEditorAction(editorActions.format!),
     diff: () => {
+      if (continuation) return;
       selectLeftView("code");
       toggleDiff();
     },
     history: () => {
+      if (continuation) return;
       selectLeftView("code");
       setModal("code-history");
     },
@@ -1883,7 +1960,7 @@ export function App() {
       return;
     if (
       (id === "format" || id === "replace" || id === "pasteDocument") &&
-      (masterMode || sceneLocked)
+      sourceReadOnly
     )
       return;
     if (id === "deleteText" && !useStudio.getState().selectedText) return;
@@ -1934,15 +2011,65 @@ export function App() {
       </button>
     </div>
   );
+  const activeExports = [
+    ...(selectedExport?.status === "running" ? [selectedExport] : []),
+    ...exports.jobs.filter((job) => job.status === "running" && job.id !== selectedExportId),
+  ];
+  const statusDetails = [
+    ...Object.values(statusActivities),
+    ...(!storageReady ? ["Opening workspace from SQLite…"] : []),
+    ...(chatgpt.pending ? ["Waiting for ChatGPT authorization in the sign-in tab…"] : []),
+    ...(selectingExportFile ? ["Choosing export location…"] : []),
+    ...(busy ? [`AI · ${aiProgress.stage} · ${generationSeconds}s · ${aiProgress.characters.toLocaleString()} characters`] : []),
+    ...activeExports.map(({ name, progress }) => {
+      const label = `${name} · ${progress?.stage ?? "Submitting export"}`;
+      return progress?.total
+        ? `${label} · ${Math.round(100 * progress.done / progress.total)}% · ${progress.done}/${progress.total} frames`
+        : label;
+    }),
+  ].join(" | ");
+  const statusBar = (
+    <footer className="status-bar">
+      <span className="live-dot" />
+      <span className="status-notice" role="status" title={notice}>{notice}</span>
+      {statusDetails && <span className="status-activity" title={statusDetails} aria-label="Background activity">{statusDetails}</span>}
+      <span className="toolbar-spacer" />
+      <span aria-label="Workspace save status">
+        {!autosave
+          ? manualUnsaved
+            ? "Manual save · Unsaved changes"
+            : "Manual save"
+          : storageSaveState === "saved"
+            ? "Workspace saved locally"
+            : storageSaveState === "error"
+              ? "Workspace save failed"
+              : "Saving workspace…"}
+      </span>
+      {storageReady && !showHome && (
+        <>
+          <span className="status-environment">LOCAL WEB APP</span>
+          <span className="status-environment">UTF-8</span>
+          <span className="status-environment">{p.settings.fps} FPS</span>
+          <button
+            aria-label="Project settings"
+            title="Project settings"
+            onClick={() => setModal("settings")}
+          >
+            <Settings2 size={15} />
+          </button>
+        </>
+      )}
+    </footer>
+  );
   if (!storageReady)
     return (
-      <main className="modal" role="status">
-        <h2>Opening your workspace…</h2>
-        <p>
-          {notice === "Ready" ? "Reading the local SQLite database." : notice}
-        </p>
-        <button onClick={() => window.location.reload()}>Retry</button>
-      </main>
+      <div className="app workspace-loading">
+        <main className="modal">
+          <h2>FrameScript Studio</h2>
+          <button onClick={() => window.location.reload()}>Retry</button>
+        </main>
+        {statusBar}
+      </div>
     );
   if (showHome)
     return (
@@ -2006,9 +2133,11 @@ export function App() {
           }}
         />
         {exportDock}
+        {statusBar}
       </>
     );
   return (
+    <EditorStatus.Provider value={editorStatus}>
     <div
       className={"app " + (light ? "light" : "")}
       data-compact-inspector={compactInspector}
@@ -2160,7 +2289,7 @@ export function App() {
           aria-expanded={promptsOpen}
           aria-controls="prompt-builder-panel"
           title="Prompt builder"
-          onClick={() => setPromptsOpen((value) => !value)}
+          onClick={() => selectLeftView("prompts")}
         >
           <Sparkles size={17} />
         </button>
@@ -2250,31 +2379,46 @@ export function App() {
           gridTemplateColumns: `${visibleLeftWidth}px ${leftHidden ? "0" : "5"}px minmax(250px,1fr) ${rightHidden ? "0" : "5"}px ${visibleRightWidth}px`,
         }}
       >
-        <PromptDrawer open={promptsOpen} onClose={() => setPromptsOpen(false)}>
+        <PromptDrawer
+          open={promptsOpen}
+          obscured={importGeneratedScene}
+          onClose={() => setPromptsOpen(false)}
+        >
           <PromptTemplates
             master={masterMode}
-            onGenerateScene={(brief, duration) => {
-              const { width, height, fps } = p.settings;
-              setPromptsOpen(false);
-              setGenerateScene({
-                brief,
-                width,
-                height,
-                fps,
-                durationFrames: Math.max(
-                  Math.ceil(fps / 10),
-                  Math.round(duration * fps),
-                ),
-              });
-            }}
-            onClose={() => setPromptsOpen(false)}
-            onPaste={() => {
+            onReviewGeneratedScene={() => setImportGeneratedScene(true)}
+            onOpenCode={(pasteDocument) => {
               selectLeftView("code");
-              setPasteError("");
-              setModal("paste-code");
+              if (pasteDocument) {
+                setTimelineSelection(null);
+                const receipt = generatedContext.current;
+                const state = useStudio.getState();
+                openPaste(receipt?.session === state.session && receipt.sceneId === (state.project.workflow?.selectedId ?? "scene-1") ? receipt.context : undefined);
+              }
             }}
+            onCodeTaskExported={(context, sceneId, session) => {
+              generatedContext.current = { session, sceneId, context };
+            }}
+            onClose={importGeneratedScene ? undefined : () => setPromptsOpen(false)}
           />
         </PromptDrawer>
+        {codeExtend?.session === s.session && (
+          <CodeContinuationPanel
+            key={codeExtend.session + ":" + codeExtend.sceneId + ":" + (codeExtend.segmentId ?? "base")}
+            sceneId={codeExtend.sceneId}
+            segmentId={codeExtend.segmentId}
+            open={codeExtend.open}
+            appliedProject={executionProject}
+            onClose={() => setCodeExtend((current) => current && { ...current, open: false })}
+            onApplied={(segmentId) =>
+              setTimelineSelection({
+                kind: "continuation",
+                id: codeExtend.sceneId,
+                segmentId,
+              })
+            }
+          />
+        )}
         <aside
           className="code-panel"
           style={{ visibility: leftHidden ? "hidden" : "visible" }}
@@ -2387,7 +2531,7 @@ export function App() {
                 className="library-workflow"
                 hidden={["media", "audio", "code"].includes(leftView)}
               >
-                <Suspense fallback={<p>Loading production tools…</p>}>
+                <Suspense fallback={<StatusActivity message="Loading production tools…" />}>
                   <Workflow
                     embedded
                     open={
@@ -2423,8 +2567,7 @@ export function App() {
             onPasteCapture={(event) => {
               const text = event.clipboardData.getData("text/plain");
               if (
-                !masterMode &&
-                !sceneLocked &&
+                !sourceReadOnly &&
                 /<!doctype\s+html|<html[\s>]/i.test(text)
               ) {
                 event.preventDefault();
@@ -2439,12 +2582,42 @@ export function App() {
                   <span>
                     <Code2 size={14} />{" "}
                     {editorExpanded ? "CODE EDITOR" : "SOURCE CODE"}
-                    {codeUnsaved && (
+                    {codeUnsaved && !continuation && (
                       <span className="unsaved-code-badge" role="status">
                         Unsaved code
                       </span>
                     )}
                   </span>
+                  {!!sourceScene?.visualContinuations?.length && (
+                    <select
+                      className="code-source-picker"
+                      aria-label="Source code clip"
+                      title="Choose a source clip"
+                      value={continuation?.id ?? ""}
+                      onChange={(event) => {
+                        const segmentId = event.target.value;
+                        if (!segmentId && sourceScene.id !== p.workflow?.selectedId)
+                          s.change(activateScene(p, sourceScene.id), "Select scene");
+                        setTimelineSelection(
+                          segmentId
+                            ? {
+                                kind: "continuation",
+                                id: sourceScene.id,
+                                segmentId,
+                              }
+                            : { kind: "scene", id: sourceScene.id },
+                        );
+                      }}
+                    >
+                      <option value="">Original visual</option>
+                      {sourceScene.visualContinuations.map((segment, index) => (
+                        <option value={segment.id} key={segment.id}>
+                          Continuation {index + 1} ·{" "}
+                          {(sceneOffset(p, sourceScene.id) + segment.start).toFixed(3)}s
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <div>
                     <button
                       className="code-editor-menu-trigger"
@@ -2500,6 +2673,7 @@ export function App() {
                       <button
                         title="Show code changes"
                         aria-label="Show code changes"
+                        disabled={!!continuation}
                         aria-pressed={!!changesBase}
                         onClick={() =>
                           setChanges(
@@ -2515,6 +2689,7 @@ export function App() {
                       <button
                         title="Code history"
                         aria-label="Code history"
+                        disabled={!!continuation}
                         onClick={() => setModal("code-history")}
                       >
                         <History size={16} />
@@ -2523,7 +2698,7 @@ export function App() {
                       <button
                         title="Paste full HTML document"
                         aria-label="Paste full HTML document"
-                        disabled={masterMode || sceneLocked}
+                        disabled={sourceReadOnly}
                         onClick={() => {
                           setPasteError("");
                           setModal("paste-code");
@@ -2534,7 +2709,7 @@ export function App() {
                       </button>
                       <button
                         title="Format document"
-                        disabled={masterMode || sceneLocked}
+                        disabled={sourceReadOnly}
                         onClick={() =>
                           runEditorAction("editor.action.formatDocument")
                         }
@@ -2584,7 +2759,10 @@ export function App() {
                     </button>
                   </div>
                 </div>
-                {(masterMode || sceneLocked) && (
+                {continuation && (
+                  <div className="code-readonly-notice">Continuation source is read only.</div>
+                )}
+                {!continuation && (masterMode || sceneLocked) && (
                   <div className="code-readonly-notice" role="status">
                     <span>
                       {masterMode
@@ -2709,7 +2887,7 @@ export function App() {
                         <button
                           aria-label="Replace"
                           title={shortcutTitle("replace", "Replace")}
-                          disabled={masterMode || sceneLocked}
+                          disabled={sourceReadOnly}
                           onClick={() =>
                             runEditorAction(
                               "editor.action.startFindReplaceAction",
@@ -2749,7 +2927,7 @@ export function App() {
                         className="editor-format-menu"
                         aria-label="Format code"
                         value=""
-                        disabled={masterMode || sceneLocked}
+                        disabled={sourceReadOnly}
                         onChange={(event) => {
                           setFormatError("");
                           const action = event.target.value;
@@ -2832,29 +3010,36 @@ export function App() {
                         )
                       ) : (
                         <Editor
+                          key={continuation?.id ?? "original"}
                           language="html"
                           theme={
                             light ? "framescript-light" : "framescript-dark"
                           }
-                          path={(p.workflow?.selectedId ?? "project") + "/all"}
+                          path={sourcePath + "/all"}
                           keepCurrentModel
-                          value={combinedDraft}
+                          value={
+                            continuation
+                              ? combined({ ...p, ...continuation })
+                              : combinedDraft
+                          }
                           gutterBaseline={
-                            masterMode || !gutterProject
+                            masterMode || continuation || !gutterProject
                               ? undefined
                               : combined({ ...p, ...workingBase })
                           }
-                          onChange={(v) => updateCombined(v ?? "")}
+                          onChange={
+                            continuation ? undefined : (v) => updateCombined(v ?? "")
+                          }
                           onMount={(instance) => trackEditor(instance, "all")}
                           options={{
                             fontSize,
-                            readOnly: masterMode || sceneLocked,
+                            readOnly: sourceReadOnly,
                             ...editorDisplay,
                             automaticLayout: true,
                           }}
                         />
                       )}
-                      {parseError && (
+                      {!continuation && parseError && (
                         <div className="inline-error">
                           {parseError}
                           <button
@@ -3542,15 +3727,6 @@ export function App() {
                     </div>
                   ))
                 )}
-                {busy && (
-                  <GenerationProgress
-                    stage={aiProgress.stage}
-                    seconds={generationSeconds}
-                    characters={aiProgress.characters}
-                    model={models.find((m) => m.name === model)?.label ?? model}
-                    onCancel={() => void act(() => bridge.call("cancelAI"))}
-                  />
-                )}
               </div>
               <div className="composer">
                 {attached.length > 0 && (
@@ -3575,11 +3751,7 @@ export function App() {
                   >
                     <ImagePlus size={17} />
                   </button>
-                  <small>
-                    {busy
-                      ? "Generating · progress in chat above"
-                      : "Ctrl + Enter to generate"}
-                  </small>
+                  {!busy && <small>Ctrl + Enter to generate</small>}
                   {busy ? (
                     <button
                       title="Cancel AI"
@@ -3727,8 +3899,14 @@ export function App() {
         />
         <Timeline
           actionsRef={timelineActions}
+          selection={timelineSelection}
+          onSelectionChange={setTimelineSelection}
           onStructuredEdit={setStructuredEditClip}
           onStructuredExtend={setStructuredExtendClip}
+          onCodeExtend={(sceneId, segmentId) => {
+            setPromptsOpen(false);
+            setCodeExtend({ sceneId, segmentId, session: s.session, open: true });
+          }}
           splitHint={shortcutTitle("split")}
           onSelectText={(sceneId, textId) => {
             const state = useStudio.getState();
@@ -3784,32 +3962,7 @@ export function App() {
           runtime={runtime}
         />
       </div>
-      <footer className="status-bar">
-        <span className="live-dot" />
-        <span role="status">{notice}</span>
-        <span className="toolbar-spacer" />
-        <span aria-label="Workspace save status">
-          {!autosave
-            ? manualUnsaved
-              ? "Manual save · Unsaved changes"
-              : "Manual save"
-            : storageSaveState === "saved"
-              ? "Workspace saved locally"
-              : storageSaveState === "error"
-                ? "Workspace save failed"
-                : "Saving workspace…"}
-        </span>
-        <span>LOCAL WEB APP</span>
-        <span>UTF-8</span>
-        <span>{p.settings.fps} FPS</span>
-        <button
-          aria-label="Project settings"
-          title="Project settings"
-          onClick={() => setModal("settings")}
-        >
-          <Settings2 size={15} />
-        </button>
-      </footer>
+      {statusBar}
       <AudioPlayback project={p} master={masterMode} onError={setNotice} />
       {pendingAI && (
         <SceneReview
@@ -3878,7 +4031,7 @@ export function App() {
         />
       )}
       {modal === "services" && (
-        <Suspense fallback={<div role="status">Loading services…</div>}>
+        <Suspense fallback={<StatusActivity message="Loading services…" />}>
           <Services
             open={modal === "services"}
             onClose={() => setModal(servicesReturn)}
@@ -3898,7 +4051,7 @@ export function App() {
         </Suspense>
       )}
       {(workflowLoaded || modal === "workflow") && (
-        <Suspense fallback={<div role="status">Loading workflow…</div>}>
+        <Suspense fallback={<StatusActivity message="Loading workflow…" />}>
           <Workflow
             masterMode={masterMode}
             onGenerateScene={(id) => setQueuedSceneGeneration(id)}
@@ -3924,16 +4077,16 @@ export function App() {
           onClose={() => setStructuredEditClip(undefined)}
         />
       )}
-      {generateScene && (
+      {importGeneratedScene && (
         <StructuredGeneratePanel
           key={s.session}
-          initial={generateScene}
-          onClose={() => setGenerateScene(undefined)}
+          onClose={() => setImportGeneratedScene(false)}
           onApplied={() => {
             useStudio.getState().setPlaying(false);
             useStudio.getState().setTime(0);
             setMasterMode(false);
-            setGenerateScene(undefined);
+            setImportGeneratedScene(false);
+            setPromptsOpen(false);
             setNotice("Generated scene added · Undo available");
           }}
         />
@@ -3949,7 +4102,7 @@ export function App() {
       <Modal
         title="Paste full HTML document"
         open={modal === "paste-code"}
-        onClose={() => setModal("")}
+        onClose={() => { pasteContext.current = undefined; setModal(""); }}
       >
         <p>
           Paste a complete HTML document. Inline styles and scripts move to the
@@ -3974,7 +4127,7 @@ export function App() {
             className="primary"
             aria-label="Apply pasted document"
             title="Apply pasted document"
-            disabled={masterMode || sceneLocked}
+            disabled={sourceReadOnly}
             onClick={() => importDocument(pasteDocument)}
           >
             <Check size={17} />
@@ -4287,21 +4440,6 @@ export function App() {
                 Export failed: {exportError}
               </p>
             )}
-            {progress && !exportError && (
-              <div className="export-progress">
-                <progress max={progress.total} value={progress.done} />
-                <p>
-                  {progress.stage} · {progress.done} / {progress.total} frames ·{" "}
-                  {Math.round((progress.done / progress.total) * 100)}%
-                </p>
-                <small>
-                  {exportOptions.fileName || p.name}.
-                  {exportOptions.format === "sequence"
-                    ? "zip"
-                    : exportOptions.format}
-                </small>
-              </div>
-            )}
             <div className="modal-actions">
               {exporting ? (
                 <>
@@ -4334,5 +4472,6 @@ export function App() {
       </Modal>
       {exportDock}
     </div>
+    </EditorStatus.Provider>
   );
 }

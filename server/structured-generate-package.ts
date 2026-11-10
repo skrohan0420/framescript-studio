@@ -1,6 +1,6 @@
 import {
+  describePackageFiles,
   packageReferences,
-  referenceGuide,
 } from "./structured-package-context";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
@@ -8,12 +8,38 @@ import path from "node:path";
 import { z } from "zod";
 import { structuredResultModuleInstructions } from "../shared/structured-result";
 import {
+  buildGeneratePrompt,
   generateResultSchema,
   type GenerateRequest,
 } from "../shared/structured-generate";
 import { starModuleSource } from "../shared/structured-star";
 import { archiveSequence } from "./archive";
 import { atomicWrite } from "./storage";
+import {
+  buildCodeGeneratePrompt,
+  type CodeGenerateInput,
+} from "../shared/code-generate";
+
+const json = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
+
+export async function writeCodeGeneratePackage(
+  input: CodeGenerateInput,
+  destination: string,
+) {
+  const prompt = buildCodeGeneratePrompt(input);
+  const files = [
+    { path: "TASK.md", role: "task", content: prompt },
+    ...packageReferences(input.references),
+  ];
+  await archiveGenerateFiles(destination, files, {
+    packageType: "framescript-task",
+    packageVersion: "1",
+    mode: "generate-code",
+    format: input.format,
+    files: describePackageFiles(files),
+  });
+  return prompt;
+}
 
 export async function writeGeneratePackage(
   task: GenerateRequest,
@@ -23,8 +49,7 @@ export async function writeGeneratePackage(
 ) {
   const { requestId, input } = task;
   const references = packageReferences(input.references);
-  const prompt = `Generate a structured FrameScript scene with native shapes, an on-screen label, or a built-in star as requested. ${input.brief}\n\nRead TASK.md in the attached ZIP.${referenceGuide(references)} Return one JavaScript module following OUTPUT_CONTRACT.md. If a required file is inaccessible, name it before proceeding.\n`;
-  const json = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
+  const prompt = buildGeneratePrompt(input);
   const files = [
     { path: "TASK.md", role: "task", content: prompt },
     {
@@ -56,6 +81,21 @@ export async function writeGeneratePackage(
       sha256: createHash("sha256").update(content).digest("hex"),
     })),
   };
+  await archiveGenerateFiles(destination, files, manifest);
+  try {
+    await atomicWrite(record, json({ task, projectId, prompt, manifest }));
+  } catch (error) {
+    await fs.rm(destination, { force: true });
+    throw error;
+  }
+  return prompt;
+}
+
+export async function archiveGenerateFiles(
+  destination: string,
+  files: { path: string; content: string | Buffer }[],
+  manifest: unknown,
+) {
   await fs.mkdir(path.dirname(destination), { recursive: true });
   const root = await fs.mkdtemp(
     path.join(path.dirname(destination), "generate-package-"),
@@ -68,13 +108,6 @@ export async function writeGeneratePackage(
     }
     await fs.writeFile(path.join(root, "manifest.json"), json(manifest));
     await archiveSequence(root, destination, AbortSignal.timeout(60_000));
-    try {
-      await atomicWrite(record, json({ task, projectId, prompt, manifest }));
-    } catch (error) {
-      await fs.rm(destination, { force: true });
-      throw error;
-    }
-    return prompt;
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

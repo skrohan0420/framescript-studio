@@ -97,7 +97,8 @@ test("animation controls persist, show delayed examples and generate compatible 
   expect(prompt).toContain("45 degrees clockwise");
   expect(prompt).toContain("Shared intensity: Subtle");
   await page
-    .getByRole("button", { name: "Paste GPT response", exact: true })
+    .getByRole("tabpanel", { name: "Output", exact: true })
+    .getByRole("button", { name: "Paste full HTML document", exact: true })
     .click();
   const dialog = page.getByRole("dialog", {
     name: "Paste full HTML document",

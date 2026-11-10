@@ -4,11 +4,18 @@ import { parseStructuredResult } from "./structured-result";
 import { structuredStarCode } from "./structured-star";
 import type { Project } from "./project";
 import { activateScene, initialWorkflow, totalDuration } from "./workflow";
-import { promptReferencesSchema } from "./prompt-references";
+import {
+  describeReferences,
+  promptReferencesSchema,
+  referenceGuide,
+} from "./prompt-references";
 
 export const generateInputSchema = z
   .strictObject({
-    brief: z.string().trim().min(1).max(12000),
+    brief: z.string().trim().min(1).max(
+      256_000,
+      "The scene brief and included code must fit within 256,000 characters.",
+    ),
     width: z.number().int().min(64).max(7680),
     height: z.number().int().min(64).max(4320),
     fps: z.number().int().min(1).max(120),
@@ -40,6 +47,11 @@ export const generateResultSchema = z.strictObject({
 export type GenerateInput = z.infer<typeof generateInputSchema>;
 export type GenerateRequest = z.infer<typeof generateRequestSchema>;
 export type GenerateResult = z.infer<typeof generateResultSchema>;
+
+export function buildGeneratePrompt(input: GenerateInput) {
+  const brief = input.brief.replace(/\r\n?/g, "\n");
+  return `Generate a structured FrameScript scene with native shapes, an on-screen label, or a built-in star as requested.\nOutput: ${input.width} × ${input.height} pixels at ${input.fps} fps for ${input.durationFrames} frames.\n\n${brief}\n\nRead TASK.md in the attached ZIP.${referenceGuide(describeReferences(input.references))} Return one JavaScript module following OUTPUT_CONTRACT.md. If a required file is inaccessible, name it before proceeding.\n`;
+}
 
 export function parseGenerateResult(text: string) {
   return parseStructuredResult(text, generateResultSchema, "scene result");

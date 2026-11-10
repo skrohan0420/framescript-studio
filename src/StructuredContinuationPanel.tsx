@@ -1,3 +1,4 @@
+import { useStatusActivity, useStatusNotice } from "./editor-status";
 import { useState } from "react";
 import {
   extendInputSchema,
@@ -49,13 +50,14 @@ export function StructuredContinuationPanel({
   const [text, setText] = useState("");
   const [file, setFile] = useState<File>();
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const notify = useStatusNotice();
   const [busy, setBusy] = useState(false);
+  useStatusActivity(busy ? "Processing AI handoff…" : "");
   const [references, setReferences] = useState<References>([]);
   const [capture, setCapture] = useState("");
   const placement = timing && {
     sourceOffset: timing.clip.sourceOffset ?? 0,
-    duration: timing.clip.duration,
+    duration: timing.visualDuration,
   };
   const { first, last } =
     scene && placement
@@ -80,7 +82,7 @@ export function StructuredContinuationPanel({
   ]);
   const run = async (action: () => Promise<void>) => {
     setError("");
-    setNotice("");
+
     setBusy(true);
     try {
       await action();
@@ -129,13 +131,15 @@ export function StructuredContinuationPanel({
     const after = updated ? preview(updated) : before;
     const start = review.result.startFrame / original.fps;
     const end = review.result.endFrame / original.fps;
+    const growth = timing ? Math.max(0, timing.visualDuration + end - start - timing.clip.duration) : 0;
+    const following = growth > 0 ? timing?.following ?? [] : [];
     return (
       <SceneReview
         before={before}
         after={after}
         initialTime={start}
         comparisonDuration={end}
-        applyDisabled={!!conflict || (!!timing?.following.length && !confirmed)}
+        applyDisabled={!!conflict || (following.length > 0 && !confirmed)}
         explanation={
           <>
             <p>
@@ -146,15 +150,15 @@ export function StructuredContinuationPanel({
               A separate source will be created for this clip. Review the
               handoff and new animation with the slider.
             </p>
-            {!!timing?.following.length && (
+            {following.length > 0 && (
               <label>
                 <input
                   type="checkbox"
                   checked={confirmed}
                   onChange={(event) => setConfirmed(event.target.checked)}
                 />
-                Move following clips later by {(end - start).toFixed(3)}s:{" "}
-                {timing.following.map((clip) => clip.title).join(", ")}.
+                Move following clips later by {growth.toFixed(3)}s:{" "}
+                {following.map((clip) => clip.title).join(", ")}.
               </label>
             )}
             {(conflict || error) && <p role="alert">{conflict || error}</p>}
@@ -172,7 +176,7 @@ export function StructuredContinuationPanel({
               state.project !== review.project
             )
               throw Error("The project changed during review.");
-            if (timing?.following.length && !confirmed)
+            if (following.length && !confirmed)
               throw Error("Confirm the timeline movement before applying.");
             state.change(
               prepareExtension(
@@ -235,7 +239,7 @@ export function StructuredContinuationPanel({
         onChange={(files) => {
           setReferences(files);
           setExported(undefined);
-          setNotice("");
+
         }}
       />
       <ContextFrame
@@ -243,7 +247,7 @@ export function StructuredContinuationPanel({
         onChange={(frame) => {
           setCapture(frame);
           setExported(undefined);
-          setNotice("");
+
         }}
         busy={busy}
         first={first}
@@ -277,7 +281,7 @@ export function StructuredContinuationPanel({
               );
               setExported({ fingerprint, result });
               download(result);
-              setNotice("ZIP ready. Send it with the copied prompt.");
+              notify("ZIP ready. Send it with the copied prompt.");
             })
           }
         >
@@ -289,7 +293,7 @@ export function StructuredContinuationPanel({
             void run(async () => {
               if (exported?.fingerprint !== fingerprint) return;
               await navigator.clipboard.writeText(exported.result.prompt);
-              setNotice("Prompt copied.");
+              notify("Prompt copied.");
             })
           }
         >
@@ -321,7 +325,6 @@ export function StructuredContinuationPanel({
         />
       </label>
       {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
       <button
         disabled={busy || (!text.trim() && !file)}
         onClick={() =>

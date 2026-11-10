@@ -437,7 +437,9 @@ test("continues a trimmed clip from its handoff and restores the original with U
 
 test("generates, edits and exports a shapes-only scene through the module workflow", async ({
   page,
+  context,
 }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const { scene } = await openFixture(page);
   await page
     .getByRole("dialog", { name: "Edit / Update" })
@@ -447,15 +449,17 @@ test("generates, edits and exports a shapes-only scene through the module workfl
   await page
     .getByRole("button", { name: "Prompts panel", exact: true })
     .click();
-  await page.getByRole("button", { name: "Generate structured scene" }).click();
-  const panel = page.getByRole("dialog", { name: "Generate structured scene" });
-  await panel
-    .getByLabel("Scene brief")
+  const builder = page.locator(".prompt-drawer");
+  await builder.getByRole("tab", { name: "Visuals", exact: true }).click();
+  await builder
+    .getByLabel("Visual subjects / action")
     .fill("Create a scene named New Galaxy with shapes only.");
+  await builder.getByRole("tab", { name: "Output", exact: true }).click();
+  await builder.getByLabel("Output format").selectOption("structured");
   const response = page.waitForResponse((item) =>
     item.url().endsWith("/api/structuredGeneratePackage"),
   );
-  await panel.getByLabel("Reference images and example code").setInputFiles([
+  await builder.getByLabel("Reference images and example code").setInputFiles([
     {
       name: "look.png",
       mimeType: "image/png",
@@ -470,16 +474,21 @@ test("generates, edits and exports a shapes-only scene through the module workfl
       buffer: Buffer.from("// Motion reference"),
     },
   ]);
-  await expect(panel).toContainText("example.js");
+  await expect(builder).toContainText("example.js");
   const zip = page.waitForEvent("download");
-  await panel.getByRole("button", { name: "Download ZIP" }).click();
+  await builder.getByRole("button", { name: "Copy and Download", exact: true }).click();
+  const panel = page.getByRole("dialog", { name: "Import generated scene" });
   const packaged = await response;
   expect(packaged.ok(), await packaged.text()).toBe(true);
   const { result } = await packaged.json();
   expect(await (await zip).failure()).toBeNull();
-  await expect(panel.getByLabel("Exported Generate prompt")).toContainText(
-    "Create a scene named New Galaxy with shapes only.",
-  );
+  await expect(page.locator(".status-bar .status-notice")).toContainText("Prompt copied");
+  await expect(panel).toHaveCount(0);
+  const copied = (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, "\n");
+  expect(copied).toBe(result.prompt);
+  expect(copied).toContain("Create a scene named New Galaxy with shapes only.");
+  await builder.getByRole("button", { name: "Import generated scene" }).click();
+  await expect(panel).toBeVisible();
   const saved = await page.request.post("/api/structuredGenerateRequest", {
     headers: { "X-FrameScript": "1" },
     data: { args: [result.requestId] },
@@ -806,7 +815,7 @@ test("exports a frozen Edit task from a visual clip and saves it across reload",
   ).toHaveValue(result.prompt);
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await copy.click();
-  await expect(panel.getByRole("status")).toHaveText("Prompt copied.");
+  await expect(page.locator(".status-bar .status-notice")).toHaveText("Prompt copied.");
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied.replaceAll("\r\n", "\n")).toBe(result.prompt);
   await panel.getByLabel("Additional capture (source frame)").fill("81");

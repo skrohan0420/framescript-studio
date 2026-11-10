@@ -28,7 +28,10 @@ test("silence cleanup updates audio and words together and can be undone", async
       { text: "world.", start: 1.2, end: 1.6 },
     ],
   };
-  p.audio = [clip];
+  const secondScene = { ...p.workflow.scenes[0], id: "second-scene" };
+  p.workflow.scenes.push(secondScene);
+  const linkedClip = { ...clip, id: "linked-clip", sceneId: secondScene.id, start: 0 };
+  p.audio = [clip, linkedClip];
   let saved: any;
   await page.route("**/api/workspaceGet", (r) =>
     r.fulfill({ json: { result: p } }),
@@ -45,6 +48,8 @@ test("silence cleanup updates audio and words together and can be undone", async
   });
   await page.goto("/#editor");
   await page.getByRole("button", { name: "Audio panel", exact: true }).click();
+  const tile = page.locator(".audio-library-tile").first();
+  await tile.screenshot({ path: "test-results/audio-card-compact.png" });
   const card = page.locator(".audio-cleanup").first();
   await card.getByRole("button", { name: "Edit audio", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "Edit audio", exact: true });
@@ -69,7 +74,7 @@ test("silence cleanup updates audio and words together and can be undone", async
     .getByRole("button", { name: "Auto remove silence", exact: true })
     .click();
   await expect(editor.locator(".audio-cut-deleted")).toHaveCount(3);
-  await expect(editor.getByLabel("Audio edit preview")).toBeVisible();
+  await expect(editor.getByRole("group", { name: "Audio preview controls" })).toBeVisible();
   await expect
     .poll(() =>
       editor
@@ -77,24 +82,40 @@ test("silence cleanup updates audio and words together and can be undone", async
         .evaluate((element: HTMLAudioElement) => element.duration),
     )
     .toBeCloseTo(1.12, 2);
-  expect(
-    await editor
-      .getByLabel("Audio edit preview")
-      .evaluate(async (element: HTMLAudioElement) => {
-        await element.play();
-        const playing = !element.paused;
-        element.pause();
-        return playing;
-      }),
-  ).toBe(true);
-  await page.screenshot({ path: "test-results/silence-modal.png" });
+  await editor.getByRole("button", { name: "Play preview", exact: true }).click();
+  await editor.getByRole("button", { name: "Pause preview", exact: true }).click();
+  await editor.getByRole("button", { name: "Mute preview", exact: true }).click();
+  await expect(editor.getByRole("button", { name: "Unmute preview", exact: true })).toBeVisible();
+  await editor.getByLabel("Preview speed", { exact: true }).selectOption("1.25");
+  const preview = editor.getByLabel("Audio edit preview");
+  expect(await preview.evaluate((element: HTMLAudioElement) => element.playbackRate)).toBe(1.25);
+  const seek = editor.getByRole("slider", { name: "Preview position" });
+  await seek.fill("0.5");
+  await expect.poll(() => preview.evaluate((element: HTMLAudioElement) => element.currentTime)).toBeCloseTo(0.5, 2);
+  await editor.screenshot({ path: "test-results/silence-modal.png" });
+  const desktop = page.viewportSize()!;
+  await page.setViewportSize({ width: 390, height: 750 });
+  expect(await editor.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await editor.screenshot({ path: "test-results/silence-modal-compact-mobile.png" });
+  await page.setViewportSize(desktop);
   await editor.getByRole("button", { name: "Save audio", exact: true }).click();
+  await expect(page.locator(".status-bar .status-notice")).toHaveText("Original recording updated.");
+  await expect(tile).not.toContainText("Original recording updated.");
   await expect.poll(() => saved?.audio?.[0]?.duration).toBeLessThan(1.3);
   expect(saved.audio[0].transcriptWords[0].start).toBeCloseTo(0.08, 2);
   expect(saved.audio[0].transcriptWords[1].start).toBeCloseTo(0.64, 2);
   expect(saved.audio[0].start).toBe(1);
   expect(saved.audio[0].trimIn).toBe(0);
-  expect(saved.audioLibrary.length).toBe(2);
+  expect(saved.audioLibrary).toHaveLength(1);
+  expect(saved.audioLibrary[0]).toMatchObject({ id: clip.id, name: clip.name });
+  expect(saved.audio[0].sourceId).toBe(clip.id);
+  expect(saved.audio[1]).toMatchObject({
+    id: linkedClip.id,
+    sourceId: clip.id,
+    sceneId: secondScene.id,
+    start: linkedClip.start,
+    data: saved.audio[0].data,
+  });
   await page
     .getByRole("button", { name: "Prompts panel", exact: true })
     .click();
@@ -112,6 +133,7 @@ test("silence cleanup updates audio and words together and can be undone", async
     .click();
   await expect.poll(() => saved?.audio?.[0]?.duration).toBe(2);
   expect(saved.audio[0].transcriptWords[1].start).toBe(1.2);
+  expect(saved.audio[1].data).toBe(linkedClip.data);
   await card
     .getByRole("button", { name: "Redo audio edit", exact: true })
     .click();
@@ -124,6 +146,7 @@ test("silence cleanup updates audio and words together and can be undone", async
     .getByRole("button", { name: "Auto remove silence", exact: true })
     .click();
   await expect.poll(() => saved?.audio?.[0]?.duration).toBeLessThan(1.3);
+  expect(saved.audioLibrary).toHaveLength(1);
 });
 
 test("cut editor preserves playback, restores cuts, guards cancellation and saves the selected range directly", async ({
@@ -210,6 +233,9 @@ test("cut editor preserves playback, restores cuts, guards cancellation and save
   await editor.getByRole("button", { name: "Cut & save", exact: true }).click();
   await expect(editor).toBeHidden();
   await expect.poll(() => saved?.audio?.[0]?.duration).toBeCloseTo(1.7, 2);
+  expect(saved.audioLibrary).toHaveLength(1);
+  const original = saved.audioLibrary[0];
+  const timelineAudio = saved.audio;
   await open();
   await expect
     .poll(() => player.evaluate((el: HTMLAudioElement) => el.duration))
@@ -235,15 +261,16 @@ test("cut editor preserves playback, restores cuts, guards cancellation and save
   await expect(editor.getByRole("alert")).toContainText("Keep at least");
   await selection("0.1", "0.2");
   await editor
-    .getByRole("checkbox", {
-      name: "Update audio in this timeline",
-      exact: true,
-    })
-    .uncheck();
+    .getByLabel("Save changes to", { exact: true })
+    .selectOption("copy");
   await editor.getByRole("button", { name: "Cut & save", exact: true }).click();
   await expect(editor).toBeHidden();
   await expect
     .poll(() => saved?.audioLibrary?.[0]?.duration)
     .toBeCloseTo(1.6, 2);
-  expect(saved.audio[0].duration).toBeCloseTo(1.7, 2);
+  expect(saved.audioLibrary).toHaveLength(2);
+  expect(saved.audioLibrary[0].id).not.toBe(original.id);
+  expect(saved.audioLibrary[0].name).toBe("Continuous · edited.wav");
+  expect(saved.audioLibrary[1]).toEqual(original);
+  expect(saved.audio).toEqual(timelineAudio);
 });

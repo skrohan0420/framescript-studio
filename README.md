@@ -22,6 +22,8 @@ Prompts → Mascot is optional and off by default. Enable it to include your mas
 
 The scene strip is replaced by an active-timeline selector, Add/Remove timeline controls, a duration field and combined preview. Each timeline stores its own code. Audio imported while editing belongs to that active timeline. Main action buttons use icons with accessible names and hover tooltips; code-language tabs and input labels remain readable.
 
+For an invisible join when extending a visual, reuse the previous renderer and carry the existing animation through the handoff. [Seamless extension workflow](docs/requirements/01-scene-continuity.md#seamless-htmlcssjavascript-extensions)
+
 Media provides separate Output frame and Image insertion controls. Output presets/custom width and height support up to 4K UHD (3840×2160), including portrait 2160×3840. Image insertion follows the current frame by default; turn that off for a custom image box, and choose Fit entire image or Fill and crop. Images are centered at the requested size for both button insertion and dragging into the preview. Source image files are not resized or degraded. Apply validates dimensions before changing the frame; Undo can restore frame and code edits.
 
 The export dialog uses resolution presets (480P, 720P, 1080P, 2K, 4K, 8K), common integer frame-rate choices and Higher/Recommended/Smaller-file quality options. Resolution follows the source frame's aspect ratio and uses even dimensions; presets outside the renderer's 7680×4320 limits are disabled. Advanced settings retain custom dimensions, FPS, timing and CRF. Export resolution does not change the editing canvas.
