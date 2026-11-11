@@ -23,7 +23,31 @@ export async function writeCodeContinuationPackage(
     path.join(path.dirname(destination), "code-continuation-"),
   );
   try {
-    const capture = path.join(root, "handoff.png");
+    const capture = path.join(root, "frames");
+    const step =
+      Math.max(1, Math.round(input.settings.fps / 10)) / input.settings.fps;
+    const frameCount = Math.min(
+      6,
+      Math.floor(input.lastFrameTime / step + 1e-9) + 1,
+    );
+    const firstFrameTime = Math.max(
+      0,
+      input.lastFrameTime - (frameCount - 1) * step,
+    );
+    const frames = Array.from({ length: frameCount }, (_, index) => {
+      const time =
+        index === frameCount - 1
+          ? input.lastFrameTime
+          : firstFrameTime + index * step;
+      return {
+        path:
+          index === frameCount - 1
+            ? "references/handoff.png"
+            : `references/motion-${index + 1}.png`,
+        time,
+        sourceTime: input.sourceOffset + time,
+      };
+    });
     const project = {
       ...newProject(),
       ...input.source,
@@ -45,12 +69,12 @@ export async function writeCodeContinuationPackage(
     await renderExport(
       { ...project, workflow },
       {
-        format: "png",
+        format: "sequence",
         width: input.settings.width,
         height: input.settings.height,
-        fps: input.settings.fps,
-        duration: input.settings.duration,
-        time: input.lastFrameTime,
+        fps: 10,
+        duration: frameCount / 10,
+        time: 0,
         speed: 1,
         quality: 0,
         fit: "fit",
@@ -59,9 +83,10 @@ export async function writeCodeContinuationPackage(
       },
       capture,
       ffmpeg ?? "",
-      AbortSignal.timeout(45_000),
+      AbortSignal.timeout(60_000),
       () => {},
       chrome,
+      { workers: 1, sequenceTimes: frames.map((frame) => frame.time) },
     );
     const prompt = buildCodeContinuationPrompt(input);
     const files = [
@@ -77,10 +102,33 @@ export async function writeCodeContinuationPackage(
         content: input.source.css,
       },
       { path: "source/previous.js", role: "source", content: input.source.js },
+      ...(await Promise.all(
+        frames.map(async (frame, index) => ({
+          path: frame.path,
+          role: index === frameCount - 1 ? "handoff" : "motion-reference",
+          content: await fs.readFile(
+            path.join(capture, `frame-${String(index).padStart(6, "0")}.png`),
+          ),
+        })),
+      )),
       {
-        path: "references/handoff.png",
-        role: "handoff",
-        content: await fs.readFile(capture),
+        path: "references/motion.json",
+        role: "motion-timing",
+        content: JSON.stringify(
+          {
+            frames,
+            fps: input.settings.fps,
+            sourceOffset: input.sourceOffset,
+            previousDuration: input.settings.duration,
+            sourceTimeAtHandoff: input.sourceOffset + input.settings.duration,
+            timelineHandoff: input.timelineHandoff,
+            width: input.settings.width,
+            height: input.settings.height,
+            background: input.settings.background,
+          },
+          null,
+          2,
+        ),
       },
       {
         path: "context/narration.srt",

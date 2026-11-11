@@ -3,6 +3,8 @@ import { Field } from "./components";
 import { useProjectState } from "./store";
 import { totalDuration } from "../shared/workflow";
 import type { AudioClip } from "../shared/project";
+import { updateAudioClip } from "../shared/audio-edit";
+import { useStatusNotice } from "./editor-status";
 
 export function ProjectInspector({
   manual = false,
@@ -20,20 +22,29 @@ export function ProjectInspector({
   onVoice: () => void;
 }) {
   const { project, change } = useProjectState();
+  const notify = useStatusNotice();
   const clip = project.audio?.find((clip) => clip.id === audioId);
   const asset = project.assets.find((asset) => asset.id === assetId);
   const locked =
     clip?.sceneId &&
     project.workflow?.scenes.find((scene) => scene.id === clip.sceneId)?.locked;
-  const edit = (patch: Partial<AudioClip>) =>
-    change(
-      {
-        audio: project.audio?.map((audio) =>
-          audio.id === clip?.id ? { ...audio, ...patch } : audio,
-        ),
-      },
-      "Edit audio properties",
-    );
+  const edit = (patch: Partial<AudioClip>) => {
+    if (!clip) return;
+    try {
+      change(
+        patch.start !== undefined || patch.length !== undefined
+          ? updateAudioClip(project, { ...clip, ...patch })
+          : {
+              audio: project.audio?.map((audio) =>
+                audio.id === clip?.id ? { ...audio, ...patch } : audio,
+              ),
+            },
+        "Edit audio properties",
+      );
+    } catch (error) {
+      notify((error as Error).message);
+    }
+  };
   return (
     <div className="project-inspector" aria-label="Project inspector">
       {clip ? (

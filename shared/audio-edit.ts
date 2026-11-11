@@ -1,5 +1,56 @@
-import type { AudioClip } from "./project";
+import type { AudioClip, Project } from "./project";
+import { initialWorkflow, totalDuration } from "./workflow";
 export type AudioEdit = "move" | "trim-start" | "trim-end";
+
+export function updateAudioClip(
+  project: Project,
+  clip: AudioClip,
+): Partial<Project> {
+  const previous = project.audio?.find((item) => item.id === clip.id);
+  if (!previous) throw Error("The audio clip changed. Select it again.");
+  const workflow = project.workflow ?? initialWorkflow(project);
+  const scene = clip.sceneId
+    ? workflow.scenes.find((item) => item.id === clip.sceneId)
+    : workflow.scenes.at(-1);
+  if (!scene) throw Error("The audio timeline is unavailable.");
+  if (clip.sceneId && scene.locked)
+    throw Error("Unlock the timeline before editing audio.");
+  const audio = project.audio!.map((item) =>
+    item.id === clip.id ? clip : item,
+  );
+  const end = clip.start + clip.length;
+  const scopeDuration = clip.sceneId ? scene.duration : totalDuration(project);
+  if (end <= scopeDuration + 1e-9) return { audio };
+  if (scene.locked)
+    throw Error("Unlock the last timeline to extend it for audio.");
+  const duration = Math.min(
+    600 - totalDuration(project) + scene.duration,
+    scene.duration + end - scopeDuration,
+  );
+  if (totalDuration(project) + end - scopeDuration > 600 + 1e-9)
+    throw Error("Audio must fit within the ten-minute composition limit.");
+  return {
+    audio,
+    workflow: {
+      ...workflow,
+      scenes: workflow.scenes.map((item) =>
+        item.id === scene.id
+          ? {
+              ...item,
+              duration,
+              visualDuration:
+                item.visualDuration ??
+                item.visualContinuations?.[0]?.start ??
+                item.duration,
+            }
+          : item,
+      ),
+    },
+    ...(workflow.selectedId === scene.id
+      ? { settings: { ...project.settings, duration } }
+      : {}),
+  };
+}
 export function audioTimelineRows(
   clips: AudioClip[],
   startOf: (clip: AudioClip) => number = (clip) => clip.start,

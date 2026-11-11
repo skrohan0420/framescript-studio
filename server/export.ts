@@ -241,7 +241,11 @@ async function renderExportAttempt(
   signal = AbortSignal.any([signal, AbortSignal.timeout(7_200_000)]);
   const p = projectSchema.parse(project),
     o = exportSchema.parse(options);
-  const times = o.format === "png" ? [o.time] : frameTimes(o);
+  const times = o.format === "png"
+    ? [o.time]
+    : o.format === "sequence" && tuning.sequenceTimes
+      ? tuning.sequenceTimes
+      : frameTimes(o);
   const plannedWorkers = Math.min(
     times.length,
     renderWorkerCount(p, o, tuning),

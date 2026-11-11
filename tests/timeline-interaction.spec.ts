@@ -64,6 +64,51 @@ test("Ctrl+wheel zooms only over the timeline and keeps page zoom unchanged", as
   expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1);
 });
 
+test("zoom buttons cover the wider range and the ruler keeps useful time labels", async ({ page }) => {
+  const slider = page.getByRole("slider", { name: "Timeline zoom" });
+  const zoomOut = page.getByRole("button", { name: "Zoom out timeline", exact: true });
+  const zoomIn = page.getByRole("button", { name: "Zoom in timeline", exact: true });
+  await zoomOut.click();
+  await expect(slider).toHaveValue("0.75");
+  await zoomOut.click();
+  await zoomOut.click();
+  await expect(slider).toHaveValue("0.25");
+  await expect(zoomOut).toBeDisabled();
+  await zoomIn.click();
+  await expect(slider).toHaveValue("0.5");
+  await slider.fill("24");
+  await zoomIn.click();
+  await expect(slider).toHaveValue("32");
+  await expect(zoomIn).toBeDisabled();
+  await expect(page.getByLabel("Timeline zoom level", { exact: true })).toHaveText("32×");
+  const viewport = page.locator(".timeline-track-scroll");
+  await viewport.evaluate((element) => { element.scrollLeft = 4000; });
+  const ruler = page.locator(".ruler");
+  await expect.poll(async () => Number((await ruler.locator("span").first().innerText()).replace("s", ""))).toBeGreaterThan(2);
+  expect(await ruler.locator("span").count()).toBeLessThan(40);
+  await page.screenshot({ path: "test-results/timeline-zoom-controls.png" });
+});
+
+test("the ruler has a fixed tail after the clips and scrolling does not grow it", async ({ page }) => {
+  const viewport = page.locator(".timeline-track-scroll");
+  const marks = page.locator(".ruler span");
+  const lastTime = async () => Number((await marks.last().innerText()).replace("s", ""));
+  await expect.poll(lastTime).toBeGreaterThan(totalDuration(fixture()));
+  await expect(marks.filter({ hasText: /^10s$/ })).toBeInViewport();
+  await viewport.evaluate((element) => { element.scrollLeft = element.scrollWidth - element.clientWidth; });
+  await expect.poll(lastTime).toBe(30);
+  const width = await viewport.evaluate((element) => element.scrollWidth);
+  await viewport.evaluate((element) => { element.scrollLeft = element.scrollWidth - element.clientWidth; });
+  await expect.poll(lastTime).toBe(30);
+  expect(await viewport.evaluate((element) => element.scrollWidth)).toBe(width);
+  await expect.poll(async () => {
+    const ruler = (await page.locator(".timeline-ruler-marks").boundingBox())!;
+    const bounds = (await viewport.boundingBox())!;
+    return Math.abs(ruler.x + ruler.width - bounds.x - bounds.width);
+  }).toBeLessThan(2);
+  await expect(page.getByRole("slider", { name: "Timeline position" })).toHaveAttribute("max", "8");
+});
+
 test("playhead snapping aligns to audio edges and Alt bypasses it", async ({
   page,
 }) => {
@@ -402,6 +447,47 @@ test("the visual can end while both narration clips keep playing on the timeline
   await expect(visual).toBeHidden();
   await position.fill("1");
   await expect(visual).toBeVisible();
+});
+
+test("appending overlapping audio grows the timeline, joins its row and undoes as one edit", async ({ page }) => {
+  const project = newProject();
+  project.settings.duration = 6;
+  project.workflow = initialWorkflow(project);
+  const scene = project.workflow.scenes[0];
+  const recording = clipFromAudio(synthesizeSound("Ambient loop"), "voice", scene.id);
+  project.audio = [
+    { ...recording, id: "first", name: "First recording", start: 0, length: 6 },
+    { ...recording, id: "second", name: "Append recording", start: 2, length: 4 },
+  ];
+  let saved: Project | undefined;
+  await page.route("**/api/workspaceGet", (route) => route.fulfill({ json: { result: project } }));
+  await page.route("**/api/autosave", (route) => {
+    saved = route.request().postDataJSON().args[0];
+    return route.fulfill({ json: { result: true } });
+  });
+  await page.reload();
+  await expect(page.locator(".audio-edit-row")).toHaveCount(2);
+  const move = page.getByRole("button", { name: "Move Append recording", exact: true });
+  const track = (await page.locator(".audio-edit-track").last().boundingBox())!;
+  const box = (await move.boundingBox())!;
+  await page.mouse.move(box.x + 30, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 30 + track.width * 4 / 6 - 2, box.y + box.height / 2, { steps: 8 });
+  await expect(page.locator(".timeline-snap-guide")).toBeVisible();
+  await page.mouse.up();
+  await expect.poll(() => saved?.audio?.find((clip) => clip.id === "second")?.start).toBe(6);
+  await expect(page.locator(".audio-edit-row")).toHaveCount(1);
+  expect(saved!.settings.duration).toBe(10);
+  expect(saved!.workflow!.scenes[0].visualDuration).toBe(6);
+  expect(saved!.audio![0].start).toBe(0);
+  expect(saved!.audio![1].length).toBe(4);
+  await page.getByRole("button", { name: "Undo project change", exact: true }).click();
+  await expect(page.locator(".audio-edit-row")).toHaveCount(2);
+  await expect.poll(() => saved?.settings.duration).toBe(6);
+  await move.click();
+  await page.getByLabel("Start (seconds)", { exact: true }).fill("6");
+  await expect(page.locator(".audio-edit-row")).toHaveCount(1);
+  await expect.poll(() => saved?.settings.duration).toBe(10);
 });
 
 test("audio dragging and trimming apply the change and undo restores it", async ({

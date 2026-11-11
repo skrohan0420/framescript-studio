@@ -42,6 +42,7 @@ test("generated scene code creates real BGM and SFX audio tracks with undo", asy
   await page
     .getByRole("button", { name: "Prompts panel", exact: true })
     .click();
+  await page.getByRole("tab", { name: "Audio", exact: true }).click();
   await page.getByRole("checkbox", { name: "BGM", exact: true }).check();
   await page.getByRole("checkbox", { name: "SFX", exact: true }).check();
   const tracks = [
@@ -255,6 +256,30 @@ test("prompt templates build, copy and preserve a brief without an AI connection
   const tabs = panel.getByRole("tablist", { name: "Prompt sections" });
   const select = async (name: string) =>
     tabs.getByRole("tab", { name, exact: true }).click();
+  await select("Audio");
+  await expect(panel.getByLabel("Music style", { exact: true })).toBeVisible();
+  await expect(panel.getByLabel("Music style", { exact: true })).toBeDisabled();
+  await panel.getByRole("group", { name: "Audio presets" }).getByRole("button", { name: "Cinematic reveal", exact: true }).click();
+  await panel.getByLabel("Custom audio instructions").fill("Quiet space ambience with one soft impact.");
+  await panel.getByLabel("Music tempo", { exact: true }).selectOption("Medium");
+  await panel.getByText("Advanced music", { exact: true }).click();
+  await panel.getByLabel("Music volume", { exact: true }).fill("0.18");
+  await panel.getByLabel("Music fade in", { exact: true }).fill("1.2");
+  await panel.getByLabel("Music fade out", { exact: true }).fill("1.5");
+  await panel.getByLabel("Music-specific instructions").fill("Soft keys and a low pulse.");
+  await panel.getByText("Advanced effects", { exact: true }).click();
+  await panel.getByLabel("Effect volume", { exact: true }).fill("0.45");
+  await panel.getByLabel("Effect-specific instructions").fill("A single impact at the reveal.");
+  await page.screenshot({ path: "test-results/prompt-audio-desktop.png" });
+  const audioViewport = page.viewportSize()!;
+  await page.setViewportSize({ width: 390, height: 850 });
+  expect(await panel.locator(".prompt-audio-studio").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  await page.screenshot({ path: "test-results/prompt-audio-mobile.png" });
+  await page.setViewportSize(audioViewport);
+  await select("Brief");
+  await select("Audio");
+  await expect(panel.getByLabel("Music tempo", { exact: true })).toHaveValue("Medium");
+  await expect(panel.getByLabel("Custom audio instructions")).toHaveValue("Quiet space ambience with one soft impact.");
   await select("Visuals");
   await expect(panel.getByLabel("Prompt script", { exact: true })).toBeHidden();
   await expect(panel.getByRole("tabpanel")).toHaveCount(1);
@@ -346,6 +371,14 @@ test("prompt templates build, copy and preserve a brief without an AI connection
   await expect(panel).toContainText("motion-reference.js");
   await expect(panel.locator(".prompt-actions button")).toHaveCount(1);
   const preview = await panel.getByLabel("Generated prompt").inputValue();
+  expect(preview).toContain("Music style: Cinematic");
+  expect(preview).toContain("Tempo: Medium");
+  expect(preview).toContain("Risers, Impacts");
+  expect(preview).toContain("Quiet space ambience with one soft impact.");
+  expect(preview).toContain("Music track volume: 0.18. Fade in: 1.2s. Fade out: 1.5s.");
+  expect(preview).toContain("Sound effect track volume: 0.45.");
+  expect(preview).toContain("Soft keys and a low pulse.");
+  expect(preview).toContain("A single impact at the reveal.");
   const copyButton = panel.getByRole("button", { name: "Copy and Download", exact: true });
   const idleSize = await copyButton.boundingBox();
   let releasePackage!: () => void;

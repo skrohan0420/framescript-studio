@@ -132,6 +132,9 @@ test("extends a code visual at its handoff without shifting or replacing narrati
     "TASK.md",
     "source/previous.js",
     "references/handoff.png",
+    "references/motion-1.png",
+    "references/motion-5.png",
+    "references/motion.json",
     "context/inherited.json",
     "context/narration.srt",
   ])
@@ -144,6 +147,10 @@ test("extends a code visual at its handoff without shifting or replacing narrati
   ).replace(/\r\n/g, "\n");
   expect(prompt).toBe((await packaged.json()).result.prompt);
   expect(prompt).toContain("00:00:00,250");
+  expect(prompt).toContain("The exact boundary is source time 2 seconds.");
+  expect(prompt).toContain("Evaluate the reused previous animation at source time 2 + t.");
+  expect(prompt).toContain("Preserve geometry, seeded particle positions");
+  expect(prompt).toContain("window.THREE and window.FrameScript3D");
   expect(prompt).toContain(await direction.inputValue());
   expect(prompt).toContain(
     "Pacing: Hold briefly on the handoff composition, then reveal the next beat.",
@@ -180,7 +187,7 @@ test("extends a code visual at its handoff without shifting or replacing narrati
   );
   await expect(
     sourcePanel.getByText("Continuation source is read only."),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await sourcePanel.getByRole("button", { name: "HTML", exact: true }).click();
   await expect(lines).toContainText('id="continued"');
   await sourcePanel.getByRole("button", { name: "CSS", exact: true }).click();

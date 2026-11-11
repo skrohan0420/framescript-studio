@@ -96,7 +96,7 @@ export function useExports() {
     return { id, finished };
   };
   const cancel = (id: string) => {
-    update(id, { progress: { stage: "Cancelling", done: 0, total: 1 } });
+    update(id, { progress: { stage: "Cancelling", done: 0, total: 0 } });
     void bridge
       .call("cancelExport", id)
       .catch((error) => update(id, { error: error.message }));

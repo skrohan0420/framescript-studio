@@ -80,6 +80,10 @@ test("minimizing keeps export running, preserves its settings and leaves editing
       .locator(".modal-head")
       .getByRole("button", { name: "Minimize export" }),
   ).toBeVisible();
+  const progressName = "Render progress for Background film.mp4";
+  await expect(dialog.getByRole("progressbar", { name: progressName }))
+    .toHaveAttribute("value", "167");
+  await expect(dialog).toContainText("Rendering · 24% · 167/684 frames");
   await dialog.screenshot({ path: "test-results/export-header-controls.png" });
   await dialog.getByRole("button", { name: "Minimize export" }).click();
   await expect(dialog).toBeHidden();
@@ -87,11 +91,14 @@ test("minimizing keeps export running, preserves its settings and leaves editing
   await expect(dock).toContainText("Background film.mp4");
   const activity = page.locator(".status-bar .status-activity");
   await expect(activity).toContainText("24%");
-  await expect(dock.getByRole("progressbar")).toHaveCount(0);
+  const dockProgress = dock.getByRole("progressbar", { name: progressName });
+  await expect(dockProgress).toHaveAttribute("value", "167");
   await dock
     .getByRole("button", { name: "Dismiss exports panel", exact: true })
     .click();
   await expect(activity).toContainText("24%");
+  await expect(dockProgress).toBeVisible();
+  await expect(dock).toContainText("Rendering · 24% · 167/684 frames");
   expect(cancelled).toBe(0);
   await dock
     .getByRole("button", { name: "Expand exports panel", exact: true })
@@ -110,6 +117,8 @@ test("minimizing keeps export running, preserves its settings and leaves editing
     "Background film",
   );
   await expect(dialog.getByLabel("Export file name")).toBeDisabled();
+  await expect(dialog.getByRole("progressbar", { name: progressName }))
+    .toHaveAttribute("value", "167");
   expect(requests).toBe(1);
   expect(cancelled).toBe(0);
   expect(submitted[0].name).toBe("Untitled animation");

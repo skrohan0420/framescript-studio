@@ -125,7 +125,9 @@ test("exports from three timelines keep separate progress, snapshots, cancellati
   await expect(activity).toContainText(/Clip A\.mp4[^|]*25%/);
   await expect(activity).toContainText(/Clip B\.mp4[^|]*70%/);
   await expect(activity).toContainText(/Clip C\.mp4[^|]*Queued/);
-  await expect(dock.getByRole("progressbar")).toHaveCount(0);
+  await expect(a.getByRole("progressbar")).toHaveAttribute("value", "25");
+  await expect(b.getByRole("progressbar")).toHaveAttribute("value", "70");
+  await expect(c).toContainText("Queued");
   expect(new Set(jobs.map((j) => j.id)).size).toBe(3);
   expect(jobs.map((j) => j.project.html)).toEqual([
     p.html,
@@ -177,7 +179,11 @@ test("exports from three timelines keep separate progress, snapshots, cancellati
   ).toBeVisible();
   jobs[2].stage = "Rendering";
   jobs[2].done = 42;
+  await dock.getByRole("button", { name: "Minimize exports panel" }).click();
+  await expect(c.getByRole("progressbar")).toBeVisible();
+  await expect(c.getByRole("progressbar")).toHaveAttribute("value", "42");
   await expect(activity).toContainText(/Clip C\.mp4[^|]*42%/);
+  await dock.getByRole("button", { name: "Expand exports panel" }).click();
   const finalDownload = page.waitForEvent("download");
   jobs[2].finish();
   expect((await finalDownload).suggestedFilename()).toBe("Clip C.mp4");

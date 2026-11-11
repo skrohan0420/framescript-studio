@@ -3,6 +3,7 @@ import type { ExportOptions, Project } from "../shared/project";
 import { runProcess } from "./process";
 export type VideoEncoder = "libx264" | "h264_qsv" | "h264_nvenc" | "h264_amf";
 export type RenderTuning = {
+  sequenceTimes?: number[];
   workers?: number;
   capture?: "standard" | "fast" | "jpeg";
   encoder?: "software";

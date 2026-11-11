@@ -1,12 +1,15 @@
 import { useStatusNotice } from "./editor-status";
-import { memo, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
+import { createPortal } from "react-dom";
+import { startTimelineDrag } from "./timeline-drag";
 import { useProjectState, useStudio } from "./store";
-import { sceneOffset } from "../shared/workflow";
+import { sceneOffset, totalDuration } from "../shared/workflow";
 import {
   editAudioClip,
   audioTimelineRows,
   snapAudioEdit,
+  updateAudioClip,
   type AudioEdit,
 } from "../shared/audio-edit";
 import type { AudioClip } from "../shared/project";
@@ -33,6 +36,16 @@ export const AudioTimeline = memo(function AudioTimeline({
   const [draft, setDraft] = useState<AudioClip | null>(null);
   const draftRef = useRef<AudioClip | null>(null);
   const activeGesture = useRef(false);
+  const cleanup = useRef<(() => void) | null>(null);
+  const section = useRef<HTMLElement>(null);
+  const [dragPreview, setDragPreview] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    dropTop: number;
+  } | null>(null);
+  useEffect(() => () => cleanup.current?.(), []);
   const notify = useStatusNotice();
   const offset =
     !master && p.workflow ? sceneOffset(p, p.workflow.selectedId) : 0;
@@ -41,23 +54,35 @@ export const AudioTimeline = memo(function AudioTimeline({
       master || !clip.sceneId || clip.sceneId === p.workflow?.selectedId,
   );
   if (!visible.length) return null;
-  const scope = (clip: AudioClip) =>
-    clip.sceneId
+  const startOf = (clip: AudioClip) =>
+    clip.start + (clip.sceneId ? sceneOffset(p, clip.sceneId) : 0) - offset;
+  const shown = visible.filter(
+    (clip) => startOf(clip) < duration && startOf(clip) + clip.length > 0,
+  );
+  const rows = audioTimelineRows(shown, startOf);
+  const scope = (clip: AudioClip, mode: AudioEdit) => {
+    const scene = p.workflow?.scenes.find((scene) => scene.id === clip.sceneId);
+    if (mode === "move") {
+      if (clip.sceneId && scene) return 600 - totalDuration(p) + scene.duration;
+      return p.workflow?.scenes.at(-1)?.locked ? totalDuration(p) : 600;
+    }
+    return clip.sceneId
       ? (p.workflow?.scenes.find((scene) => scene.id === clip.sceneId)
           ?.duration ?? duration)
       : (p.workflow?.scenes.reduce((n, s) => n + s.duration, 0) ?? duration);
+  };
   const commit = (clip: AudioClip, revision: number) => {
     const current = useStudio.getState();
     if (current.revision !== revision) {
       notify("Project changed during audio edit. Try again.");
       return;
     }
-    change(
-      {
-        audio: current.project.audio?.map((a) => (a.id === clip.id ? clip : a)),
-      },
-      "Move / trim audio",
-    );
+    try {
+      change(updateAudioClip(current.project, clip), "Move / trim audio");
+    } catch (error) {
+      notify((error as Error).message);
+      return;
+    }
     notify(
       `${clip.name}: starts at ${clip.start.toFixed(2)}s, length ${clip.length.toFixed(2)}s`,
     );
@@ -70,11 +95,14 @@ export const AudioTimeline = memo(function AudioTimeline({
     if (event.button !== 0 || activeGesture.current) return;
     onSelect?.(clip.id);
     event.preventDefault();
+    event.stopPropagation();
     const target = event.currentTarget,
-      track = target.closest(".audio-edit-track")!;
-    const width = track.getBoundingClientRect().width,
-      startX = event.clientX;
+      track = target.closest<HTMLElement>(".audio-edit-track")!;
+    const width = track.getBoundingClientRect().width;
+    const startY = event.clientY;
+    const originTop = track.getBoundingClientRect().top;
     const revision = useStudio.getState().revision;
+    const session = useStudio.getState().session;
     const base = (clip.sceneId ? sceneOffset(p, clip.sceneId) : 0) - offset;
     const targets = [0, duration, useStudio.getState().time, ...p.markers];
     let boundary = -offset;
@@ -93,66 +121,106 @@ export const AudioTimeline = memo(function AudioTimeline({
     }
     activeGesture.current = true;
     useStudio.getState().setPlaying(false);
-    target.setPointerCapture(event.pointerId);
-    const move = (e: globalThis.PointerEvent) => {
-      const delta = ((e.clientX - startX) / width) * duration;
-      const result =
-        snapping && !e.altKey
-          ? snapAudioEdit(
-              clip,
-              delta,
-              mode,
-              scope(clip),
-              targets
-                .filter((time) => time >= 0 && time <= duration)
-                .map((time) => time - base),
-              (duration * 8) / width,
-            )
-          : {
-              clip: editAudioClip(clip, delta, mode, scope(clip)),
-              target: undefined,
-            };
-      const next = result.clip;
-      onSnap?.(result.target === undefined ? null : result.target + base);
-      draftRef.current = next;
-      setDraft(next);
-    };
-    const end = (e: globalThis.PointerEvent) => {
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", end);
-      target.removeEventListener("pointercancel", end);
-      target.removeEventListener("lostpointercapture", end);
-      activeGesture.current = false;
-      if (e.type === "pointerup" && draftRef.current)
-        commit(draftRef.current, revision);
-      draftRef.current = null;
-      setDraft(null);
-      onSnap?.(null);
-    };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", end);
-    target.addEventListener("pointercancel", end);
-    target.addEventListener("lostpointercapture", end);
+    let heldSnap: { delta: number; clip: AudioClip; target: number } | null =
+      null;
+    cleanup.current = startTimelineDrag(event, {
+      extraScroll:
+        mode === "move"
+          ? (Math.max(0, scope(clip, mode) - duration) * width) / duration
+          : 0,
+      onMove: (movement) => {
+        const delta = (movement.deltaX / width) * duration;
+        if (
+          !snapping ||
+          movement.altKey ||
+          (heldSnap &&
+            Math.abs(delta - heldSnap.delta) > (duration * 12) / width)
+        )
+          heldSnap = null;
+        const result =
+          heldSnap ??
+          (snapping && !movement.altKey
+            ? snapAudioEdit(
+                clip,
+                delta,
+                mode,
+                scope(clip, mode),
+                targets
+                  .filter((time) => time >= 0 && time <= duration)
+                  .map((time) => time - base),
+                (duration * 8) / width,
+              )
+            : {
+                clip: editAudioClip(clip, delta, mode, scope(clip, mode)),
+                target: undefined,
+              });
+        const next = result.clip;
+        if (result.target !== undefined && !heldSnap) {
+          const snappedDelta =
+            mode === "trim-end"
+              ? next.length - clip.length
+              : next.start - clip.start;
+          heldSnap = { delta: snappedDelta, clip: next, target: result.target };
+        }
+        onSnap?.(result.target === undefined ? null : result.target + base);
+        draftRef.current = next;
+        setDraft(next);
+        if (mode === "move") {
+          const tracks = [
+            ...section.current!.querySelectorAll<HTMLElement>(
+              ".audio-edit-track",
+            ),
+          ];
+          const projected = audioTimelineRows(
+            shown.map((item) => (item.id === clip.id ? next : item)),
+            startOf,
+          );
+          const rowIndex = projected.findIndex((row) =>
+            row.clips.some((item) => item.id === clip.id),
+          );
+          const bounds = track.getBoundingClientRect();
+          const rowStyle = getComputedStyle(track.parentElement!);
+          const rowHeight =
+            track.parentElement!.getBoundingClientRect().height +
+            parseFloat(rowStyle.marginTop) +
+            parseFloat(rowStyle.marginBottom);
+          const dropTop =
+            tracks[rowIndex]?.getBoundingClientRect().top ??
+            (tracks.at(-1)?.getBoundingClientRect().top ?? bounds.top) +
+              rowHeight;
+          setDragPreview({
+            left: bounds.left + (startOf(next) / duration) * width,
+            top: originTop + movement.clientY - startY,
+            width: (next.length / duration) * width,
+            height: bounds.height,
+            dropTop,
+          });
+        }
+      },
+      onEnd: (apply) => {
+        activeGesture.current = false;
+        if (apply && useStudio.getState().session !== session)
+          notify("Project changed during audio edit. Try again.");
+        else if (apply && draftRef.current) commit(draftRef.current, revision);
+        draftRef.current = null;
+        setDraft(null);
+        setDragPreview(null);
+        onSnap?.(null);
+        cleanup.current = null;
+      },
+    });
   };
   return (
-    <section className="audio-timeline" aria-label="Audio timeline">
+    <section
+      ref={section}
+      className="audio-timeline"
+      aria-label="Audio timeline"
+    >
       <p className="audio-timeline-help">
         Drag audio to move · drag edges to trim · focus a control and use arrow
         keys
       </p>
-      {audioTimelineRows(
-        visible.filter((clip) => {
-          const start =
-            clip.start +
-            (clip.sceneId ? sceneOffset(p, clip.sceneId) : 0) -
-            offset;
-          return start < duration && start + clip.length > 0;
-        }),
-        (clip) =>
-          clip.start +
-          (clip.sceneId ? sceneOffset(p, clip.sceneId) : 0) -
-          offset,
-      ).map((row, rowIndex) => (
+      {rows.map((row, rowIndex) => (
         <div
           className="audio-edit-row"
           data-audio-lane={row.lane}
@@ -253,12 +321,14 @@ export const AudioTimeline = memo(function AudioTimeline({
           </span>
           <div className="audio-edit-track">
             {row.clips.map((original) => {
-              const clip = draft?.id === original.id ? draft : original;
+              const clip =
+                !dragPreview && draft?.id === original.id ? draft : original;
               const start =
                 clip.start +
                 (clip.sceneId ? sceneOffset(p, clip.sceneId) : 0) -
                 offset;
-              if (start >= duration || start + clip.length <= 0) return null;
+              if (!draft && (start >= duration || start + clip.length <= 0))
+                return null;
               const locked = !!p.workflow?.scenes.find(
                 (s) => s.id === clip.sceneId,
               )?.locked;
@@ -273,7 +343,7 @@ export const AudioTimeline = memo(function AudioTimeline({
                   const delta =
                     (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 1 : 0.1);
                   commit(
-                    editAudioClip(original, delta, mode, scope(original)),
+                    editAudioClip(original, delta, mode, scope(original, mode)),
                     useStudio.getState().revision,
                   );
                 },
@@ -283,7 +353,7 @@ export const AudioTimeline = memo(function AudioTimeline({
                   key={clip.id}
                   data-timeline-kind="audio"
                   data-timeline-id={clip.id}
-                  className={`audio-edit-clip ${clip.lane} ${clip.muted ? "muted" : ""} ${selected === clip.id ? "selected" : ""}`}
+                  className={`audio-edit-clip ${clip.lane} ${clip.muted ? "muted" : ""} ${selected === clip.id ? "selected" : ""} ${dragPreview && draft?.id === clip.id ? "audio-drag-source" : ""}`}
                   style={{
                     left: (start / duration) * 100 + "%",
                     width: (clip.length / duration) * 100 + "%",
@@ -338,6 +408,37 @@ export const AudioTimeline = memo(function AudioTimeline({
           </div>
         </div>
       ))}
+      {dragPreview &&
+        draft &&
+        createPortal(
+          <>
+            <div
+              className="audio-drop-preview"
+            aria-hidden="true"
+              style={{
+                left: dragPreview.left,
+                top: dragPreview.dropTop,
+                width: dragPreview.width,
+                height: dragPreview.height,
+              }}
+            />
+            <div
+              className={`audio-drag-preview ${draft.lane}`}
+            aria-hidden="true"
+              style={{
+                left: dragPreview.left,
+                top: dragPreview.top,
+                width: dragPreview.width,
+                height: dragPreview.height,
+              }}
+            >
+              <AudioWaveform clip={draft} />
+              <span className="audio-clip-name">{draft.name}</span>
+              <small>{draft.start.toFixed(2)}s</small>
+            </div>
+          </>,
+          document.body,
+        )}
     </section>
   );
 });

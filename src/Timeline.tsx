@@ -21,8 +21,8 @@ import {
   RotateCcw,
   Square,
   Magnet,
+  Minus,
   Scissors,
-  Search,
 } from "lucide-react";
 import { useStudio, useProjectState } from "./store";
 import {
@@ -33,6 +33,8 @@ import {
   totalDuration,
 } from "../shared/workflow";
 import { AudioTimeline } from "./AudioTimeline";
+import { TimelineRulerMarks } from "./TimelineRulerMarks";
+import { startTimelineDrag } from "./timeline-drag";
 import { TextTimeline } from "./TextTimeline";
 import { audioDragType } from "../shared/audio-library";
 import { clipFromAudio } from "./audio";
@@ -55,6 +57,8 @@ export type TimelineSelection =
   | { kind: "audio" | "scene"; id: string; segmentId?: never }
   | { kind: "continuation"; id: string; segmentId: string }
   | null;
+
+const timelineZoomLevels = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32];
 
 export const Timeline = memo(function Timeline({
   masterMode,
@@ -99,13 +103,17 @@ export const Timeline = memo(function Timeline({
   const [timelineZoom, setTimelineZoom] = useState(1);
   const [snapping, setSnapping] = useState(true);
   const [snapTime, setSnapTime] = useState<number | null>(null);
-  const [visualDraft, setVisualDraft] = useState<{
-    id: string;
-    duration: number;
-  } | null>(null);
+  const [visualDraft, setVisualDraft] = useState<Partial<typeof p> | null>(null);
+  const timelineProject = visualDraft ? { ...p, ...visualDraft } : p;
+  const trimCleanup = useRef<(() => void) | null>(null);
+  useEffect(() => () => trimCleanup.current?.(), []);
   const notify = useStatusNotice();
-  const trimVisual = (event: ReactPointerEvent<HTMLElement>, id: string) => {
-    if (event.button !== 0) return;
+  const trimVisual = (
+    event: ReactPointerEvent<HTMLElement>,
+    id: string,
+    segmentId?: string,
+  ) => {
+    if (event.button !== 0 || trimCleanup.current) return;
     event.preventDefault();
     event.stopPropagation();
     const state = useStudio.getState(),
@@ -114,76 +122,117 @@ export const Timeline = memo(function Timeline({
     const scene = workflow.scenes.find((item) => item.id === id);
     const bounds = rulerRef.current?.getBoundingClientRect();
     if (!scene || scene.locked || !bounds) return;
+    const segment = scene.visualContinuations?.find(
+      (item) => item.id === segmentId,
+    );
+    if (segmentId && !segment) return;
+    state.setSelectedText(null);
+    setSelection(
+      segmentId
+        ? { kind: "continuation", id, segmentId }
+        : { kind: "scene", id },
+    );
     const revision = state.revision,
-      x = event.clientX,
-      start = masterMode ? sceneOffset({ ...project, workflow }, id) : 0,
-      initialDuration = scene.visualDuration ?? scene.duration;
+      start =
+        (masterMode ? sceneOffset({ ...project, workflow }, id) : 0) +
+        (segment?.start ?? 0),
+      initialDuration =
+        segment?.duration ?? scene.visualDuration ?? scene.duration;
     let duration = initialDuration;
-    const target = event.currentTarget;
-    target.setPointerCapture(event.pointerId);
     state.setPlaying(false);
-    const move = (e: PointerEvent) => {
-      duration = Math.max(
-        0.1,
-        initialDuration + ((e.clientX - x) / bounds.width) * playbackDuration,
-      );
-      let snap: number | null = null;
-      if (snapping && !e.altKey) {
-        const targets = [0, playbackDuration, state.time, ...project.markers];
-        if (masterMode)
-          for (const item of workflow.scenes) {
-            const edge = sceneOffset({ ...project, workflow }, item.id);
-            if (item.id !== id) targets.push(edge, edge + (item.visualDuration ?? item.duration));
+    trimCleanup.current = startTimelineDrag(event, {
+      extraScroll:
+        (Math.max(0, 600 - totalDuration(project)) * bounds.width) /
+        playbackDuration,
+      onMove: (movement) => {
+        duration = Math.max(
+          0.1,
+          initialDuration + (movement.deltaX / bounds.width) * playbackDuration,
+        );
+        let snap: number | null = null;
+        if (snapping && !movement.altKey) {
+          const targets = [0, playbackDuration, state.time, ...project.markers];
+          if (masterMode)
+            for (const item of workflow.scenes) {
+              const edge = sceneOffset({ ...project, workflow }, item.id);
+              if (item.id !== id)
+                targets.push(
+                  edge,
+                  edge + (item.visualDuration ?? item.duration),
+                );
+            }
+          for (const clip of project.audio ?? []) {
+            if (!masterMode && clip.sceneId && clip.sceneId !== id) continue;
+            const offset =
+              masterMode && clip.sceneId
+                ? sceneOffset(project, clip.sceneId)
+                : 0;
+            targets.push(
+              clip.start + offset,
+              clip.start + offset + clip.length,
+            );
           }
-        for (const clip of project.audio ?? []) {
-          if (!masterMode && clip.sceneId && clip.sceneId !== id) continue;
-          const offset =
-            masterMode && clip.sceneId ? sceneOffset(project, clip.sceneId) : 0;
-          targets.push(clip.start + offset, clip.start + offset + clip.length);
+          let distance = (8 / bounds.width) * playbackDuration;
+          for (const point of targets)
+            if (
+              point - start >= 0.1 &&
+              Math.abs(point - start - duration) <= distance
+            ) {
+              distance = Math.abs(point - start - duration);
+              snap = point;
+            }
+          if (snap !== null) duration = snap - start;
         }
-        let distance = (8 / bounds.width) * playbackDuration;
-        for (const point of targets)
+        const patch = resizeVisual(project, id, duration, segmentId);
+        setSnapTime(snap);
+        setVisualDraft(patch);
+      },
+      onEnd: (apply) => {
+        trimCleanup.current = null;
+        if (apply && duration !== initialDuration) {
+          const current = useStudio.getState();
           if (
-            point - start >= 0.1 &&
-            Math.abs(point - start - duration) <= distance
+            current.revision !== revision ||
+            current.session !== state.session
           ) {
-            distance = Math.abs(point - start - duration);
-            snap = point;
+            notify("Project changed while trimming. Try again.");
+          } else {
+            state.change(
+              resizeVisual(project, id, duration, segmentId),
+              "Resize visual clip",
+            );
           }
-        if (snap !== null) duration = snap - start;
-      }
-      duration = Math.min(
-        duration,
-        scene.visualContinuations?.[0]?.start ?? Infinity,
-        600 -
-          workflow.scenes.reduce(
-            (sum, item) => sum + (item.id === id ? 0 : item.duration),
-            0,
-          ),
-      );
-      setSnapTime(snap);
-      setVisualDraft({ id, duration });
-    };
-    const end = (e: PointerEvent) => {
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", end);
-      target.removeEventListener("pointercancel", end);
-      target.removeEventListener("lostpointercapture", end);
-      if (e.type === "pointerup" && duration !== initialDuration) {
-        const current = useStudio.getState();
-        if (current.revision !== revision || current.session !== state.session) {
-          notify("Project changed while trimming. Try again.");
-        } else {
-          state.change(resizeVisual(project, id, duration), "Trim visual clip");
         }
-      }
-      setVisualDraft(null);
-      setSnapTime(null);
-    };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", end);
-    target.addEventListener("pointercancel", end);
-    target.addEventListener("lostpointercapture", end);
+        setVisualDraft(null);
+        setSnapTime(null);
+      },
+    });
+  };
+  const resizeVisualKey = (
+    event: React.KeyboardEvent<HTMLElement>,
+    id: string,
+    segmentId?: string,
+  ) => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const state = useStudio.getState();
+    const scene = (
+      state.project.workflow ?? initialWorkflow(state.project)
+    ).scenes.find((item) => item.id === id);
+    if (!scene || scene.locked) return;
+    const segment = scene.visualContinuations?.find(
+      (item) => item.id === segmentId,
+    );
+    const length = segment?.duration ?? scene.visualDuration ?? scene.duration;
+    const delta =
+      (event.key === "ArrowLeft" ? -1 : 1) *
+      (event.shiftKey ? 1 : 1 / state.project.settings.fps);
+    state.setPlaying(false);
+    state.change(
+      resizeVisual(state.project, id, length + delta, segmentId),
+      "Resize visual clip",
+    );
   };
   const split = () => {
     const state = useStudio.getState(),
@@ -268,16 +317,6 @@ export const Timeline = memo(function Timeline({
     }
   };
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrollViewportWidth, setScrollViewportWidth] = useState(0);
-  useLayoutEffect(() => {
-    const element = scrollRef.current;
-    if (!element) return;
-    const update = () => setScrollViewportWidth(element.clientWidth);
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
   const [boxSelection, setBoxSelection] = useState<
     { kind: string; id: string; sceneId: string }[]
   >([]);
@@ -452,7 +491,42 @@ export const Timeline = memo(function Timeline({
   const rulerRef = useRef<HTMLDivElement>(null);
   const scrubCleanup = useRef<(() => void) | null>(null);
   const zoomAnchor = useRef<{ fraction: number; x: number } | null>(null);
-  const playbackDuration = masterMode ? totalDuration(p) : p.settings.duration;
+  const actualDuration = masterMode ? totalDuration(p) : p.settings.duration;
+  const playbackDuration = Math.max(
+    actualDuration,
+    masterMode
+      ? totalDuration(timelineProject)
+      : timelineProject.settings.duration,
+  );
+  const pixelsPerSecond =
+    (Math.max(240, actualDuration * 40) * timelineZoom) / actualDuration;
+  const changeZoom = (value: number | ((zoom: number) => number)) => {
+    const viewport = scrollRef.current,
+      canvas = canvasRef.current;
+    if (viewport && canvas) {
+      const fraction = Math.max(
+        0,
+        Math.min(1, useStudio.getState().time / playbackDuration),
+      );
+      const x =
+        96 +
+        (canvas.getBoundingClientRect().width - 96) * fraction -
+        viewport.scrollLeft;
+      zoomAnchor.current = {
+        fraction,
+        x: x >= 96 && x <= viewport.clientWidth ? x : viewport.clientWidth / 2,
+      };
+    }
+    setTimelineZoom((zoom) => Math.max(0.25, Math.min(32, typeof value === "function" ? value(zoom) : value)));
+  };
+  const stepZoom = (direction: number) =>
+    changeZoom((zoom) =>
+      direction > 0
+        ? (timelineZoomLevels.find((level) => level > zoom) ?? 32)
+        : ([...timelineZoomLevels]
+            .reverse()
+            .find((level) => level < zoom) ?? 0.25),
+    );
   const deleteText = () => {
     const state = useStudio.getState();
     if (!state.selectedText) return false;
@@ -494,30 +568,11 @@ export const Timeline = memo(function Timeline({
       event.preventDefault();
       event.stopPropagation();
       if (!event.deltaY) return;
-      const viewport = scrollRef.current,
-        canvas = canvasRef.current;
-      if (viewport && canvas) {
-        const fraction = Math.max(
-          0,
-          Math.min(1, useStudio.getState().time / playbackDuration),
-        );
-        const x =
-          96 +
-          (canvas.getBoundingClientRect().width - 96) * fraction -
-          viewport.scrollLeft;
-        zoomAnchor.current = {
-          fraction,
-          x:
-            x >= 96 && x <= viewport.clientWidth ? x : viewport.clientWidth / 2,
-        };
-      }
-      setTimelineZoom((zoom) =>
-        Math.max(1, Math.min(4, zoom + (event.deltaY < 0 ? 0.25 : -0.25))),
-      );
+      stepZoom(event.deltaY < 0 ? 1 : -1);
     };
     timeline.addEventListener("wheel", wheel, { passive: false });
     return () => timeline.removeEventListener("wheel", wheel);
-  }, [playbackDuration, timelineHidden]);
+  }, [playbackDuration, timelineHidden, timelineZoom]);
   const beginScrub = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -727,7 +782,6 @@ export const Timeline = memo(function Timeline({
             state.setSelectedText(null);
             setSelection({ kind: "audio", id: clip.id });
             onSelectAudio?.(clip.id);
-
           } catch (error) {
             notify((error as Error).message);
           }
@@ -883,11 +937,28 @@ export const Timeline = memo(function Timeline({
           );
         } else if (selection.kind === "continuation") {
           const workflow = project.workflow;
-          const scene = workflow?.scenes.find((item) => item.id === selection.id);
+          const scene = workflow?.scenes.find(
+            (item) => item.id === selection.id,
+          );
           if (!workflow || !scene || scene.locked) return;
-          state.change({ workflow: { ...workflow, scenes: workflow.scenes.map((item) => item.id === scene.id
-            ? { ...item, visualContinuations: item.visualContinuations?.filter((segment) => segment.id !== selection.segmentId) }
-            : item) } }, "Delete visual continuation");
+          state.change(
+            {
+              workflow: {
+                ...workflow,
+                scenes: workflow.scenes.map((item) =>
+                  item.id === scene.id
+                    ? {
+                        ...item,
+                        visualContinuations: item.visualContinuations?.filter(
+                          (segment) => segment.id !== selection.segmentId,
+                        ),
+                      }
+                    : item,
+                ),
+              },
+            },
+            "Delete visual continuation",
+          );
         } else {
           const workflow = project.workflow;
           const scene = workflow?.scenes.find(
@@ -979,7 +1050,9 @@ export const Timeline = memo(function Timeline({
               )}
             </>
           )}
-        {selection && selection.kind !== "audio" && onCodeExtend &&
+        {selection &&
+          selection.kind !== "audio" &&
+          onCodeExtend &&
           continuationSource(p, selection.id, selection.segmentId) && (
             <button
               className="timeline-extend"
@@ -1005,39 +1078,40 @@ export const Timeline = memo(function Timeline({
         >
           <Magnet size={16} />
         </button>
-        <label className="timeline-zoom">
-          <Search size={14} aria-hidden="true" />
+        <div
+          className="timeline-zoom"
+          role="group"
+          aria-label="Timeline zoom controls"
+        >
+          <button
+            type="button"
+            aria-label="Zoom out timeline"
+            title="Zoom out timeline"
+            disabled={timelineZoom <= 0.25}
+            onClick={() => stepZoom(-1)}
+          >
+            <Minus size={14} />
+          </button>
           <input
             aria-label="Timeline zoom"
             type="range"
-            min="1"
-            max="4"
+            min="0.25"
+            max="32"
             step=".25"
             value={timelineZoom}
-            onChange={(e) => {
-              const viewport = scrollRef.current,
-                canvas = canvasRef.current;
-              if (viewport && canvas) {
-                const fraction = Math.max(
-                  0,
-                  Math.min(1, useStudio.getState().time / playbackDuration),
-                );
-                const x =
-                  96 +
-                  (canvas.getBoundingClientRect().width - 96) * fraction -
-                  viewport.scrollLeft;
-                zoomAnchor.current = {
-                  fraction,
-                  x:
-                    x >= 96 && x <= viewport.clientWidth
-                      ? x
-                      : viewport.clientWidth / 2,
-                };
-              }
-              setTimelineZoom(Number(e.target.value));
-            }}
+            onChange={(e) => changeZoom(Number(e.target.value))}
           />
-        </label>
+          <button
+            type="button"
+            aria-label="Zoom in timeline"
+            title="Zoom in timeline"
+            disabled={timelineZoom >= 32}
+            onClick={() => stepZoom(1)}
+          >
+            <Plus size={14} />
+          </button>
+          <output aria-label="Timeline zoom level">{timelineZoom}×</output>
+        </div>
         <button
           title="Add timeline marker"
           aria-label="Add timeline marker"
@@ -1104,10 +1178,12 @@ export const Timeline = memo(function Timeline({
       <div
         className="timeline-track-scroll"
         ref={scrollRef}
-        style={{ paddingRight: Math.max(0, scrollViewportWidth - 128) }}
         onScroll={(event) => {
           const viewport = event.currentTarget;
-          viewport.style.setProperty("--timeline-scroll-left", `${viewport.scrollLeft}px`);
+          viewport.style.setProperty(
+            "--timeline-scroll-left",
+            `${viewport.scrollLeft}px`,
+          );
         }}
         onPointerDown={(event) => {
           if (event.target === event.currentTarget) beginBox(event);
@@ -1117,7 +1193,12 @@ export const Timeline = memo(function Timeline({
           className="timeline-track-canvas"
           ref={canvasRef}
           style={{
-            width: 96 + Math.max(240, playbackDuration * 40) * timelineZoom,
+            width:
+              96 +
+              (Math.max(240, actualDuration * 40) *
+                timelineZoom *
+                playbackDuration) /
+                actualDuration,
           }}
           onPointerDown={(event) => {
             const target = event.target as HTMLElement;
@@ -1133,10 +1214,13 @@ export const Timeline = memo(function Timeline({
             beginBox(event);
           }}
         >
-          <div className="ruler" ref={rulerRef} onPointerDown={beginScrub}>
-            {Array.from({ length: 11 }, (_, i) => (
-              <span key={i}>{((i * playbackDuration) / 10).toFixed(1)}s</span>
-            ))}
+          <div className="ruler" ref={rulerRef} onPointerDown={beginScrub} style={{ clipPath: `inset(0 -${600 * pixelsPerSecond}px 0 var(--timeline-scroll-left, 0px))` }}>
+            <TimelineRulerMarks
+              duration={playbackDuration}
+              pixelsPerSecond={pixelsPerSecond}
+              fps={p.settings.fps}
+              viewport={scrollRef}
+            />
           </div>
           <div className="video-track-row">
             <span className="video-track-label">
@@ -1151,7 +1235,7 @@ export const Timeline = memo(function Timeline({
                 style={
                   !masterMode
                     ? {
-                        width: `${((visualDraft?.duration ?? selectedScene(p)?.visualDuration ?? playbackDuration) / playbackDuration) * 100}%`,
+                        width: `${((selectedScene(timelineProject)?.visualDuration ?? actualDuration) / playbackDuration) * 100}%`,
                       }
                     : undefined
                 }
@@ -1183,69 +1267,88 @@ export const Timeline = memo(function Timeline({
                 }
               >
                 {masterMode && p.workflow ? (
-                  p.workflow.scenes.filter((scene) => scene.visualDuration !== 0).map((scene) => (
-                    <button
-                      onClick={() => {
-                        useStudio.getState().setSelectedText(null);
-                        setSelection({ kind: "scene", id: scene.id });
-                        onSelectScene?.(scene.id);
-                      }}
-                      className={
-                        "master-scene-clip " +
-                        (scene.id === p.workflow?.selectedId ? "selected" : "")
-                      }
-                      data-timeline-kind="scene"
-                      data-timeline-id={scene.id}
-                      key={scene.id}
-                      style={{
-                        left: `${(sceneOffset(p, scene.id) / playbackDuration) * 100}%`,
-                        width:
-                          ((visualDraft?.id === scene.id
-                            ? visualDraft.duration
-                            : scene.visualDuration ?? scene.duration) /
-                            playbackDuration) *
-                            100 +
-                          "%",
-                      }}
-                      title={scene.title + " · " + (scene.visualDuration ?? scene.duration) + "s"}
-                    >
-                      <span className="scene-clip-caption">
-                        {scene.title}
-                        <small>{(scene.visualDuration ?? scene.duration).toFixed(1)}s</small>
-                      </span>
-                      <span className="scene-filmstrip" aria-hidden="true">
-                        {(() => {
-                          const asset = p.assets.find((asset) =>
-                            [scene.html, scene.css, scene.js].some((source) =>
-                              source.includes("asset://" + asset.id),
-                            ),
-                          );
-                          return asset ? (
-                            Array.from({ length: 8 }, (_, i) => (
-                              <img
-                                key={i}
-                                src={asset.data}
-                                alt=""
-                                loading="lazy"
-                              />
-                            ))
-                          ) : (
-                            <Code2 size={19} />
-                          );
-                        })()}
-                      </span>
-                      {!scene.locked && (
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          aria-label={`Trim end of visual ${scene.title}`}
-                          className="visual-trim-end"
-                          onClick={(event) => event.stopPropagation()}
-                          onPointerDown={(event) => trimVisual(event, scene.id)}
-                        />
-                      )}
-                    </button>
-                  ))
+                  timelineProject
+                    .workflow!.scenes.filter(
+                      (scene) => scene.visualDuration !== 0,
+                    )
+                    .map((scene) => (
+                      <button
+                        onClick={() => {
+                          useStudio.getState().setSelectedText(null);
+                          setSelection({ kind: "scene", id: scene.id });
+                          onSelectScene?.(scene.id);
+                        }}
+                        className={
+                          "master-scene-clip " +
+                          (scene.id === p.workflow?.selectedId
+                            ? "selected"
+                            : "")
+                        }
+                        data-timeline-kind="scene"
+                        data-timeline-id={scene.id}
+                        key={scene.id}
+                        style={{
+                          left: `${(sceneOffset(timelineProject, scene.id) / playbackDuration) * 100}%`,
+                          width:
+                            ((scene.visualDuration ?? scene.duration) /
+                              playbackDuration) *
+                              100 +
+                            "%",
+                        }}
+                        title={
+                          scene.title +
+                          " · " +
+                          (scene.visualDuration ?? scene.duration) +
+                          "s"
+                        }
+                      >
+                        <span className="scene-clip-caption">
+                          {scene.title}
+                          <small>
+                            {(scene.visualDuration ?? scene.duration).toFixed(
+                              1,
+                            )}
+                            s
+                          </small>
+                        </span>
+                        <span className="scene-filmstrip" aria-hidden="true">
+                          {(() => {
+                            const asset = p.assets.find((asset) =>
+                              [scene.html, scene.css, scene.js].some((source) =>
+                                source.includes("asset://" + asset.id),
+                              ),
+                            );
+                            return asset ? (
+                              Array.from({ length: 8 }, (_, i) => (
+                                <img
+                                  key={i}
+                                  src={asset.data}
+                                  alt=""
+                                  loading="lazy"
+                                />
+                              ))
+                            ) : (
+                              <Code2 size={19} />
+                            );
+                          })()}
+                        </span>
+                        {!scene.locked && (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Trim end of visual ${scene.title}`}
+                            className="visual-trim-end"
+                            onClick={(event) => event.stopPropagation()}
+                            onPointerDown={(event) =>
+                              trimVisual(event, scene.id)
+                            }
+                            onKeyDown={(event) =>
+                              resizeVisualKey(event, scene.id)
+                            }
+                          />
+                        )}
+                      </button>
+                    ))
                 ) : (
                   <>
                     <span>
@@ -1265,26 +1368,60 @@ export const Timeline = memo(function Timeline({
                         onPointerDown={(event) =>
                           trimVisual(event, p.workflow?.selectedId ?? "scene-1")
                         }
+                        onKeyDown={(event) =>
+                          resizeVisualKey(
+                            event,
+                            p.workflow?.selectedId ?? "scene-1",
+                          )
+                        }
                       />
                     )}
                   </>
                 )}
               </div>
-              {(masterMode ? p.workflow?.scenes ?? [] : [selectedScene(p)]).flatMap((scene) =>
-                scene ? (scene.visualContinuations ?? []).map((segment, index) => (
-                  <button
-                    className={`visual-continuation-clip ${selection?.segmentId === segment.id ? "selected" : ""}`}
-                    key={segment.id}
-                    style={{
-                      left: `${((segment.start + (masterMode ? sceneOffset(p, scene.id) : 0)) / playbackDuration) * 100}%`,
-                      width: `${(segment.duration / playbackDuration) * 100}%`,
-                    }}
-                    onClick={() => {
-                      useStudio.getState().setSelectedText(null);
-                      setSelection({ kind: "continuation", id: scene.id, segmentId: segment.id });
-                    }}
-                  ><Code2 size={13} /> Continuation {index + 1}</button>
-                )) : [],
+              {(masterMode
+                ? (timelineProject.workflow?.scenes ?? [])
+                : [selectedScene(timelineProject)]
+              ).flatMap((scene) =>
+                scene
+                  ? (scene.visualContinuations ?? []).map((segment, index) => (
+                      <button
+                        className={`visual-continuation-clip ${selection?.segmentId === segment.id ? "selected" : ""}`}
+                        aria-label={`Continuation ${index + 1}`}
+                        key={segment.id}
+                        style={{
+                          left: `${((segment.start + (masterMode ? sceneOffset(timelineProject, scene.id) : 0)) / playbackDuration) * 100}%`,
+                          width: `${(segment.duration / playbackDuration) * 100}%`,
+                        }}
+                        onClick={() => {
+                          useStudio.getState().setSelectedText(null);
+                          setSelection({
+                            kind: "continuation",
+                            id: scene.id,
+                            segmentId: segment.id,
+                          });
+                        }}
+                      >
+                        <Code2 size={13} /> Continuation {index + 1}
+                        {!scene.locked && (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Resize visual segment ${index + 1}`}
+                            title="Drag to change duration · Arrow keys to adjust"
+                            className="visual-trim-end"
+                            onClick={(event) => event.stopPropagation()}
+                            onPointerDown={(event) =>
+                              trimVisual(event, scene.id, segment.id)
+                            }
+                            onKeyDown={(event) =>
+                              resizeVisualKey(event, scene.id, segment.id)
+                            }
+                          />
+                        )}
+                      </button>
+                    ))
+                  : [],
               )}
               {p.markers.map((m, i) => (
                 <button

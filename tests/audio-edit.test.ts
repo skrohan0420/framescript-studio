@@ -3,8 +3,10 @@ import {
   audioTimelineRows,
   editAudioClip,
   snapAudioEdit,
+  updateAudioClip,
 } from "../shared/audio-edit";
-import type { AudioClip } from "../shared/project";
+import { newProject, projectSchema, type AudioClip } from "../shared/project";
+import { initialWorkflow, totalDuration } from "../shared/workflow";
 const clip: AudioClip = {
   id: "take",
   name: "Take",
@@ -75,4 +77,66 @@ it("does not extend beyond the recording or scope and permits looped source reus
     editAudioClip({ ...clip, loop: true }, 100, "trim-end", 20).length,
   ).toBe(18);
   expect(editAudioClip(clip, -100, "trim-end", 20).length).toBe(0.01);
+});
+
+it("appends audio by extending its timeline while preserving visual continuations and other audio", () => {
+  const project = newProject();
+  project.settings.duration = 6;
+  project.workflow = initialWorkflow(project);
+  const scene = project.workflow.scenes[0];
+  scene.visualDuration = 3;
+  scene.visualContinuations = [
+    {
+      id: crypto.randomUUID(),
+      start: 3,
+      duration: 3,
+      html: "<div>Continuation</div>",
+      css: "",
+      js: "",
+    },
+  ];
+  const first = {
+    ...clip,
+    id: "first",
+    sceneId: scene.id,
+    start: 0,
+    length: 6,
+  };
+  const second = { ...clip, sceneId: scene.id, start: 2, length: 4 };
+  project.audio = [first, second];
+  const moved = snapAudioEdit(second, 4.02, "move", 600, [6], 0.08).clip;
+  const next = projectSchema.parse({
+    ...project,
+    ...updateAudioClip(project, moved),
+  });
+  expect(next.settings.duration).toBe(10);
+  expect(next.workflow!.scenes[0]).toEqual({ ...scene, duration: 10 });
+  expect(next.audio![0]).toEqual(first);
+  expect(next.audio![1]).toEqual({ ...second, start: 6 });
+  expect(audioTimelineRows(next.audio!)).toHaveLength(1);
+});
+
+it("extends the last timeline for master audio and respects locks and the total duration limit", () => {
+  const project = newProject();
+  project.settings.duration = 6;
+  project.workflow = initialWorkflow(project);
+  project.workflow.scenes.push({
+    ...project.workflow.scenes[0],
+    id: "second",
+    duration: 2,
+  });
+  project.audio = [clip];
+  const moved = { ...clip, start: 8 };
+  const next = projectSchema.parse({
+    ...project,
+    ...updateAudioClip(project, moved),
+  });
+  expect(totalDuration(next)).toBe(12);
+  expect(next.settings.duration).toBe(6);
+  expect(next.workflow!.scenes[1].visualDuration).toBe(2);
+  expect(() => updateAudioClip(project, { ...clip, start: 599 })).toThrow(
+    "ten-minute",
+  );
+  project.workflow.scenes[1].locked = true;
+  expect(() => updateAudioClip(project, moved)).toThrow("Unlock");
 });

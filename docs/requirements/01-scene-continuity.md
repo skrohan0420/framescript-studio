@@ -6,7 +6,7 @@ Carry selected objects and visual intent between scenes. Depends on the scene ar
 
 ## Seamless HTML/CSS/JavaScript extensions
 
-Use **Extend → Direction** to ask the AI to carry the previous visual through the handoff. Send the copied prompt and ZIP together. The ZIP contains the previous source and its last visible frame. Use the source to recover the animation state and the frame to check the appearance.
+Use **Extend → Direction** to ask the AI to carry the previous visual through the handoff. Send the copied prompt and ZIP together. Copy and Download automatically includes the previous source, its last visible frame, and up to six timestamped ending frames. `references/motion.json` records each image's segment-local and source time, plus the exact source time at the boundary. The copied prompt requires reuse of the existing renderer, materials and deterministic initialization, with the previous animation clock advanced to that boundary. FrameScript's supplied Three.js and FrameScript3D globals remain available to the generated continuation.
 
 - Reuse the renderer and drawing code for persistent objects. Carry forward the camera, transforms, materials, textures, blending, lighting, and seeded particle layout wherever they affect the handoff.
 - Start the extension's local clock at zero and map that time to the original handoff state. Continue the direction and speed of existing motion through the boundary. Let the next narration cue determine when the new visual beat begins.

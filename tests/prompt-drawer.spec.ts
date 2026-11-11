@@ -124,15 +124,8 @@ test("drawer content adapts to narrow, medium and full desktop widths", async ({
     .boundingBox();
   expect(footer!.height).toBeLessThanOrEqual(56);
   expect(copy!.width).toBeLessThan(200);
-  await expect
-    .poll(() =>
-      panel
-        .getByRole("tablist")
-        .evaluate(
-          (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
-        ),
-    )
-    .toBe(10);
+  await expect(panel.getByRole("tablist").getByRole("tab")).toHaveCount(11);
+  expect((await panel.getByRole("tablist").boundingBox())!.height).toBeLessThanOrEqual(44);
   const content = panel.getByRole("tabpanel");
   expect((await content.boundingBox())!.width).toBeLessThanOrEqual(1440);
   expect(

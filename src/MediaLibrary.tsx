@@ -12,15 +12,14 @@ import {
   RotateCcw,
   Play,
   Pause,
+  Check,
 } from "lucide-react";
 import { useProjectState, useStudio } from "./store";
 import { audioDetails, clipFromAudio, readData } from "./audio";
 import {
   initialWorkflow,
-  sceneOffset,
   totalDuration,
 } from "../shared/workflow";
-import { withAudioClip } from "../shared/narration";
 import type { AudioClip } from "../shared/project";
 import { AudioWaveform } from "./AudioWaveform";
 import { SilenceEditor } from "./SilenceEditor";
@@ -256,46 +255,41 @@ export function MediaLibrary({
           throw Error("Choose an audio file such as MP3 or WAV.");
         const state = useStudio.getState(),
           p = state.project;
-        const workflow = p.workflow ?? initialWorkflow(p);
-        const start =
-          lane === "sfx"
-            ? Math.max(
-                0,
-                state.time -
-                  (master
-                    ? sceneOffset({ ...p, workflow }, workflow.selectedId)
-                    : 0),
-              )
-            : 0;
         const data = await readData(file),
           details = await audioDetails(data);
-        if (useStudio.getState().revision !== state.revision)
+        if (
+          useStudio.getState().revision !== state.revision ||
+          useStudio.getState().session !== state.session
+        )
           throw Error("Project changed while importing audio. Import again.");
+        const existing = p.audioLibrary?.find((source) => source.data === data);
+        if (existing) {
+          setSelectedSource(existing.id);
+          notify(`${file.name} is already in the audio library.`);
+          continue;
+        }
         const clip = {
-          ...clipFromAudio(
-            { name: file.name, data, ...details },
-            lane,
-            (manual && !master) || lane === "sfx"
-              ? workflow.selectedId
-              : undefined,
-          ),
-          start,
-          ...(lane === "voice" && workflow.script.trim()
-            ? { transcript: workflow.script }
+          ...clipFromAudio({ name: file.name, data, ...details }, lane),
+          ...(lane === "voice" && p.workflow?.script.trim()
+            ? { transcript: p.workflow.script }
             : {}),
         };
-        if (lane === "music")
-          clip.length =
-            manual && !master
-              ? p.settings.duration
-              : totalDuration({ ...p, workflow });
         change(
-          manual
-            ? { ...p, workflow, audio: [...(p.audio ?? []), clip] }
-            : withAudioClip({ ...p, workflow }, clip),
+          { audioLibrary: [...(p.audioLibrary ?? []), clip] },
           "Import library audio",
         );
-        onSelectAudio(clip.id);
+        if (
+          !useStudio
+            .getState()
+            .project.audioLibrary?.some((source) => source.id === clip.id)
+        )
+          throw Error(
+            useStudio.getState().error || "The audio could not be imported.",
+          );
+        setSelectedSource(clip.id);
+        notify(
+          `${file.name} imported to the library · Add or drag it to the timeline.`,
+        );
       }
     } catch (error) {
       onError((error as Error).message);
@@ -328,38 +322,40 @@ export function MediaLibrary({
           void importAudio(files);
         }}
       />
-      <div className="library-sidebar" hidden={manual && mode === "media"}>
-        <strong>Project</strong>
-        {mode === "media" ? (
-          <>
-            <button
-              className={filter === "all" ? "active" : ""}
-              onClick={() => setFilter("all")}
-            >
-              All media
-            </button>
-            <button
-              className={filter === "references" ? "active" : ""}
-              onClick={() => setFilter("references")}
-            >
-              References
-            </button>
-            {!manual && (
-              <button onClick={() => onTool("mascot")}>Mascot</button>
-            )}
-          </>
-        ) : (
-          <>
-            <button className="active">Your audio</button>
-            {!manual && (
-              <>
-                <button onClick={() => onTool("voice")}>Narration</button>
-                <button onClick={() => onTool("sound")}>SFX & music</button>
-              </>
-            )}
-          </>
-        )}
-      </div>
+      {!manual && (
+        <div className="library-sidebar">
+          <strong>Project</strong>
+          {mode === "media" ? (
+            <>
+              <button
+                className={filter === "all" ? "active" : ""}
+                onClick={() => setFilter("all")}
+              >
+                All media
+              </button>
+              <button
+                className={filter === "references" ? "active" : ""}
+                onClick={() => setFilter("references")}
+              >
+                References
+              </button>
+              {!manual && (
+                <button onClick={() => onTool("mascot")}>Mascot</button>
+              )}
+            </>
+          ) : (
+            <>
+              <button className="active">Your audio</button>
+              {!manual && (
+                <>
+                  <button onClick={() => onTool("voice")}>Narration</button>
+                  <button onClick={() => onTool("sound")}>SFX & music</button>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
       <div
         className="library-content"
         onDragOver={(e) => {
@@ -621,6 +617,17 @@ export function MediaLibrary({
                     <span className="sr-only"> timeline clips</span>
                   </small>
                 </div>
+                {project.audio?.some(
+                  (item) =>
+                    item.sourceId === clip.id || item.data === clip.data,
+                ) && (
+                  <span
+                    className="audio-on-timeline"
+                    aria-label={`${clip.name} is on the timeline`}
+                  >
+                    <Check size={12} aria-hidden="true" /> On timeline
+                  </span>
+                )}
                 <div
                   className="audio-card-actions"
                   role="group"

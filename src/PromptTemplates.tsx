@@ -1,5 +1,7 @@
 import { useStatusActivity, useStatusNotice } from "./editor-status";
 import { PromptAnimation } from "./PromptAnimation";
+import { PromptAudio } from "./PromptAudio";
+import { restoreAudioDirection } from "../shared/prompt-audio";
 import { restoreTechniques } from "../shared/animation-techniques";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -193,6 +195,7 @@ export function PromptTemplates({
       const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null");
       if (!saved || typeof saved !== "object") return defaults;
       const restored = { ...defaults };
+      restored.audio = restoreAudioDirection(saved.audio);
       restored.animationTechniques = restoreTechniques(
         saved.animationTechniques,
       );
@@ -317,6 +320,7 @@ export function PromptTemplates({
         "reference",
         "animation",
         "pacing",
+        "audio",
         "identity",
         "mascot",
         "typography",
@@ -584,6 +588,7 @@ export function PromptTemplates({
           ["reference", "Reference look"],
           ["animation", "Animation"],
           ["pacing", "Editing & pacing"],
+          ["audio", "Audio"],
           ["identity", "Identity"],
           ["mascot", "Mascot"],
           ["typography", "Typography"],
@@ -607,6 +612,7 @@ export function PromptTemplates({
                 "reference",
                 "animation",
                 "pacing",
+                "audio",
                 "identity",
                 "mascot",
                 "typography",
@@ -641,6 +647,8 @@ export function PromptTemplates({
               <Orbit size={17} />
             ) : id === "pacing" ? (
               <Timer size={17} />
+            ) : id === "audio" ? (
+              <Music size={17} />
             ) : id === "identity" ? (
               <Fingerprint size={17} />
             ) : id === "mascot" ? (
@@ -840,31 +848,6 @@ export function PromptTemplates({
                 </button>
               ))}
             </div>
-            <div className="prompt-audio-options">
-              <label className="prompt-check">
-                <input
-                  type="checkbox"
-                  checked={draft.bgm ?? false}
-                  onChange={(event) => update("bgm", event.target.checked)}
-                />
-                BGM
-              </label>
-              <label className="prompt-check">
-                <input
-                  type="checkbox"
-                  checked={draft.sfx ?? false}
-                  onChange={(event) => update("sfx", event.target.checked)}
-                />
-                SFX
-              </label>
-            </div>
-            {(draft.bgm || draft.sfx) && (
-              <p className="type-hint">
-                {output === "structured"
-                  ? "These preferences guide the brief. Structured scenes do not include audio tracks."
-                  : "The prompt requests soundtrack data for editable music and sound effects."}
-              </p>
-            )}
           </div>
         </div>
         <div
@@ -1036,6 +1019,18 @@ export function PromptTemplates({
             width={project.settings.width}
             height={project.settings.height}
           />
+        </div>
+        <div
+          className="prompt-tab-panel"
+          role="tabpanel"
+          id="prompt-panel-audio"
+          aria-labelledby="prompt-tab-audio"
+          hidden={activeSection !== "audio"}
+          data-prompt-section="audio"
+          tabIndex={-1}
+        >
+          <PromptAudio draft={draft} structured={output === "structured"}
+            onChange={(patch) => setDraft((previous) => ({ ...previous, ...patch }))} />
         </div>
         <div
           className="prompt-tab-panel"

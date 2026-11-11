@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Plus, ArrowDownToLine, Square, Minus } from "lucide-react";
 import { download } from "./bridge";
+import { ExportProgress } from "./ExportProgress";
 import type { ExportJob } from "./useExports";
 
 export function ExportDock({
@@ -170,9 +171,10 @@ export function ExportDock({
           </button>
         </div>
       </div>
-      <div className="export-job-list" hidden={minimized}>
+      <div className="export-job-list" hidden={minimized && !running}>
         {jobs.map((job) => {
           const active = job.status === "running";
+          if (minimized && !active) return null;
           const outcome = job.status === "completed"
               ? "Complete"
               : job.status === "cancelled"
@@ -198,7 +200,7 @@ export function ExportDock({
                 >
                   {job.name}
                 </button>
-                {job.download && (
+                {!minimized && job.download && (
                   <button
                     aria-label="Download"
                     title={`Download ${job.name}`}
@@ -207,30 +209,34 @@ export function ExportDock({
                     <ArrowDownToLine size={13} />
                   </button>
                 )}
-                {active ? (
-                  <button
-                    aria-label={`Cancel export ${job.name}`}
-                    title="Cancel export"
-                    onClick={() => onCancel(job.id)}
-                  >
-                    <Square size={11} /> <span>Cancel</span>
-                  </button>
-                ) : (
-                  <button
-                    aria-label={`Dismiss export ${job.name}`}
-                    title="Dismiss"
-                    onClick={() => onDismiss(job.id)}
-                  >
-                    <X size={13} />
-                  </button>
-                )}
+                {!minimized &&
+                  (active ? (
+                    <button
+                      aria-label={`Cancel export ${job.name}`}
+                      title="Cancel export"
+                      onClick={() => onCancel(job.id)}
+                    >
+                      <Square size={11} /> <span>Cancel</span>
+                    </button>
+                  ) : (
+                    <button
+                      aria-label={`Dismiss export ${job.name}`}
+                      title="Dismiss"
+                      onClick={() => onDismiss(job.id)}
+                    >
+                      <X size={13} />
+                    </button>
+                  ))}
               </div>
-              <div className="export-job-meta">
-                <small className="export-job-timeline">{job.timeline}</small>
-                {!active && <p>{outcome}</p>}
-              </div>
-              {job.error && <p role="alert">{job.error}</p>}
-              {job.diagnostics && (
+              {!minimized && (
+                <div className="export-job-meta">
+                  <small className="export-job-timeline">{job.timeline}</small>
+                  {!active && <p>{outcome}</p>}
+                </div>
+              )}
+              {active && <ExportProgress job={job} />}
+              {!minimized && job.error && <p role="alert">{job.error}</p>}
+              {!minimized && job.diagnostics && (
                 <details className="export-diagnostics">
                   <summary>Render details</summary>
                   <p>

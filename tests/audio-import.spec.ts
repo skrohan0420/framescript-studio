@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { newProject } from "../shared/project";
+import { newProject, type Project } from "../shared/project";
 import { initialWorkflow } from "../shared/workflow";
 import { synthesizeSound } from "../shared/audio";
 
@@ -23,6 +23,11 @@ test("dedicated audio import accepts the file picker and drops without a provide
   await page.route("**/api/mediaStatus", (r) =>
     r.fulfill({ json: { result: { eleven: false, gemini: false } } }),
   );
+  let saved: Project | undefined;
+  await page.route("**/api/autosave", (route) => {
+    saved = route.request().postDataJSON().args[0];
+    return route.fulfill({ json: { result: true } });
+  });
   await page.goto("/#editor");
   await page.getByRole("button", { name: "Audio panel", exact: true }).click();
   const section = page.getByRole("region", {
@@ -42,7 +47,19 @@ test("dedicated audio import accepts the file picker and drops without a provide
       "base64",
     ),
   });
+  await expect(section.locator(".audio-library-tile")).toHaveCount(1);
+  await expect(page.locator(".audio-edit-clip")).toHaveCount(0);
+  await expect(section.locator(".audio-on-timeline")).toHaveCount(0);
+  await expect.poll(() => saved?.audioLibrary?.length).toBe(1);
+  expect(saved?.settings.duration).toBe(p.settings.duration);
+  expect(saved?.workflow).toEqual(p.workflow);
+  await section
+    .getByRole("button", { name: "Add narration.wav to timeline", exact: true })
+    .click();
   await expect(page.locator(".audio-edit-clip")).toHaveCount(1);
+  await expect(
+    section.getByLabel("narration.wav is on the timeline", { exact: true }),
+  ).toBeVisible();
   const bytes = synthesizeSound("Whoosh").data.split(",")[1];
   const drop = await page.evaluateHandle((base64) => {
     const transfer = new DataTransfer();
@@ -59,7 +76,26 @@ test("dedicated audio import accepts the file picker and drops without a provide
     .locator(".library-content")
     .dispatchEvent("drop", { dataTransfer: drop });
   await drop.dispose();
+  await expect(section.locator(".audio-library-tile")).toHaveCount(2);
+  await expect(page.locator(".audio-edit-clip")).toHaveCount(1);
+  await expect(section.locator(".audio-on-timeline")).toHaveCount(1);
+  await section
+    .getByRole("button", {
+      name: "Add replacement.wav to timeline",
+      exact: true,
+    })
+    .click();
   await expect(page.locator(".audio-edit-clip")).toHaveCount(2);
+  await expect(
+    section.getByLabel("replacement.wav is on the timeline", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Undo project change", exact: true })
+    .click();
+  await expect(page.locator(".audio-edit-clip")).toHaveCount(1);
+  await expect(
+    section.getByLabel("replacement.wav is on the timeline", { exact: true }),
+  ).toHaveCount(0);
   const invalid = await page.evaluateHandle(() => {
     const transfer = new DataTransfer();
     transfer.items.add(
@@ -74,5 +110,5 @@ test("dedicated audio import accepts the file picker and drops without a provide
   await expect(
     page.getByRole("status").filter({ hasText: "Choose an audio file" }),
   ).toContainText("audio");
-  await expect(page.locator(".audio-edit-clip")).toHaveCount(2);
+  await expect(page.locator(".audio-edit-clip")).toHaveCount(1);
 });

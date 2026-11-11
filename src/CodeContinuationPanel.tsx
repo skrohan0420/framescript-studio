@@ -4,6 +4,7 @@ import {
   AudioLines,
   Clipboard,
   Code2,
+  Eye,
   Image,
   LockKeyhole,
   SlidersHorizontal,
@@ -753,10 +754,12 @@ export function CodeContinuationPanel({
                         />
                       </label>
                       <button
-                        className="extend-review-button"
+                        type="button"
+                        className="primary extend-review-button"
                         disabled={!result.trim() || busy}
                         onClick={() => void reviewResult()}
                       >
+                        <Eye size={16} aria-hidden="true" />
                         Review extension
                       </button>
                     </>

@@ -118,7 +118,30 @@ export function continuationSource(
 
 export function buildCodeContinuationPrompt(input: CodeContinuationInput) {
   const { width, height, fps } = input.settings;
-  return `Continue the existing FrameScript animation in “${input.title}”. Generate only the new segment as one complete HTML document, with inline CSS and classic JavaScript.\n\nRead the attached ZIP. Inspect source/previous.html, source/previous.css, source/previous.js, and references/handoff.png. Match the composition, colors, object positions, typography and motion at the handoff. If available, use context/inherited.json as read-only continuity guidance. The previous segment already exists and must not be recreated.\n${referenceGuide(describeReferences(input.references))}\nNEW SEGMENT\nCanvas: ${width} × ${height} pixels at ${fps} fps. Duration: ${input.duration} seconds. The handoff is at ${input.timelineHandoff.toFixed(3)} seconds in the existing timeline. Your segment starts at local time 0.\nVisual direction: ${input.direction || "Continue the story from the handoff."}\nPacing: ${input.pacing || "Follow the narration cues and existing pace."}\nCamera: ${input.camera || "Continue from the existing framing."}\n\nTIMED NARRATION — SEGMENT-LOCAL SECONDS\n${input.narration || "No timed narration provided."}\nThe supplied narration is already on the timeline. Use cue times to stage the animation and preserve pauses. Add on-screen text only when requested.\n\nExpose window.renderFrame(timeInSeconds). At time zero, match the handoff frame. Draw the complete frame from absolute local time so scrubbing, replay and export are deterministic. Keep the document self-contained using inline styles and classic script. Use local procedural assets, inline SVG or Canvas; do not reference ZIP files at runtime. Do not use autoplay, timers, independent playback loops, external dependencies or invented narration. Return exactly one complete HTML document in an html code block.\n`;
+  const sourceTimeAtHandoff = input.sourceOffset + input.settings.duration;
+  return `Continue the existing FrameScript animation in “${input.title}”. Generate only the new segment as one complete HTML document, with inline CSS and classic JavaScript.
+
+Read the attached ZIP. Inspect source/previous.html, source/previous.css, source/previous.js, references/handoff.png, and references/motion.json. The motion file lists ending reference images in chronological order with their exact segment-local and source-code times. Use these images to check brightness, framing, movement direction and speed. If available, use context/inherited.json as read-only continuity guidance. The previous segment already exists on the timeline.
+
+SEAMLESS HANDOFF
+Reuse the previous renderer, initialization and drawing code for every persistent object. Preserve geometry, seeded particle positions, textures, materials, opacity, blending, lighting, background, camera, transforms, and animation phase and speed. Keep the same rendering technology. For example, retain Three.js particles and their feathered additive materials when continuing a Three.js galaxy.
+The previous segment lasts ${input.settings.duration} seconds and has a source offset of ${input.sourceOffset} seconds. The last reference frame is at segment-local ${input.lastFrameTime} seconds, or source time ${input.sourceOffset + input.lastFrameTime} seconds. The exact boundary is source time ${sourceTimeAtHandoff} seconds.
+Your window.renderFrame(t) receives segment-local time starting at zero. Evaluate the reused previous animation at source time ${sourceTimeAtHandoff} + t. Apply this offset once. Continue motion from the last reference frame through the boundary. Draw the state at the exact boundary at t=0, then advance naturally at t=1/${fps}. Begin new visual beats after establishing this continuity, following the narration and direction.
+Preserve deterministic initialization. Reuse the original seed when available. If the previous source uses unseeded randomness or accumulated simulation state, the images alone cannot recover it exactly. Use the reference frames to match the boundary as closely as possible and identify that limitation in a brief HTML comment.
+FrameScript supplies window.THREE and window.FrameScript3D when referenced in the JavaScript. Reuse these supplied globals when the previous source uses them. Keep supplied asset data and asset:// references where needed. Embed any other required assets or helper code in the document.
+${referenceGuide(describeReferences(input.references))}
+NEW SEGMENT
+Canvas: ${width} × ${height} pixels at ${fps} fps. Duration: ${input.duration} seconds. The handoff is at ${input.timelineHandoff.toFixed(3)} seconds in the existing timeline. Your segment starts at local time 0.
+Visual direction: ${input.direction || "Continue the story from the handoff."}
+Pacing: ${input.pacing || "Follow the narration cues and existing pace."}
+Camera: ${input.camera || "Continue from the existing framing."}
+
+TIMED NARRATION — SEGMENT-LOCAL SECONDS
+${input.narration || "No timed narration provided."}
+The supplied narration is already on the timeline. Use cue times to stage the animation and preserve pauses. Add on-screen text only when requested.
+
+Expose window.renderFrame(timeInSeconds). Draw the complete frame from absolute local time so scrubbing, replay and export are deterministic. Use inline styles and classic script with the existing FrameScript runtime. Reference images and JSON are generation guidance. Do not load ZIP files at runtime. Do not use autoplay, timers, independent playback loops, remote dependencies or invented narration. Return exactly one complete HTML document in an html code block.
+`;
 }
 
 export function appendCodeContinuation(
@@ -177,5 +200,36 @@ export function appendCodeContinuation(
     ...(project.workflow.selectedId === scene.id
       ? { settings: { ...project.settings, duration } }
       : {}),
+  };
+}
+
+export function editCodeContinuation(
+  project: Project,
+  sceneId: string,
+  segmentId: string,
+  patch: Partial<z.infer<typeof visualCodeSchema>>,
+): Partial<Project> {
+  const scene = project.workflow?.scenes.find((item) => item.id === sceneId);
+  const segment = scene?.visualContinuations?.find(
+    (item) => item.id === segmentId,
+  );
+  if (!scene || !segment || !project.workflow)
+    throw Error("The continuation is unavailable. Select it again.");
+  if (scene.locked) throw Error("Unlock the timeline before editing its code.");
+  const code = visualCodeSchema.parse({ ...segment, ...patch });
+  return {
+    workflow: {
+      ...project.workflow,
+      scenes: project.workflow.scenes.map((item) =>
+        item.id === sceneId
+          ? {
+              ...item,
+              visualContinuations: item.visualContinuations?.map((clip) =>
+                clip.id === segmentId ? { ...clip, ...code } : clip,
+              ),
+            }
+          : item,
+      ),
+    },
   };
 }

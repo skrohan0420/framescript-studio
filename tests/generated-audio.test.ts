@@ -60,11 +60,29 @@ it("rejects malformed scores and keeps the prior project intact", () => {
   ).toBe(false);
   useStudio.getState().load(newProject());
   const before = useStudio.getState().project;
-  useStudio
-    .getState()
-    .change({
-      html: '<script type="application/json" id="framescript-audio">invalid</script>',
-    });
+  useStudio.getState().change({
+    html: '<script type="application/json" id="framescript-audio">invalid</script>',
+  });
   expect(useStudio.getState().project).toBe(before);
   expect(useStudio.getState().error).toContain("Generated audio");
+});
+
+it("applies requested track volume and fades while keeping legacy defaults", () => {
+  const customized = { ...tracks[0], volume: 0.18, fadeIn: 1.2, fadeOut: 1.5 };
+  const html = `<script type="application/json" id="framescript-audio">${JSON.stringify({ tracks: [customized] })}</script>`;
+  const result = applyGeneratedAudio({ ...newProject(), html });
+  expect(result.audio![0]).toMatchObject({
+    volume: 0.18,
+    fadeIn: 1.2,
+    fadeOut: 1.5,
+  });
+  const short = { ...customized, length: 1, fadeIn: 10, fadeOut: 10 };
+  const bounded = applyGeneratedAudio({
+    ...newProject(),
+    html: `<script type="application/json" id="framescript-audio">${JSON.stringify({ tracks: [short] })}</script>`,
+  });
+  expect(bounded.audio![0]).toMatchObject({ fadeIn: 0.5, fadeOut: 0.5 });
+  expect(
+    applyGeneratedAudio({ ...newProject(), html: manifest }).audio![0],
+  ).toMatchObject({ fadeIn: 0.02, fadeOut: 0.04 });
 });

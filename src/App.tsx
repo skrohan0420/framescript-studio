@@ -14,6 +14,7 @@ import { PromptTemplates } from "./PromptTemplates";
 import { PromptDrawer } from "./PromptDrawer";
 import { StructuredGeneratePanel } from "./StructuredGeneratePanel";
 import { CodeContinuationPanel } from "./CodeContinuationPanel";
+import { editCodeContinuation } from "../shared/code-continuation";
 import { readEditorTabs, saveEditorTabs } from "./editor-tabs";
 import { ClipsPanel } from "./ClipsPanel";
 import { TypographyPanel } from "./TypographyPanel";
@@ -21,6 +22,7 @@ import { ProjectHome } from "./ProjectHome";
 import { chooseExportFile, supportsExportPicker } from "./bridge";
 import { ExportSettings } from "./ExportSettings";
 import { ExportDock } from "./ExportDock";
+import { ExportProgress, exportProgressText } from "./ExportProgress";
 import { EditorStatus, StatusActivity } from "./editor-status";
 import { TabIdentity } from "./TabIdentity";
 import { useExports } from "./useExports";
@@ -336,10 +338,33 @@ export function App() {
   const timelineSelection =
     timelinePick?.kind === "continuation" && !continuation ? null : timelinePick;
   const sourceScene = continuation ? continuationScene : selectedScene(p);
-  const sourceReadOnly = masterMode || sceneLocked || !!continuation;
+  const sourceReadOnly = masterMode || !!sourceScene?.locked;
   const sourcePath = continuation
     ? "continuation/" + continuation.id
     : (p.workflow?.selectedId ?? "project");
+  const sourceKey = s.session + "/" + sourcePath;
+  const sourceProject = continuation ? { ...p, ...continuation } : p;
+  const currentSource = useRef(sourceKey);
+  currentSource.current = sourceReadOnly ? "" : sourceKey;
+  const changeSource = (
+    patch: Partial<CodeSnapshot>,
+    label = "Edit source code",
+  ) => {
+    if (sourceReadOnly || currentSource.current !== sourceKey) return;
+    const current = useStudio.getState();
+    if (current.session !== s.session) return;
+    current.change(
+      continuation && sourceScene
+        ? editCodeContinuation(
+            current.project,
+            sourceScene.id,
+            continuation.id,
+            patch,
+          )
+        : patch,
+      label,
+    );
+  };
   const changeScope = (master: boolean) => {
     setMasterMode(master);
     s.setTime(0);
@@ -347,16 +372,44 @@ export function App() {
     setSelect(false);
   };
   const [tab, setTab] = useState<Tab>(() => {
-      const saved = readEditorTabs().codeTab;
-      return ["all", "html", "css", "js", "split"].includes(saved ?? "")
-        ? (saved as Tab)
-        : "html";
-    }),
-    [combinedDraft, setCombinedDraft] = useState(""),
-    [parseError, setParseError] = useState("");
-  const combinedEditRevision = useRef<number | null>(null);
+    const saved = readEditorTabs().codeTab;
+    return ["all", "html", "css", "js", "split"].includes(saved ?? "")
+      ? (saved as Tab)
+      : "html";
+  });
+  const [combinedEdits, setCombinedEdits] = useState<
+    Record<string, { text: string; error: string; revision: number }>
+  >({});
+  const combinedEdit = combinedEdits[sourceKey];
+  const combinedDraft =
+    combinedEdit && (combinedEdit.error || combinedEdit.revision === s.revision)
+      ? combinedEdit.text
+      : combined(sourceProject);
+  const parseError = combinedEdit?.error ?? "";
+  const hasCombinedErrors = Object.values(combinedEdits).some(
+    (edit) => !!edit.error,
+  );
+  const setCombinedDraft = (text: string) =>
+    setCombinedEdits((previous) => ({
+      ...previous,
+      [sourceKey]: {
+        text,
+        error: previous[sourceKey]?.error ?? "",
+        revision: useStudio.getState().revision,
+      },
+    }));
+  const setParseError = (error: string) =>
+    setCombinedEdits((previous) => {
+      if (!error && !previous[sourceKey]) return previous;
+      const edit = previous[sourceKey] ?? {
+        text: combined(sourceProject),
+        revision: s.revision,
+      };
+      return { ...previous, [sourceKey]: { ...edit, error } };
+    });
+  useEffect(() => setCombinedEdits({}), [s.session]);
   const syntax = useCodeSyntax(
-    p,
+    sourceProject,
     !showHome,
     tab === "all" ? combinedDraft : undefined,
   );
@@ -453,8 +506,14 @@ export function App() {
     session: number;
     project: Project;
   } | null>(null);
+  const continuationBaselines = useRef<{
+    session: number;
+    code: Map<string, CodeSnapshot>;
+  }>({ session: s.session, code: new Map() });
   const executionProject = useMemo(() => {
     if (autosave || appliedCode?.session !== s.session) return p;
+    if (continuationBaselines.current.session !== s.session)
+      continuationBaselines.current = { session: s.session, code: new Map() };
     const saved = appliedCode.project;
     const savedScenes = new Map(
       saved.workflow?.scenes.map((scene) => [scene.id, scene]),
@@ -489,6 +548,22 @@ export function App() {
         scenes: p.workflow.scenes.map((scene) => ({
           ...scene,
           ...source(scene.id),
+          visualContinuations: scene.visualContinuations?.map((segment) => {
+            const prior =
+              savedScenes
+                .get(scene.id)
+                ?.visualContinuations?.find((item) => item.id === segment.id) ??
+              continuationBaselines.current.code.get(segment.id);
+            if (!prior)
+              continuationBaselines.current.code.set(segment.id, {
+                html: segment.html,
+                css: segment.css,
+                js: segment.js,
+              });
+            return prior
+              ? { ...segment, html: prior.html, css: prior.css, js: prior.js }
+              : segment;
+          }),
         })),
       },
     };
@@ -515,7 +590,7 @@ export function App() {
   const hasProblems = problemCount > 0;
   useEffect(() => setShowProblems(hasProblems), [hasProblems]);
   const codeUnsaved = useMemo(() => {
-    if (parseError) return true;
+    if (hasCombinedErrors) return true;
     if (savedCode?.session !== s.session) return false;
     const differs = (code: CodeSnapshot, saved?: CodeSnapshot) =>
       !saved ||
@@ -528,9 +603,10 @@ export function App() {
       saved.workflow?.scenes.map((scene) => [scene.id, scene]),
     );
     return p.workflow.scenes.some((scene) =>
-      differs(scene, savedScenes.get(scene.id)),
+      differs(scene, savedScenes.get(scene.id)) || scene.visualContinuations?.some((segment) =>
+        differs(segment, savedScenes.get(scene.id)?.visualContinuations?.find((item) => item.id === segment.id))),
     );
-  }, [parseError, p, s.session, savedCode]);
+  }, [hasCombinedErrors, p, s.session, savedCode]);
   const [expandedWrap, setExpandedWrap] = useState(false);
   const [compactWrap, setCompactWrap] = useState(true);
   const [formatError, setFormatError] = useState("");
@@ -892,18 +968,18 @@ export function App() {
   const manualUnsaved =
     !autosave && s.dirty && workspaceSavedRevision.current !== s.revision;
   useEffect(() => {
-    if (!manualUnsaved && !parseError) return;
+    if (!manualUnsaved && !hasCombinedErrors) return;
     const warnUnsaved = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = true;
     };
     window.addEventListener("beforeunload", warnUnsaved);
     return () => window.removeEventListener("beforeunload", warnUnsaved);
-  }, [manualUnsaved, parseError]);
+  }, [manualUnsaved, hasCombinedErrors]);
   const save = useCallback(
     (as = false) =>
       void act(async () => {
-        if (parseError) throw Error("Fix the combined document before saving.");
+        if (hasCombinedErrors) throw Error("Fix or discard the combined document errors before saving.");
         const submitted = useStudio.getState();
         const result = as
           ? await bridge.call("saveAs", submitted.project)
@@ -924,7 +1000,7 @@ export function App() {
           );
         }
       }),
-    [act, parseError],
+    [act, hasCombinedErrors],
   );
   useEffect(() => {
     const capture = (event: KeyboardEvent) =>
@@ -960,16 +1036,8 @@ export function App() {
     window.addEventListener("keydown", closeOnEscape, true);
     return () => window.removeEventListener("keydown", closeOnEscape, true);
   }, [editorExpanded, showHome, leftView, modal]);
-  useEffect(() => {
-    if (
-      tab === "all" &&
-      !parseError &&
-      combinedEditRevision.current !== s.revision
-    )
-      setCombinedDraft(combined(p));
-  }, [tab, s.revision]);
   const changeTab = (next: Tab) => {
-    if (!continuation && parseError && next !== "all") {
+    if (parseError && next !== "all") {
       setNotice(
         "Fix or discard the combined document before switching editors.",
       );
@@ -978,20 +1046,21 @@ export function App() {
     setTab(next);
   };
   const updateCombined = (text: string) => {
-    setCombinedDraft(text);
+    if (sourceReadOnly || currentSource.current !== sourceKey) return;
+    let error = "";
     try {
       const parsed = parseCombined(text);
-      s.change(parsed, "Combined document");
-      combinedEditRevision.current = useStudio.getState().revision;
-      setParseError("");
+      changeSource(parsed, "Combined document");
     } catch (e) {
-      setParseError((e as Error).message);
+      error = (e as Error).message;
     }
+    setCombinedEdits((previous) => ({
+      ...previous,
+      [sourceKey]: { text, error, revision: useStudio.getState().revision },
+    }));
   };
   const importDocument = (text: string) => {
     try {
-      if (continuation)
-        throw Error("Select the original visual before applying code.");
       const current = useStudio.getState();
       if (masterMode)
         throw Error("Switch to editing a timeline before applying code.");
@@ -1003,6 +1072,16 @@ export function App() {
         .replace(/\n```\s*$/, "");
       if (!source.trim()) throw Error("Paste an HTML document first.");
       const parsed = parseCombined(source);
+      if (continuation && sourceScene) {
+        changeSource(parsed, "Paste continuation document");
+        setCombinedDraft(source);
+        setParseError("");
+        setPasteError("");
+        setModal("");
+        setTab("html");
+        setNotice("Continuation code updated · Undo available");
+        return;
+      }
       const validated = projectSchema.safeParse({
         ...current.project,
         ...parsed,
@@ -1013,13 +1092,22 @@ export function App() {
             .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
             .join("\n"),
         );
-      const workflow = current.project.workflow ?? initialWorkflow(current.project);
-      current.change({ ...parsed, workflow: {
-        ...workflow,
-        scenes: workflow.scenes.map((scene) => scene.id === workflow.selectedId
-          ? { ...scene, visualContext: pasteContext.current }
-          : scene),
-      } }, "Paste full HTML document");
+      const workflow =
+        current.project.workflow ?? initialWorkflow(current.project);
+      current.change(
+        {
+          ...parsed,
+          workflow: {
+            ...workflow,
+            scenes: workflow.scenes.map((scene) =>
+              scene.id === workflow.selectedId
+                ? { ...scene, visualContext: pasteContext.current }
+                : scene,
+            ),
+          },
+        },
+        "Paste full HTML document",
+      );
       const result = useStudio.getState();
       if (
         result.project.html !== parsed.html ||
@@ -1485,7 +1573,7 @@ export function App() {
     height = "100%",
   ) => (
     <LazyChangesEditor
-      key={language}
+      key={sourceKey + "/" + language}
       height={height}
       language={
         language === "js"
@@ -1518,15 +1606,15 @@ export function App() {
         language,
         changesBase[language],
         p[language],
-        (value) => s.change({ [language]: value }),
+        (value) => changeSource({ [language]: value }),
         height,
       )
     ) : (
       <Editor
-        key={continuation ? sourcePath + "/" + language : language}
+        key={sourceKey + "/" + language}
         height={height}
         language={language === "js" ? "javascript" : language}
-        path={sourcePath + "/" + language}
+        path={sourceKey + "/" + language}
         keepCurrentModel
         theme={light ? "framescript-light" : "framescript-dark"}
         value={continuation?.[language] ?? p[language]}
@@ -1536,9 +1624,10 @@ export function App() {
             : workingBase[language]
         }
         onMount={(e) => trackEditor(e, language)}
-        onChange={
-          continuation ? undefined : (v) => s.change({ [language]: v ?? "" })
-        }
+        onChange={(v) => {
+          try { changeSource({ [language]: v ?? "" }); }
+          catch (error) { setNotice((error as Error).message); }
+        }}
         options={{
           fontSize,
           readOnly: sourceReadOnly,
@@ -1744,7 +1833,7 @@ export function App() {
     });
   const returnHome = () =>
     void act(async () => {
-      if (parseError) throw Error("Fix the combined document before saving.");
+      if (hasCombinedErrors) throw Error("Fix or discard the combined document errors before saving.");
       useStudio.getState().setPlaying(false);
       await checkpointCurrent("Return to project home");
       const submitted = useStudio.getState();
@@ -2021,12 +2110,7 @@ export function App() {
     ...(chatgpt.pending ? ["Waiting for ChatGPT authorization in the sign-in tab…"] : []),
     ...(selectingExportFile ? ["Choosing export location…"] : []),
     ...(busy ? [`AI · ${aiProgress.stage} · ${generationSeconds}s · ${aiProgress.characters.toLocaleString()} characters`] : []),
-    ...activeExports.map(({ name, progress }) => {
-      const label = `${name} · ${progress?.stage ?? "Submitting export"}`;
-      return progress?.total
-        ? `${label} · ${Math.round(100 * progress.done / progress.total)}% · ${progress.done}/${progress.total} frames`
-        : label;
-    }),
+    ...activeExports.map(({ name, progress }) => `${name} · ${exportProgressText(progress)}`),
   ].join(" | ");
   const statusBar = (
     <footer className="status-bar">
@@ -2582,7 +2666,7 @@ export function App() {
                   <span>
                     <Code2 size={14} />{" "}
                     {editorExpanded ? "CODE EDITOR" : "SOURCE CODE"}
-                    {codeUnsaved && !continuation && (
+                    {codeUnsaved && (
                       <span className="unsaved-code-badge" role="status">
                         Unsaved code
                       </span>
@@ -2759,10 +2843,7 @@ export function App() {
                     </button>
                   </div>
                 </div>
-                {continuation && (
-                  <div className="code-readonly-notice">Continuation source is read only.</div>
-                )}
-                {!continuation && (masterMode || sceneLocked) && (
+                {sourceReadOnly && (
                   <div className="code-readonly-notice" role="status">
                     <span>
                       {masterMode
@@ -2781,7 +2862,11 @@ export function App() {
                           : "Unlock timeline"
                       }
                       onClick={() => {
-                        if (masterMode) changeScope(false);
+                        if (masterMode) {
+                          if (sourceScene && sourceScene.id !== p.workflow?.selectedId)
+                            s.change(activateScene(p, sourceScene.id), "Select timeline");
+                          changeScope(false);
+                        }
                         else {
                           const project = useStudio.getState().project;
                           if (project.workflow)
@@ -3010,26 +3095,20 @@ export function App() {
                         )
                       ) : (
                         <Editor
-                          key={continuation?.id ?? "original"}
+                          key={sourceKey}
                           language="html"
                           theme={
                             light ? "framescript-light" : "framescript-dark"
                           }
-                          path={sourcePath + "/all"}
+                          path={sourceKey + "/all"}
                           keepCurrentModel
-                          value={
-                            continuation
-                              ? combined({ ...p, ...continuation })
-                              : combinedDraft
-                          }
+                          value={combinedDraft}
                           gutterBaseline={
                             masterMode || continuation || !gutterProject
                               ? undefined
                               : combined({ ...p, ...workingBase })
                           }
-                          onChange={
-                            continuation ? undefined : (v) => updateCombined(v ?? "")
-                          }
+                          onChange={(v) => updateCombined(v ?? "")}
                           onMount={(instance) => trackEditor(instance, "all")}
                           options={{
                             fontSize,
@@ -3039,13 +3118,13 @@ export function App() {
                           }}
                         />
                       )}
-                      {!continuation && parseError && (
+                      {parseError && (
                         <div className="inline-error">
                           {parseError}
                           <button
                             onClick={() => {
                               setParseError("");
-                              setCombinedDraft(combined(p));
+                              setCombinedDraft(combined(sourceProject));
                             }}
                           >
                             Discard combined edits
@@ -3997,7 +4076,7 @@ export function App() {
       {modal === "code-history" && (
         <CodeHistory
           scene={p.workflow?.selectedId ?? null}
-          readOnly={masterMode || sceneLocked}
+          readOnly={sourceReadOnly || !!continuation}
           onClose={() => setModal("")}
           onCompare={(code, language) => {
             changeTab(language);
@@ -4443,6 +4522,9 @@ export function App() {
             <div className="modal-actions">
               {exporting ? (
                 <>
+                  {selectedExport?.status === "running" && (
+                    <ExportProgress job={selectedExport} />
+                  )}
                   <button
                     onClick={() =>
                       selectedExportId && exports.cancel(selectedExportId)

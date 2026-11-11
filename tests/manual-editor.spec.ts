@@ -371,6 +371,9 @@ test("manual workspace restores old projects, edits pasted code, and imports aud
       "base64",
     ),
   });
+  await expect(library.locator(".audio-library-tile")).toHaveCount(1);
+  await expect(page.locator(".audio-edit-clip")).toHaveCount(0);
+  await library.getByRole("button", { name: "Add manual.wav to timeline", exact: true }).click();
   await expect(page.locator(".audio-edit-clip")).toHaveCount(1);
   const wave = (await page
     .locator(".audio-edit-clip .audio-waveform")

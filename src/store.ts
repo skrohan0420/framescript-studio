@@ -119,6 +119,7 @@ export const useStudio = create<State>((set, get) => ({
     if (
       patch.html !== undefined &&
       (!patch.workflow ||
+        !s.project.workflow ||
         patch.workflow.selectedId === s.project.workflow?.selectedId)
     ) {
       try {
