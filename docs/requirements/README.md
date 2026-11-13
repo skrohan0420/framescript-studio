@@ -1,5 +1,7 @@
 # FrameScript Studio requirements
 
+For implementation status as of 13 November 2026, start with the [project status and alignment review](../PROJECT_STATUS.md) and [development tracker](development-plan.md). Numbered requirements describe the target scope; a requirement is not complete merely because its foundation exists. Stages 0–4 are complete for the first narrow Edit milestone; stage 5 and the broader roadmap remain in progress.
+
 Source: FrameScript Roadmap 2026, version 1.0, 4 November 2026. Numbers match the source document. Each file describes planned work, existing foundations, dependencies and acceptance criteria.
 
 The [AI-generated scene and code contract](08-scene-architecture.md#ai-generated-scene-and-code-contract) is a foundational requirement within item 8. It defines the structure and code interface that let FrameScript interpret, edit and reliably render AI-generated scenes. Establish it before building features that depend on structured AI output.

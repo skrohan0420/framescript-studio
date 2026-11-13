@@ -32,7 +32,7 @@ Keep the existing stable-ID, deterministic evaluation, dependency, isolation and
 
 ## FSSF v1 scope
 
-The [visual editor plan](visual-editor-plan.md) expands the architecture needed for preview selection, typed inspector controls, drag/resize/rotate operations and procedural picking. It also records how to preserve creative freedom through native nodes and declared procedural interfaces. These interactions remain planned work beyond the current milestone.
+The [visual editor plan](visual-editor-plan.md) expands the architecture needed for preview selection, typed inspector controls, drag/resize/rotate operations and procedural picking. It also records how to preserve creative freedom through native nodes and declared procedural interfaces. Circle/rectangle preview picking and the bounded property/keyframe inspector are implemented. Shape drag/resize/rotate, general procedural picking and the wider scene editor remain planned work.
 
 - A minimum valid scene declares its schema version, stable scene ID, dimensions, frame rate, duration and ordered layers. It may contain native nodes, procedural module instances or both. Declare every referenced asset and module.
 - Prioritize native text, typed transforms and properties, keyframes, asset references and a procedural module interface for the first integration milestone. Record which Canvas, DOM and Three.js capabilities v1 supports before publishing the contract. Cameras, materials, effects and continuity fields require explicit support and validation rules before AI output can depend on them.
@@ -72,7 +72,7 @@ The first built-in star continuation declares a start frame, end frame and final
 
 ## Worked example
 
-The [first structured AI edit milestone](first-edit-milestone.md) expands this example into a proposed end-to-end fixture with an illustrative JSON patch.
+The [first structured AI edit milestone](first-edit-milestone.md) records the initial fixture and illustrative JSON patch; its narrow workflow is implemented and recorded as verified in the tracker.
 
 This example illustrates what the AI and editor exchange. Field names and units are illustrative until the v1 schema is published.
 

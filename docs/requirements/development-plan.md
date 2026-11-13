@@ -57,7 +57,7 @@ Use **Planned**, **In progress**, **Blocked**, **In verification** or **Done**. 
 - **Stage 2 — Done.** The outgoing editor workflow and saved request passed the live AI handoff.
 - **Stage 3 — Done.** JSON intake, candidate review, stale-result checks and undoable Apply are verified for the first Edit workflow.
 - **Stage 4 — Done.** Automated parity and legacy checks passed. The first live AI patch imported and applied.
-- **Stage 5 — In progress.** Edit, Generate and Extend have verified live built-in star workflows. Generate now supports optional references and basic native shapes; broader modules, focused long-scene context and release checks remain open.
+- **Stage 5 — In progress.** Edit, Generate and Extend have recorded live built-in star workflows. Generate supports optional references and basic native shapes. Focused Edit/Extend context and package budgets are implemented with automated evidence below; their live comparison remains deferred. Supported shape editing, code continuations and audio enhancement have since expanded the application. Broader modules and release acceptance remain open; see the [13 November status review](../PROJECT_STATUS.md).
 
 ### Stage 0 baseline evidence
 
@@ -249,6 +249,8 @@ To repeat the check:
 - The narrow Stage 1 fixture contract is defined. Broader FSSF v1 fields, the production module interface and additional patch operations remain open.
 - Rendering and loopback test prerequisites are verified with host access. Use that setup for the applicable Stage 4 checks.
 - Project-to-source time, shared-source fixtures and extension handoff rules for nontrivial clips. Resolve before expanding those workflows.
-- Package budgets and long-scene threshold. Set after measuring representative handoffs and first-result success.
+- Focused Edit and Extend packages have an implemented 8 MiB uncompressed budget and measured context (9 November evidence above). Complete the deferred live comparison and first-result acceptance before treating the long-scene policy as fully validated.
+- Verify the separate manual-save scenario with newer source drafts and older applied previews noted on 10 November.
+- Close real-speech/device acceptance for the [voice enhancement foundation](02-voiceover-mastering.md) and retain aligned [stem export](05-audio-stem-export.md) as undelivered scope.
 
 Update the tracker when a stage starts, a blocker appears or clears, or a stage passes its exit checks. Link test evidence and issue records so the next session can resume from the last verified state.

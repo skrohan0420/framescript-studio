@@ -2,6 +2,10 @@
 
 Recorded from the creator discussion on 5 November 2026. This document captures the requested direction and proposed implementation sequence. It is a planned extension, not a claim that a full visual editor exists or a commitment to its first-release scope.
 
+## Implemented increment — reviewed 13 November 2026
+
+Native circle/rectangle preview picking, selection bounds, a synchronized object picker and property/keyframe value editing are implemented. The Properties tab supports position, dimensions, fill and opacity with clip-only/shared scope and Undo. Shape dragging, resize handles, rotation, general procedural picking and a full keyframe editor remain future work. See the [tracker](development-plan.md#visual-editor-preview-selection--9-november-2026) for recorded evidence and the [current status](../PROJECT_STATUS.md) for roadmap scope. The sections below describe the full target, including these delivered increments.
+
 ## Purpose and roadmap ownership
 
 Let creators select elements in the live preview, edit their declared properties in the right panel and manipulate them directly. Routine adjustments should not require an external AI round trip. AI remains useful for creating scenes, redesigning compositions and authoring complex behavior.
@@ -58,7 +62,7 @@ The AI must satisfy both the creative brief and the code contract. Concise schem
 
 ## Proposed development order
 
-1. General scene objects, stable IDs and typed editable properties. Shapes-only scenes are supported and the next step is to expose these properties in the editor.
+1. General scene objects, stable IDs and typed editable properties. Shapes-only scenes and the bounded property inspector are implemented; expand the vocabulary through separately verified increments.
 2. The Properties tab lists circles and rectangles in the active structured clip. Edit position, dimensions, fill and opacity as base values, or edit existing position and opacity keyframes at their displayed source times. Press Enter or leave a field to apply one undoable change. Edits default to the active clip and can explicitly apply to all linked clips with matching, unlocked source.
 3. Preview selection, hit testing and selection bounds.
 4. Dragging, resizing and rotation, then snapping/alignment and keyboard interactions.

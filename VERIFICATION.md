@@ -1,3 +1,14 @@
+# Verification record
+
+## Documentation alignment review — 13 November 2026
+
+Reviewed source commit `a1f6763` and updated documentation only. Current scope is summarized in [project status](docs/PROJECT_STATUS.md). Earlier entries below retain their original dates, counts and scope; they are historical evidence rather than a fresh full-project test run.
+
+- `npm test -- --reporter=dot`: **179 tests passed across 42 files**.
+- `npm run build`: **passed**, including TypeScript, Vite and server build. Vite reported large chunks and removed misplaced dependency PURE annotations; these warnings did not fail the build.
+- `git diff --check`: passed for the documentation changes.
+- Browser suites, server/credential checks, rendering integrations, export benchmarks and live AI handoffs were **not rerun** for this documentation-only review. No new claims of full end-to-end acceptance or real-speech listening quality are made.
+
 ## Persistent rulers and clean preview boundary — November 3, 2026
 
 The Rulers toggle now lives with zoom controls in the bottom playback bar, including fullscreen transport. Slimmer measuring bars retain a passive px origin cell. The browser remembers ruler visibility across reloads. When rulers are off, the editor's canvas border is removed as well, leaving a clean preview without the top/left boundary outline. These controls do not affect exported scene content.

@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-Proposed first integration milestone for [Requirement 7](07-ai-prompt-package.md) and [Requirement 8](08-scene-architecture.md). The workflow and expected behavior are documented here for future reference. Example field names and version values are provisional until FSSF v1 is published.
+Implemented first integration milestone for [Requirement 7](07-ai-prompt-package.md) and [Requirement 8](08-scene-architecture.md). Stages 0–4 are recorded as Done in the [development tracker](development-plan.md#progress-tracker). This document preserves the initial JSON fixture and acceptance scope; production handoffs also accept the data-only JavaScript format defined in [Requirement 8](08-scene-architecture.md#production-generated-output-contract). Illustrative examples do not replace active schemas or constitute publication of full FSSF v1.
 
 Use one Fireworks Galaxy scene with a Canvas star, a native text label and one editable glow track. Place it in one untrimmed clip at normal speed. The star instance `star-core` exposes `glowIntensity` as a keyframeable number from 0 to 1. The existing keyframe `glow-peak` is at scene time 3.2 seconds and has a value of 0.6. The task changes that value to 0.8 and preserves the keyframe time, label and unrelated properties.
 

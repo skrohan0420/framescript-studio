@@ -2,6 +2,10 @@
 
 Prepared 2 November 2026. This document is self-contained. Claude has no repository, local file, hardware or execution access; all relevant findings are included below.
 
+## Historical scope
+
+This is the 2 November investigation snapshot, not the current exporter status. Later changes include bounded HTTP/2 transfer for long direct-canvas exports, caching and diagnostics. See [current export diagnostics](README.md#export-performance-and-diagnostics) and the [3 November benchmark](EXPORT_BENCHMARK_4K60_2026-11-03.md). Timing and machine observations below apply to the original experiment.
+
 ## What we want
 
 Make 4K/60 fps exports substantially faster while preserving visual quality, frame order, timing, resolution, transparency where supported, audio and cancellation behavior. Increasing hardware utilization is useful only if it reduces export time.

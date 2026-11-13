@@ -1,3 +1,9 @@
+# Documentation reconciliation — November 13, 2026
+
+Reviewed commit `a1f6763` against active UI gates, source, tests and the roadmap tracker. Added the [current project status](docs/PROJECT_STATUS.md), clarified exposed versus retained workflows in README, and reconciled the stage 5 summary with its later focused-package evidence. Current additions include structured handoffs and supported shape editing, code continuations, reversible voice enhancement and AI-directed typography controls. Broader scene architecture, full keyframe editing and aligned stem export remain incomplete. See [VERIFICATION.md](VERIFICATION.md) for fresh checks and their limits.
+
+Entries below are historical change records. Their test counts and instructions describe their own update, not the current whole-project verification state.
+
 # Assessment fixes — November 3, 2026
 
 Fixed the assessed audio-source/gain, save-size, rename ordering, image-import visibility/context, dialog keyboard, compact-layout and completed-export retention problems. Project additions/imports now have a 90 MB serialized budget; completed local render copies expire after seven days and can be inspected/cleared in Settings. Build, 124 unit tests, all 61 production browser tests, HTTP/server checks, credential restart, all-format rendering and audio/video integration passed. See VERIFICATION.md for evidence and limits. Restart the running backend and refresh the browser to load the changes.
