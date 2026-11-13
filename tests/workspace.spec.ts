@@ -54,6 +54,7 @@ test("workspace shortcuts can be remapped, persisted, and used from the preview"
     .getByRole("button", { name: "Project settings", exact: true });
   const openShortcuts = async () => {
     await settingsButton.click();
+    await page.getByRole("tab", { name: "Editor", exact: true }).click();
     await page
       .getByRole("dialog")
       .getByRole("button", { name: "Keyboard shortcuts", exact: true })
@@ -233,6 +234,7 @@ test("local Node backend saves, reopens, imports assets and downloads an MP4", a
     .getByRole("button", { name: "Project settings", exact: true })
     .click();
   const settings = page.getByRole("dialog");
+  await settings.getByRole("tab", { name: "Project", exact: true }).click();
   const [projectDownload] = await Promise.all([
     page.waitForEvent("download"),
     settings
@@ -247,7 +249,7 @@ test("local Node backend saves, reopens, imports assets and downloads an MP4", a
     page.getByRole("button", { name: "Open project", exact: true }).click(),
   ]);
   await chooser.setFiles(projectFile!);
-  await expect(page.getByRole("status")).toContainText("Project opened");
+  await expect(page.locator(".status-notice")).toContainText("Project opened");
   await page.locator("input[type=file]").setInputFiles({
     name: "reference.svg",
     mimeType: "image/svg+xml",

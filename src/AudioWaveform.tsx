@@ -72,7 +72,7 @@ export const AudioWaveform = memo(function AudioWaveform({
     const themeObserver = new MutationObserver(draw);
     themeObserver.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["data-theme"],
+      attributeFilter: ["data-theme", "data-palette"],
     });
     draw();
     return () => {

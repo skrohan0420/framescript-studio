@@ -22,6 +22,10 @@ import { ProjectHome } from "./ProjectHome";
 import { chooseExportFile, supportsExportPicker } from "./bridge";
 import { ExportSettings } from "./ExportSettings";
 import { ExportDock } from "./ExportDock";
+import { ExportDownloads } from "./ExportDownloads";
+import { CanvasSizeControls } from "./CanvasSizeControls";
+import { StudioSettings } from "./StudioSettings";
+import { readStudioPalette, studioPaletteTokens, studioEditorTheme, type StudioPalette } from "./studio-palettes";
 import { ExportProgress, exportProgressText } from "./ExportProgress";
 import { EditorStatus, StatusActivity } from "./editor-status";
 import { TabIdentity } from "./TabIdentity";
@@ -461,6 +465,12 @@ export function App() {
     [recovery, setRecovery] = useState<Project | null>(null),
     [hasKey, setHasKey] = useState(false);
   const exports = useExports();
+  const settingsChildReturn = useRef(false);
+  const [palette, setPalette] = useState<StudioPalette>("silver");
+  const [downloadAudioStems, setDownloadAudioStems] = useState(() => {
+    try { return localStorage.getItem("framescript.download-audio-stems") === "true"; }
+    catch { return false; }
+  });
   const [selectedExportId, setSelectedExportId] = useState<string | null>(null);
   const selectedExportRef = useRef<string | null>(null);
   selectedExportRef.current = selectedExportId;
@@ -725,6 +735,7 @@ export function App() {
       if (layout.fontSize) setFontSize(layout.fontSize);
       setAutosave(layout.autosave !== false);
       if (layout.theme) setLight(layout.theme === "light");
+      setPalette(readStudioPalette(layout.palette));
       if (layout.timelineHeight) setTimelineHeight(layout.timelineHeight);
       if (typeof layout.leftHidden === "boolean")
         setLeftHidden(layout.leftHidden);
@@ -827,6 +838,7 @@ export function App() {
             autosave,
             shortcuts: shortcutOverrides,
             theme: light ? "light" : "dark",
+            palette,
             provider,
             model,
             timelineHeight,
@@ -850,6 +862,7 @@ export function App() {
     autosave,
     shortcutOverrides,
     light,
+    palette,
     provider,
     model,
     timelineHeight,
@@ -859,7 +872,10 @@ export function App() {
   ]);
   useEffect(() => {
     document.documentElement.dataset.theme = light ? "light" : "dark";
-  }, [light]);
+    document.documentElement.dataset.palette = palette;
+    for (const [key, value] of Object.entries(studioPaletteTokens(palette, light)))
+      document.documentElement.style.setProperty(key, value);
+  }, [light, palette]);
   useEffect(() => setProviderError(""), [provider, hasKey]);
   useEffect(() => {
     if (!busy) return;
@@ -1371,6 +1387,7 @@ export function App() {
         ? p.name
         : `${p.name} - ${selectedScene(p)?.title || "Timeline"}`,
       format: "mp4",
+      downloadAudioStems,
       width: p.settings.width,
       height: p.settings.height,
       fps: p.settings.fps,
@@ -1401,14 +1418,25 @@ export function App() {
       const handle = chooseExportLocation
         ? await chooseExportFile(options.fileName || p.name, options.format)
         : undefined;
-      const job = exports.start(snapshot, options, timeline, handle);
+      if (options.downloadAudioStems && exports.jobs.filter(job => job.status === "running").length > 8)
+        throw Error("Wait for an export to finish before exporting a video and separate audio stems.");
+      const job = exports.start(snapshot, { ...options, downloadAudioStems: false }, timeline, handle);
+      const stems = options.downloadAudioStems ? exports.start(snapshot, {
+        ...options,
+        format: "stems",
+        transparent: false,
+        downloadAudioStems: false,
+        stemMode: "processed",
+        stemMaster: true,
+        fileName: (options.fileName || p.name).replace(/\.(mp4|mkv|webm|gif|png|zip)$/i, "").slice(0, 130) + "-audio-stems",
+      }, timeline, undefined, job.id) : undefined;
       jobId = job.id;
       setSelectedExportId(job.id);
       setSelectingExportFile(false);
-      const destination = await job.finished;
+      const [destination] = await Promise.all([job.finished, stems?.finished]);
       if (destination) {
         setNotice("Export verified · " + destination);
-        if (selectedExportRef.current === job.id)
+        if (selectedExportRef.current === job.id && !options.downloadAudioStems)
           setModal((current) => (current === "export" ? "" : current));
       }
     } catch (error) {
@@ -1584,9 +1612,9 @@ export function App() {
       }
       original={original}
       modified={modified}
-      modifiedModelPath={(codeScene ?? "project") + "/" + language}
+      modifiedModelPath={sourceKey + "/" + language}
       keepCurrentModifiedModel
-      theme={light ? "framescript-light" : "framescript-dark"}
+      theme={studioEditorTheme(palette, light)}
       onMount={(diff) => trackEditor(diff.getModifiedEditor(), language)}
       onChange={onChange}
       options={{
@@ -1616,7 +1644,7 @@ export function App() {
         language={language === "js" ? "javascript" : language}
         path={sourceKey + "/" + language}
         keepCurrentModel
-        theme={light ? "framescript-light" : "framescript-dark"}
+        theme={studioEditorTheme(palette, light)}
         value={continuation?.[language] ?? p[language]}
         gutterBaseline={
           masterMode || continuation || !gutterProject
@@ -1925,10 +1953,10 @@ export function App() {
     home: returnHome,
     export: openExport,
     settings: () => setModal("settings"),
-    shortcuts: () => setModal("keyboard-shortcuts"),
+    shortcuts: () => { settingsChildReturn.current = false; setModal("keyboard-shortcuts"); },
     undo: s.undo,
     redo: s.redo,
-    recovery: () => setModal("recovery-history"),
+    recovery: () => { settingsChildReturn.current = false; setModal("recovery-history"); },
     play: () => {
       const state = useStudio.getState();
       if (!state.playing && state.time >= playbackDuration) state.setTime(0);
@@ -1999,6 +2027,12 @@ export function App() {
     },
   };
   shortcutHandler.current = (event, capture) => {
+    if (showHome) {
+      if (!capture && storageReady && !modal && !event.defaultPrevented && !event.repeat && !document.querySelector('[role="dialog"], [role="alertdialog"]') && bindings.get(keyboardChord(event) ?? "") === "settings") {
+        event.preventDefault(); setModal("settings");
+      }
+      return;
+    }
     if (
       showHome ||
       !storageReady ||
@@ -2110,7 +2144,7 @@ export function App() {
     ...(chatgpt.pending ? ["Waiting for ChatGPT authorization in the sign-in tab…"] : []),
     ...(selectingExportFile ? ["Choosing export location…"] : []),
     ...(busy ? [`AI · ${aiProgress.stage} · ${generationSeconds}s · ${aiProgress.characters.toLocaleString()} characters`] : []),
-    ...activeExports.map(({ name, progress }) => `${name} · ${exportProgressText(progress)}`),
+    ...activeExports.map(({ name, progress, options }) => `${name} · ${exportProgressText(progress, options.format === "stems" ? "steps" : "frames")}`),
   ].join(" | ");
   const statusBar = (
     <footer className="status-bar">
@@ -2145,6 +2179,41 @@ export function App() {
       )}
     </footer>
   );
+  const settingsDialogs = <>
+    <StudioSettings open={modal === "settings"} home={showHome} onClose={() => setModal("")} onOpenEditor={() => { setModal(""); enterEditor(); }}
+      palette={palette} light={light} onPalette={setPalette} onLight={setLight}
+      project={p} onProject={settings} onBrand={brand => s.change({brand}, "Edit brand kit")}
+      brandReview={!manualMode ? <Field label="Review AI changes before applying"><input type="checkbox" checked={reviewAI} onChange={e => setReviewAI(e.target.checked)} /></Field> : undefined}
+      autosave={autosave} onAutosave={setAutosave} fontSize={fontSize} onFontSize={setFontSize}
+      onKeyboard={() => { settingsChildReturn.current = true; setModal("keyboard-shortcuts"); }} onRecovery={() => { settingsChildReturn.current = true; setModal("recovery-history"); }} onRecoveryCopy={downloadRecoveryCopy}
+      onSaveCopy={() => save(true)}
+      onSource={() => void act(async () => { const file = await bridge.call("source", viewProject); if (file) setNotice("Source exported · " + file); })}
+      onTrash={() => void act(async () => { await checkpointCurrent("Before moving project to trash"); if (await bridge.call("deleteProject")) { load(newProject()); setNotice("Project moved to local trash"); } })}
+      storage={exportStorage} onCheckStorage={() => void act(async () => setExportStorage(await bridge.call("exportStorage")))}
+      onClearStorage={() => { if (confirm("Clear completed local render copies? Their download links will stop working. Active renders and downloads will be kept.")) void act(async () => { setExportStorage(await bridge.call("clearExportFiles")); for (const job of exports.jobs) if (job.status === "completed") exports.dismiss(job.id); }); }}
+      services={!manualMode ? <div className="settings-action-group"><h4>Services</h4><button onClick={() => openServices("settings")}>Manage services</button></div> : undefined}
+    />
+      <RecoveryHistory
+        open={modal === "recovery-history"}
+        onClose={() => { const next = settingsChildReturn.current ? "settings" : ""; settingsChildReturn.current = false; setModal(next); }}
+        onRestore={(project, editor) => {
+          settingsChildReturn.current = false;
+          load(project);
+          sceneChats.current = editor.sceneChats ?? {};
+          chatScene.current = project.workflow?.selectedId ?? "project";
+          setChat(sceneChats.current[chatScene.current] ?? []);
+          setNotice("Recovery version restored");
+        }}
+      />
+      {modal === "keyboard-shortcuts" && (
+        <KeyboardShortcuts
+          overrides={shortcutOverrides}
+          onChange={setShortcutOverrides}
+          onClose={() => { const next = settingsChildReturn.current ? "settings" : ""; settingsChildReturn.current = false; setModal(next); }}
+        />
+      )}
+
+  </>;
   if (!storageReady)
     return (
       <div className="app workspace-loading">
@@ -2160,6 +2229,7 @@ export function App() {
       <>
         <TabIdentity name={p.name} home />
         <ProjectHome
+          onSettings={() => setModal("settings")}
           onRenameCurrent={async (name) => {
             useStudio.getState().change({ name }, "Rename project");
             if (autosave)
@@ -2216,6 +2286,7 @@ export function App() {
             }
           }}
         />
+        <EditorStatus.Provider value={editorStatus}>{settingsDialogs}</EditorStatus.Provider>
         {exportDock}
         {statusBar}
       </>
@@ -2389,7 +2460,7 @@ export function App() {
           aria-label="Project settings"
           onClick={() => setModal("settings")}
         >
-          <Settings2 size={18} />
+          <Settings2 size={18} /><span>Settings</span>
         </button>
         <button
           className="primary"
@@ -3098,7 +3169,7 @@ export function App() {
                           key={sourceKey}
                           language="html"
                           theme={
-                            light ? "framescript-light" : "framescript-dark"
+                            studioEditorTheme(palette, light)
                           }
                           path={sourceKey + "/all"}
                           keepCurrentModel
@@ -3470,44 +3541,7 @@ export function App() {
               <option value="1080">Preview · 1080p</option>
               <option value="full">Preview · Full</option>
             </select>
-            <select
-              aria-label="Canvas aspect ratio"
-              value={
-                [
-                  ["16:9", 1920, 1080],
-                  ["9:16", 1080, 1920],
-                  ["1:1", 1080, 1080],
-                  ["4:3", 1440, 1080],
-                  ["21:9", 2520, 1080],
-                ].find(
-                  ([, width, height]) =>
-                    width === p.settings.width && height === p.settings.height,
-                )?.[0] ?? ""
-              }
-              onChange={(e) => {
-                const dimensions: Record<string, [number, number]> = {
-                  "16:9": [1920, 1080],
-                  "9:16": [1080, 1920],
-                  "1:1": [1080, 1080],
-                  "4:3": [1440, 1080],
-                  "21:9": [2520, 1080],
-                };
-                const size = dimensions[e.target.value];
-                if (size) {
-                  settings({ width: size[0], height: size[1] });
-                  setZoom(1);
-                }
-              }}
-            >
-              <option value="">
-                {p.settings.width} × {p.settings.height}
-              </option>
-              {["16:9", "9:16", "1:1", "4:3", "21:9"].map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
+            <CanvasSizeControls value={p.settings} onChange={size => { settings(size); setZoom(1); }} />
             <button
               title={shortcutTitle("fullscreen", "Full screen preview")}
               onClick={toggleFullscreen}
@@ -4091,24 +4125,6 @@ export function App() {
           }}
         />
       )}
-      <RecoveryHistory
-        open={modal === "recovery-history"}
-        onClose={() => setModal("")}
-        onRestore={(project, editor) => {
-          load(project);
-          sceneChats.current = editor.sceneChats ?? {};
-          chatScene.current = project.workflow?.selectedId ?? "project";
-          setChat(sceneChats.current[chatScene.current] ?? []);
-          setNotice("Recovery version restored");
-        }}
-      />
-      {modal === "keyboard-shortcuts" && (
-        <KeyboardShortcuts
-          overrides={shortcutOverrides}
-          onChange={setShortcutOverrides}
-          onClose={() => setModal("")}
-        />
-      )}
       {modal === "services" && (
         <Suspense fallback={<StatusActivity message="Loading services…" />}>
           <Services
@@ -4213,231 +4229,7 @@ export function App() {
           </button>
         </div>
       </Modal>
-      <Modal
-        title="Project & application settings"
-        open={modal === "settings"}
-        onClose={() => setModal("")}
-      >
-        <div className="settings-section">
-          <h3>Rendered files</h3>
-          <p>
-            Local render copies expire after 7 days. Clearing them removes
-            completed download links; files saved to your chosen destination
-            stay intact.
-          </p>
-          <button
-            onClick={() =>
-              void act(async () =>
-                setExportStorage(await bridge.call("exportStorage")),
-              )
-            }
-          >
-            Check retained renders
-          </button>
-          {exportStorage && (
-            <p role="status">
-              {exportStorage.files} files ·{" "}
-              {(exportStorage.bytes / 1_000_000).toFixed(1)} MB retained
-            </p>
-          )}
-          <button
-            onClick={() => {
-              if (
-                confirm(
-                  "Clear completed local render copies? Their download links will stop working. Active renders and downloads will be kept.",
-                )
-              )
-                void act(async () => {
-                  setExportStorage(await bridge.call("clearExportFiles"));
-                  for (const job of exports.jobs)
-                    if (job.status === "completed") exports.dismiss(job.id);
-                });
-            }}
-          >
-            Clear completed renders
-          </button>
-        </div>
-        <div className="settings-section">
-          <h3>Brand kit</h3>
-          {!manualMode && (
-            <Field label="Review AI changes before applying">
-              <input
-                type="checkbox"
-                checked={reviewAI}
-                onChange={(e) => setReviewAI(e.target.checked)}
-              />
-            </Field>
-          )}
-          <p>Saved with this project.</p>
-          <div className="settings-grid">
-            {(
-              ["name", "font", "primary", "secondary", "background"] as const
-            ).map((key) => {
-              const brand = p.brand ?? {
-                name: "My brand",
-                font: "Segoe UI",
-                primary: "#67b4ff",
-                secondary: "#edf3fa",
-                background: "#101321",
-              };
-              return (
-                <Field key={key} label={`Brand ${key}`}>
-                  <input
-                    type={key === "name" || key === "font" ? "text" : "color"}
-                    value={brand[key]}
-                    onChange={(e) =>
-                      s.change(
-                        { brand: { ...brand, [key]: e.target.value } },
-                        "Edit brand kit",
-                      )
-                    }
-                  />
-                </Field>
-              );
-            })}
-          </div>
-        </div>
-        <div className="settings-grid">
-          <Field label="Canvas width">
-            <input
-              type="number"
-              value={p.settings.width}
-              onChange={(e) => settings({ width: +e.target.value })}
-            />
-          </Field>
-          <Field label="Canvas height">
-            <input
-              type="number"
-              value={p.settings.height}
-              onChange={(e) => settings({ height: +e.target.value })}
-            />
-          </Field>
-          <Field label="Duration (seconds)">
-            <input
-              type="number"
-              step=".1"
-              value={p.settings.duration}
-              onChange={(e) => settings({ duration: +e.target.value })}
-            />
-          </Field>
-          <Field label="Frame rate">
-            <input
-              type="number"
-              value={p.settings.fps}
-              onChange={(e) => settings({ fps: +e.target.value })}
-            />
-          </Field>
-          <Field label="Playback speed">
-            <input
-              type="number"
-              step=".1"
-              value={p.settings.speed}
-              onChange={(e) => settings({ speed: +e.target.value })}
-            />
-          </Field>
-          <Field label="Background (CSS color or transparent)">
-            <input
-              value={p.settings.background}
-              onChange={(e) => settings({ background: e.target.value })}
-            />
-          </Field>
-          <Field label="Export timing">
-            <select
-              value={p.settings.timing}
-              onChange={(e) => settings({ timing: e.target.value as any })}
-            >
-              <option value="seek">Seek CSS / renderFrame(time)</option>
-              <option value="replay">
-                Replay browser timers (export only)
-              </option>
-            </select>
-          </Field>
-          <Field label="Workspace save mode">
-            <select
-              value={autosave ? "auto" : "manual"}
-              onChange={(event) => setAutosave(event.target.value === "auto")}
-            >
-              <option value="auto">Autosave</option>
-              <option value="manual">Manual save</option>
-            </select>
-          </Field>
-          <Field label="Editor font size">
-            <input
-              type="number"
-              min="10"
-              max="28"
-              value={fontSize}
-              onChange={(e) =>
-                setFontSize(Math.min(28, Math.max(10, +e.target.value)))
-              }
-            />
-          </Field>
-          <Field label="Allow animation network access">
-            <input
-              type="checkbox"
-              checked={p.settings.network}
-              onChange={(e) => settings({ network: e.target.checked })}
-            />
-          </Field>
-          <Field label="Light workspace theme">
-            <input
-              type="checkbox"
-              checked={light}
-              onChange={(e) => setLight(e.target.checked)}
-            />
-          </Field>
-        </div>
-        <div className="settings-section">
-          {!manualMode && (
-            <>
-              <h3>Services</h3>
-              <p>
-                Manage accounts, API keys, connection status and usage in one
-                place.
-              </p>
-              <button onClick={() => openServices("settings")}>
-                Manage services
-              </button>
-            </>
-          )}
-        </div>
-        <div className="modal-actions">
-          <button onClick={() => setModal("keyboard-shortcuts")}>
-            Keyboard shortcuts
-          </button>
-          <button onClick={() => setModal("recovery-history")}>
-            Recovery history
-          </button>
-          <button onClick={downloadRecoveryCopy}>Download recovery copy</button>
-          <button onClick={() => save(true)}>Save copy as .frame</button>
-          <button
-            onClick={() =>
-              void act(async () => {
-                const file = await bridge.call("source", viewProject);
-                if (file) setNotice("Source exported · " + file);
-              })
-            }
-          >
-            Export HTML source
-          </button>
-          <button
-            onClick={() =>
-              void act(async () => {
-                await checkpointCurrent("Before moving project to trash");
-                if (await bridge.call("deleteProject")) {
-                  load(newProject());
-                  setNotice("Project moved to local trash");
-                }
-              })
-            }
-          >
-            Move saved project to trash
-          </button>
-          <button className="primary" onClick={() => setModal("")}>
-            Done
-          </button>
-        </div>
-      </Modal>
+      {settingsDialogs}
       <Modal
         title="Export animation"
         open={modal === "export"}
@@ -4491,22 +4283,26 @@ export function App() {
                 Choose where to save
               </label>
             </div>
-            <ExportSettings
+            {!selectedExport && <ExportSettings
               options={exportOptions}
               frame={p.settings}
               disabled={exporting || !!selectedExport}
-              onChange={setExportOptions}
-            />
+              onChange={value => {
+                setExportOptions(value);
+                setDownloadAudioStems(value.downloadAudioStems ?? false);
+                try { localStorage.setItem("framescript.download-audio-stems", String(value.downloadAudioStems ?? false)); } catch { /* Browser storage may be disabled. */ }
+              }}
+            />}
             <p className="muted">
               {masterMode ? "All timelines" : "Active timeline"} · Output
               duration:{" "}
               {(exportOptions.duration / exportOptions.speed).toFixed(2)} s ·{" "}
-              {Math.ceil(
+              {exportOptions.format === "stems" ? "48 kHz / 24-bit WAV stems" : Math.ceil(
                 (exportOptions.duration / exportOptions.speed) *
                   exportOptions.fps,
-              )}{" "}
-              frames ·{" "}
-              {["mp4", "mkv", "webm"].includes(exportOptions.format)
+              ) + " frames"}{" "}
+              ·{" "}
+              {exportOptions.format === "stems" ? "Narration, music and SFX" : ["mp4", "mkv", "webm"].includes(exportOptions.format)
                 ? "Audio included"
                 : "Silent output"}
             </p>
@@ -4519,7 +4315,9 @@ export function App() {
                 Export failed: {exportError}
               </p>
             )}
+            {selectedExport && <ExportDownloads jobs={exports.jobs.filter(job => job.id === selectedExport.id || job.parentId === selectedExport.id)} onCancel={exports.cancel} />}
             <div className="modal-actions">
+              {selectedExport?.status === "completed" && !exports.jobs.some(job => job.parentId === selectedExport.id && job.status === "running") && <button onClick={() => setModal("")}>Done</button>}
               {exporting ? (
                 <>
                   {selectedExport?.status === "running" && (

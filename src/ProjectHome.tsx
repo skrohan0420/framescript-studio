@@ -19,6 +19,7 @@ import {
   X,
   Film,
   Play,
+  Settings2,
 } from "lucide-react";
 import { bridge } from "./bridge";
 import type { ProjectSummary } from "../shared/rpc";
@@ -38,6 +39,7 @@ export function ProjectHome({
   onOpen,
   onImport,
   onRenameCurrent,
+  onSettings,
 }: {
   workspace: Project;
   onContinue: () => void;
@@ -45,6 +47,7 @@ export function ProjectHome({
   onOpen: (id: string) => Promise<void>;
   onImport: () => Promise<void>;
   onRenameCurrent?: (name: string) => Promise<void>;
+  onSettings: () => void;
 }) {
   const [section, setSection] = useState("home"),
     [projects, setProjects] = useState<ProjectSummary[]>([]),
@@ -174,13 +177,23 @@ export function ProjectHome({
                   : "Let’s make something move."}
             </h1>
           </div>
-          <button
-            className="home-import"
-            disabled={busy}
-            onClick={() => void act(onImport)}
-          >
-            <FolderOpen size={15} /> Open .frame file
-          </button>
+          <div className="home-topbar-actions">
+            <button
+              className="home-import"
+              aria-label="Application settings"
+              onClick={onSettings}
+            >
+              <Settings2 size={15} />
+              Settings
+            </button>
+            <button
+              className="home-import"
+              disabled={busy}
+              onClick={() => void act(onImport)}
+            >
+              <FolderOpen size={15} /> Open .frame file
+            </button>
+          </div>
         </header>
         {error && (
           <div className="home-error" role="alert">

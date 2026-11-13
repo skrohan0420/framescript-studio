@@ -23,7 +23,7 @@ export class ExportRetention {
       // Only generated output files directly in the managed directory.
       if (
         !entry.isFile() ||
-        !/^[a-f0-9-]{36}\.(?:mp4|mkv|webm|gif|png|html|sequence\.zip)$/.test(
+        !/^[a-f0-9-]{36}\.(?:mp4|mkv|webm|gif|png|html|sequence\.zip|stems\.zip)$/.test(
           entry.name,
         )
       )

@@ -2,35 +2,13 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { runProcess } from "./process";
 import type { Project, ExportOptions } from "../shared/project";
-import { sceneOffset } from "../shared/workflow";
-import { speechRanges, musicDuckExpression } from "../shared/audio-ducking";
-export function audioPlan(p: Project, o: ExportOptions) {
-  const offset = p.workflow ? sceneOffset(p, p.workflow.selectedId) : 0;
-  return (p.audio ?? [])
-    .filter(
-      (a) =>
-        !a.muted &&
-        (!a.sceneId || !p.workflow || a.sceneId === p.workflow.selectedId),
-    )
-    .map((a) => ({
-      ...a,
-      start: a.start + (a.sceneId ? sceneOffset(p, a.sceneId) : 0) - offset,
-    }))
-    .filter((a) => a.start < o.duration && a.start + a.length > 0);
-}
-function tempos(speed: number) {
-  const values: number[] = [];
-  while (speed > 2) {
-    values.push(2);
-    speed /= 2;
-  }
-  while (speed < 0.5) {
-    values.push(0.5);
-    speed /= 0.5;
-  }
-  values.push(speed);
-  return values.map((v) => `atempo=${v}`).join(",");
-}
+import {
+  audioPlan,
+  audioGraph,
+  audioSampleCount,
+  embeddedAudio,
+} from "./audio-graph";
+export { audioPlan } from "./audio-graph";
 export async function mixAudio(
   ffmpeg: string,
   video: string,
@@ -45,51 +23,17 @@ export async function mixAudio(
   const output = path.join(work, "mixed." + o.format);
   const args = ["-y", "-i", video],
     filters: string[] = [];
-  const offset = p.workflow ? sceneOffset(p, p.workflow.selectedId) : 0;
-  const voices = speechRanges(p, (p.audio ?? []).filter(a => !a.sceneId || !p.workflow || a.sceneId === p.workflow.selectedId), offset, o.duration);
   try {
     for (let i = 0; i < clips.length; i++) {
       if (signal.aborted) throw Error("Export cancelled");
-      const clip = clips[i],
-        match = clip.data.match(/^data:audio\/[\w.+-]+;base64,(.+)$/s);
-      if (!match) throw Error("Invalid embedded audio");
       const file = path.join(work, `clip-${i}.bin`);
-      await fs.writeFile(file, Buffer.from(match[1], "base64"));
+      await fs.writeFile(file, embeddedAudio(clips[i].data));
       args.push("-i", file);
-      const start = Math.max(0, clip.start),
-        skip = Math.max(0, -clip.start),
-        length = Math.min(clip.length - skip, o.duration - start);
-      const parts = [
-        `aresample=48000`,
-        `atrim=start=${clip.trimIn}`,
-        "asetpts=PTS-STARTPTS",
-      ];
-      if (clip.loop)
-        parts.push(
-          `aloop=loop=-1:size=${Math.max(1, Math.round((clip.duration - clip.trimIn) * 48000))}`,
-        );
-      parts.push(`atrim=duration=${clip.length}`);
-      if (clip.fadeIn) parts.push(`afade=t=in:st=0:d=${clip.fadeIn}`);
-      if (clip.fadeOut)
-        parts.push(
-          `afade=t=out:st=${Math.max(0, clip.length - clip.fadeOut)}:d=${clip.fadeOut}`,
-        );
-      parts.push(
-        `atrim=start=${skip}:duration=${length}`,
-        "asetpts=PTS-STARTPTS",
-        tempos(o.speed),
-        `volume=${clip.volume}`,
-        `adelay=${Math.round((start / o.speed) * 1000)}:all=1`,
-      );
-      if (clip.lane === "music" && voices.length)
-        parts.push(
-          `volume='${musicDuckExpression(voices, o.speed)}':eval=frame`,
-        );
-      filters.push(`[${i + 1}:a]${parts.join(",")}[a${i}]`);
     }
-    const duration = Math.ceil((o.duration / o.speed) * o.fps) / o.fps;
+    filters.push(...audioGraph(p, o, clips, 1));
+    const duration = audioSampleCount(o) / 48000;
     filters.push(
-      `${clips.map((_, i) => `[a${i}]`).join("")}amix=inputs=${clips.length}:duration=longest:normalize=0,${clips.some(c => c.lane === "voice" && c.enhanced) ? "loudnorm=I=-16:TP=-2:LRA=7,aresample=192000,alimiter=limit=0.794328:level=0:attack=5:release=80:latency=1,aresample=48000," : "alimiter=limit=0.95:latency=1,"}apad,atrim=duration=${duration}[mix]`,
+      `${clips.map((_, i) => `[a${i}]`).join("")}amix=inputs=${clips.length}:duration=longest:normalize=0,${clips.some((c) => c.lane === "voice" && c.enhanced) ? "loudnorm=I=-16:TP=-2:LRA=7,aresample=192000,alimiter=limit=0.794328:level=0:attack=5:release=80:latency=1,aresample=48000," : "alimiter=limit=0.95:latency=1,"}apad=whole_len=${audioSampleCount(o)},atrim=end_sample=${audioSampleCount(o)}[mix]`,
     );
     args.push(
       "-filter_complex",

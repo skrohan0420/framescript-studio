@@ -219,6 +219,13 @@ To repeat the check:
 - Follow-up in the actual editor UI confirmed that the original Timeline 5 playhead stopped on Pause while its canvas kept changing. With the repaired copy, both stopped. The active saved workspace still contained the original JavaScript at the time of the check.
 - At the creator's request, backed up the active `ad` project and applied the five verified script repairs through the local workspace API. Confirmed the repaired scripts were persisted in both the workspace and the named project. An already open editor tab needs a reload to pick up the saved code.
 
+### Audio stem export increment — 13 November 2026
+
+- Implemented **Download audio stems separately (ZIP)** in the normal export workflow: 48 kHz/24-bit stereo narration, music and SFX, optional linear master, processed companion delivery (dry mode remains available through the renderer API) and a sample/processing manifest.
+- Shared the sample-based audio graph with video mixing. Stem length matches the reference video endpoint, including playback speed, with silent padding for empty lanes. Common headroom attenuation preserves linear summation without per-stem limiting.
+- Reused queue, worker, cancellation, owned downloads, native save picker and retention behavior. Automated PCM and browser checks are recorded in [VERIFICATION.md](../../VERIFICATION.md).
+- The creator reports completing the manual stem-delivery check on 13 November 2026. Future automation/transition routing remains open. This increment does not close the entire unified timeline requirement.
+
 ### Progress report template
 
 - Date and reporting period
@@ -251,6 +258,6 @@ To repeat the check:
 - Project-to-source time, shared-source fixtures and extension handoff rules for nontrivial clips. Resolve before expanding those workflows.
 - Focused Edit and Extend packages have an implemented 8 MiB uncompressed budget and measured context (9 November evidence above). Complete the deferred live comparison and first-result acceptance before treating the long-scene policy as fully validated.
 - Verify the separate manual-save scenario with newer source drafts and older applied previews noted on 10 November.
-- Close real-speech/device acceptance for the [voice enhancement foundation](02-voiceover-mastering.md) and retain aligned [stem export](05-audio-stem-export.md) as undelivered scope.
+- Close real-speech/device acceptance for the [voice enhancement foundation](02-voiceover-mastering.md). The [stem export increment](05-audio-stem-export.md#implemented-increment--13-november-2026) is delivered; the creator reports completing the manual stem-delivery check on 13 November 2026.
 
 Update the tracker when a stage starts, a blocker appears or clears, or a stage passes its exit checks. Link test evidence and issue records so the next session can resume from the last verified state.

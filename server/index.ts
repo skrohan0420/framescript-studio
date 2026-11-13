@@ -761,7 +761,7 @@ async function invoke(
         throw Error("At most 10 exports can be queued per browser.");
       const destination = path.join(
         exportsDir,
-        randomUUID() + "." + options.format,
+        randomUUID() + "." + (options.format === "stems" ? "stems.zip" : options.format),
       );
       const unprotect = exportRetention.protect(destination);
       const unprotectZip = exportRetention.protect(destination + ".zip");
@@ -781,7 +781,7 @@ async function invoke(
       publish({
         stage: "Queued",
         done: 0,
-        total: Math.ceil((options.duration / options.speed) * options.fps),
+        total: options.format === "stems" ? (options.stemMaster === false ? 7 : 8) : Math.ceil((options.duration / options.speed) * options.fps),
         destination,
       });
       let release: (() => void) | undefined;
@@ -852,7 +852,7 @@ async function invoke(
             ),
           ) +
             "." +
-            options.format,
+            (options.format === "stems" ? "zip" : options.format),
           owner,
         );
       } catch (error) {

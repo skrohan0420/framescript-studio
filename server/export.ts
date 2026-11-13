@@ -5,6 +5,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { documentFor } from "../shared/runtime";
 import { mixAudio } from "./audio-export";
+import { renderAudioStems } from "./audio-stems";
 import { runProcess } from "./process";
 import { frameCache } from "./frame-cache";
 import { videoCache } from "./video-cache";
@@ -63,6 +64,8 @@ export async function renderExport(
     },
   };
   const optionsParsed = exportSchema.parse(options);
+  if (optionsParsed.format === "stems")
+    return renderAudioStems(projectSchema.parse(project), optionsParsed, destination, ffmpeg, signal, progress);
   if (!tuning.gpu)
     tuning = { ...tuning, gpu: graphicsBackend(project, optionsParsed) };
   let directFallback: string | undefined;

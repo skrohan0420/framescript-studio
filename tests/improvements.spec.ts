@@ -51,6 +51,7 @@ test("recovery restores a replaced workspace and two editing tabs cannot silentl
     .getByRole("button", { name: "Project settings", exact: true })
     .first()
     .click();
+  await page.getByRole("tab", { name: "Recovery", exact: true }).click();
   await page
     .getByRole("button", { name: "Recovery history", exact: true })
     .click();
@@ -147,6 +148,7 @@ test("production workspace exposes waveform trim controls and brand kit persists
     .getByRole("button", { name: "Project settings", exact: true })
     .first()
     .click();
+  await page.getByRole("tab", { name: "Brand kit", exact: true }).click();
   await page
     .getByLabel("Brand name", { exact: true })
     .fill("FrameScript brand");

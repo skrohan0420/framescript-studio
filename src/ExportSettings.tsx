@@ -64,7 +64,9 @@ export function ExportSettings({
             : key === "speed"
               ? "Playback speed"
               : key === "fps"
-                ? "Custom frame rate"
+                ? options.format === "stems"
+                  ? "Reference frame rate (FPS)"
+                  : "Custom frame rate"
                 : key === "quality"
                   ? "Quality value"
                   : key === "width"
@@ -118,6 +120,26 @@ export function ExportSettings({
         />
       </Field>
     ));
+  const formatField = (
+    <Field label="Format">
+      <select
+        aria-label="Export format"
+        value={options.format}
+        onChange={(event) =>
+          update({
+            format: event.target.value as ExportOptions["format"],
+            transparent: false,
+          })
+        }
+      >
+        {["mp4", "mkv", "webm", "gif", "sequence", "png"].map((format) => (
+          <option value={format} key={format}>
+            {format === "sequence" ? "PNG sequence" : format.toUpperCase()}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
   return (
     <fieldset className="export-settings" disabled={disabled}>
       <div className="export-output-summary">
@@ -156,24 +178,33 @@ export function ExportSettings({
           </button>
         )}
       </p>
-      <Field label="Format">
-        <select
-          aria-label="Export format"
-          value={options.format}
-          onChange={(event) =>
-            update({
-              format: event.target.value as ExportOptions["format"],
-              transparent: false,
-            })
-          }
-        >
-          {["mp4", "mkv", "webm", "gif", "sequence", "png"].map((format) => (
-            <option value={format} key={format}>
-              {format === "sequence" ? "PNG sequence" : format.toUpperCase()}
-            </option>
-          ))}
-        </select>
-      </Field>
+      {formatField}
+      <label
+        className="export-audio-option"
+        data-enabled={options.downloadAudioStems === true}
+      >
+        <input
+          type="checkbox"
+          aria-label="Download audio stems separately (ZIP)"
+          checked={options.downloadAudioStems ?? false}
+          onChange={(e) => update({ downloadAudioStems: e.target.checked })}
+        />
+        <span>
+          <strong>Download audio stems separately (ZIP)</strong>
+          <small>
+            Narration, music, SFX and master mix · 48 kHz / 24-bit WAV
+          </small>
+        </span>
+        <span className="export-audio-state" aria-hidden="true">
+          {options.downloadAudioStems ? "Included" : "Optional"}
+        </span>
+      </label>
+      {options.downloadAudioStems && (
+        <p className="muted">
+          Your video exports normally. A separate ZIP download link appears when
+          the audio is ready.
+        </p>
+      )}
       <details
         className="export-advanced"
         open={advanced}

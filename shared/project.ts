@@ -247,7 +247,10 @@ export const exportSchema = z
     acceleration: z.enum(["auto", "software"]).optional(),
     captureMode: z.enum(["fast", "lossless"]).optional(),
     fileName: z.string().trim().min(1).max(150).optional(),
-    format: z.enum(["mp4", "mkv", "webm", "gif", "sequence", "png"]),
+    format: z.enum(["mp4", "mkv", "webm", "gif", "sequence", "png", "stems"]),
+    stemMode: z.enum(["dry", "processed"]).optional(),
+    stemMaster: z.boolean().optional(),
+    downloadAudioStems: z.boolean().optional(),
     width: z.number().int().min(64).max(7680),
     height: z.number().int().min(64).max(4320),
     fps: z.number().int().min(1).max(120),
@@ -266,7 +269,7 @@ export const exportSchema = z
         code: "custom",
         message: "This format cannot preserve transparency",
       });
-    if (Math.ceil((s.duration / s.speed) * s.fps) > 100000)
+    if (s.format !== "stems" && Math.ceil((s.duration / s.speed) * s.fps) > 100000)
       c.addIssue({ code: "custom", message: "Export exceeds 100,000 frames" });
   });
 export type ExportOptions = z.infer<typeof exportSchema>;

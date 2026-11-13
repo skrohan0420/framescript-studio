@@ -9,7 +9,7 @@ it("expires old outputs, preserves active files, and clears only managed complet
   const dir = path.resolve("test-results/retention-" + randomUUID());
   await fs.mkdir(dir, { recursive: true });
   const old = path.join(dir, randomUUID() + ".mp4");
-  const current = path.join(dir, randomUUID() + ".sequence.zip");
+  const current = path.join(dir, randomUUID() + ".stems.zip");
   const active = path.join(dir, randomUUID() + ".mp4");
   const unrelated = path.join(dir, "user-video.mp4");
   await Promise.all(

@@ -18,7 +18,7 @@ export async function chooseExportFile(
   name: string,
   format: string,
 ): Promise<ExportFileHandle> {
-  const extension = format === "sequence" ? "zip" : format;
+  const extension = format === "sequence" || format === "stems" ? "zip" : format;
   return (window as any).showSaveFilePicker({
     suggestedName:
       name.replace(/\.(mp4|mkv|webm|gif|png|zip)$/i, "") + "." + extension,
@@ -56,7 +56,7 @@ export async function exportToFile(
   onReady?.(result);
   if (!handle) return download(result);
   const response = await fetch(result.url, { credentials: "same-origin" });
-  if (!response.ok) throw Error("Could not retrieve the rendered video.");
+  if (!response.ok) throw Error("Could not retrieve the exported file.");
   let writable:
     Awaited<ReturnType<ExportFileHandle["createWritable"]>> | undefined;
   try {

@@ -6,6 +6,7 @@ import type { RenderMetrics } from "../server/export-plan";
 export type ExportJob = {
   diagnostics?: RenderMetrics;
   id: string;
+  parentId?: string;
   name: string;
   timeline: string;
   options: ExportOptions;
@@ -45,22 +46,31 @@ export function useExports() {
     options: ExportOptions,
     timeline: string,
     handle?: ExportFileHandle,
+    parentId?: string,
   ) => {
     if (jobs.filter((job) => job.status === "running").length >= 10)
       throw Error(
         "At most 10 exports can be queued. Wait for a clip to finish or cancel one.",
       );
     const id = crypto.randomUUID();
-    const extension = options.format === "sequence" ? "zip" : options.format;
+    const extension =
+      options.format === "sequence" || options.format === "stems"
+        ? "zip"
+        : options.format;
     const totalFrames =
-      options.format === "png"
-        ? 1
-        : Math.ceil((options.duration / options.speed) * options.fps);
+      options.format === "stems"
+        ? options.stemMaster === false
+          ? 7
+          : 8
+        : options.format === "png"
+          ? 1
+          : Math.ceil((options.duration / options.speed) * options.fps);
     const name = `${(options.fileName || project.name).replace(/\.(mp4|mkv|webm|gif|png|zip)$/i, "")}.${extension}`;
     setJobs((all) => [
       ...all,
       {
         id,
+        parentId,
         name,
         timeline,
         options: { ...options },

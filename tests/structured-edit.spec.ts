@@ -232,6 +232,7 @@ test("edits shape base values and keyframes in the inspector with clip scope and
   const openSettings = page.getByRole("contentinfo").getByRole("button", { name: "Project settings" });
   await openSettings.click();
   const settings = page.getByRole("dialog", { name: "Project & application settings" });
+  await settings.getByRole("tab", { name: "Editor", exact: true }).click();
   await settings.getByLabel("Workspace save mode").selectOption("manual");
   await settings.getByRole("button", { name: "Close", exact: true }).first().click();
   const width = inspector.getByLabel("Width (px)");

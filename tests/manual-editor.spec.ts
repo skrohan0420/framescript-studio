@@ -142,6 +142,23 @@ test("canvas presets resize both dimensions and keep preview aspect correct", as
       })
       .toBeCloseTo(width / height, 2);
   }
+  const resolution = page.getByLabel("Canvas resolution", { exact: true });
+  await resolution.selectOption("2160");
+  await expect(ratio).toHaveValue("16:9");
+  await expect.poll(() => preview.evaluate(el => [el.style.width, el.style.height])).toEqual(["3840px", "2160px"]);
+  await ratio.selectOption("9:16");
+  await expect(resolution).toHaveValue("2160");
+  await expect.poll(() => preview.evaluate(el => [el.style.width, el.style.height])).toEqual(["2160px", "3840px"]);
+  await ratio.selectOption("21:9");
+  await expect(resolution).toHaveValue("2160");
+  await expect.poll(() => preview.evaluate(el => [el.style.width, el.style.height])).toEqual(["3840px", "1646px"]);
+  await ratio.selectOption("16:9");
+  await page.screenshot({ path: "test-results/canvas-4k-controls.png" });
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Export animation" });
+  await expect(dialog.locator(".export-output-summary")).toContainText("3840 × 2160");
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(resolution).toHaveValue("2160");
 });
 
 test("full document paste splits code, rejects unsupported imports, and runtime errors jump to JavaScript", async ({

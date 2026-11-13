@@ -148,6 +148,7 @@ test("studio keeps library, player, contextual inspector and full-width timeline
       "base64",
     ),
   });
+  await libraryAudio.getByRole("button", { name: "Add Imported narration.wav to timeline", exact: true }).click();
   await expect(page.locator(".inspector-heading")).toContainText(
     "Imported narration.wav",
   );

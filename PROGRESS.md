@@ -1,3 +1,23 @@
+# More appearance palettes — November 13, 2026
+
+Expanded Settings → Appearance to 15 palettes with eight muted additions: Plum / Smoke, Burgundy / Ash, Forest / Sage, Slate / Ice, Copper / Ink, Espresso / Cream, Ocean / Fog and Black / White. All support dark/light modes, immediate preview and saved selection. Build, 30-combination contrast checks and three production appearance/settings browser cases passed; see [VERIFICATION.md](VERIFICATION.md).
+
+# Tabbed settings and Home access — November 13, 2026
+
+Replaced the long settings form with Appearance, Editor, Project, Brand kit, Storage and Recovery tabs, a fixed header/footer and a scrolling active panel. Added Settings to Home, including application preferences, storage and shortcut access; project-specific tabs require the editor. Subdialogs return to their originating settings tab, while recovery restoration returns to the workspace. Build and all 17 relevant production browser checks passed. Regression testing also corrected the diff editor's modified-model path to match the normal source editor, preserving edits when switching views. See [VERIFICATION.md](VERIFICATION.md).
+
+# Saved appearance palettes — November 13, 2026
+
+Added Settings → Appearance with seven palettes and independent dark/light modes. Carbon / Silver is the default; Graphite / Blue, Warm / Stone, Deep Navy, Muted Olive, Clay / Sand and Classic / Cyan remain selectable. Palette tokens drive Monaco, application surfaces, timeline clips and live waveform redraw. Choices persist through the existing application-settings store. The toolbar now visibly labels Settings. See [VERIFICATION.md](VERIFICATION.md) for contrast and round-trip checks.
+
+# Reference palette update — November 13, 2026
+
+Applied the creator's supplied charcoal/cyan palette to the workspace, dialogs, controls, Monaco, library and timeline. Key dark colors sampled from the reference are #1C1C1C, #262626, #303030 and #00C1CD. Audio uses blue/teal distinctions and text clips use rust. Light mode uses darker cyan for readable contrast. See [VERIFICATION.md](VERIFICATION.md) for theme, waveform, contrast and layout checks.
+
+# Aligned audio stem export — November 13, 2026
+
+Added a separate audio-stem ZIP checkbox to Export with aligned 48 kHz/24-bit stereo narration, music and SFX, dry/processed routing, optional linear master and a timing manifest. Shared integer-sample scheduling with the video audio graph and retained queue, cancellation, save-picker and retention behavior. Automated alignment, summation and browser delivery checks passed; see [VERIFICATION.md](VERIFICATION.md). Manual NLE/DAW import acceptance remains open. Historical entries below describe their own implementation state.
+
 # Documentation reconciliation — November 13, 2026
 
 Reviewed commit `a1f6763` against active UI gates, source, tests and the roadmap tracker. Added the [current project status](docs/PROJECT_STATUS.md), clarified exposed versus retained workflows in README, and reconciled the stage 5 summary with its later focused-package evidence. Current additions include structured handoffs and supported shape editing, code continuations, reversible voice enhancement and AI-directed typography controls. Broader scene architecture, full keyframe editing and aligned stem export remain incomplete. See [VERIFICATION.md](VERIFICATION.md) for fresh checks and their limits.

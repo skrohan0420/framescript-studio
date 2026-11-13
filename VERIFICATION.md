@@ -1,5 +1,67 @@
 # Verification record
 
+## Expanded appearance library — 13 November 2026
+
+Added Plum / Smoke, Burgundy / Ash, Forest / Sage, Slate / Ice, Copper / Ink, Espresso / Cream, Ocean / Fog and Black / White, bringing the library to 15 palettes and 30 dark/light combinations. The picker displays the available count, and its browser regression discovers palettes from the shared catalog rather than assuming seven.
+
+Build/TypeScript and both palette unit checks passed, including 4.5:1 text, primary-action and selected-control contrast across all 30 combinations. Three final production browser cases passed for the full palette matrix, Monaco matching, waveform redraw, preference restoration, Home access, tab scope and narrow layout. An initial development run during a concurrent build failed the saved-preference assertion; the final compiled run passed. The full unit suite was not rerun for this catalog expansion.
+
+## Tabbed settings and Home access — 13 November 2026
+
+Moved the settings UI into a shared StudioSettings component with keyboard-accessible tabs, a fixed title/footer and one scrolling panel. Home and the editor render the same settings/dialog flow. Home exposes Appearance, Editor and Storage; Project, Brand kit and Recovery are disabled until entering the editor. Ctrl+, works on Home and respects existing dialogs. Shortcut and recovery subdialogs return to their originating tab, direct shortcuts close normally, and a successful restore returns to the workspace.
+
+Build/TypeScript and **17 production browser checks passed**, covering appearance persistence, Home settings, tab keyboard navigation, application/project scope, storage status, project and brand saves, recovery/restore, keyboard remapping, manual save/history, project management and actual MP4 download. Desktop and narrow-screen settings screenshots were visually inspected. Fixtures were updated to select the appropriate tab and distinguish the status notice from the timeline's status output.
+
+The broader manual-save check exposed stale code when switching from the diff view to the normal editor. Its modified model now uses the same session/source/language path as the standard editor. The regression verifies actual modified-editor input, switching back, saving, history restoration and autosave recovery. Initial runs failed this path and left manual-save preferences behind; the final isolated and combined runs passed. The full unit suite was not rerun for this settings refactor.
+
+## Saved appearance palettes — 13 November 2026
+
+Final compiled-production checks passed for Appearance, classic theme/contrast behavior and studio layout (**3 browser cases**).
+
+Added a visible top-right Settings label and an Appearance section with seven palette previews, selected states and independent Dark/Light modes. Carbon / Silver is the default for missing/invalid saved palette IDs. Preferences use the existing settingsGet/settingsSet application store; scene code and portable-project data do not carry workspace colors. Palette tokens drive both standard/diff Monaco themes and timeline/library colors. Waveform observers also react to palette changes.
+
+Build/TypeScript passed. Two palette unit checks passed across all seven palettes in both modes, checking valid color tokens, at least 4.5:1 text/action/selection contrast and safe saved-ID fallback. The appearance browser check passed all fourteen combinations with matching Monaco backgrounds, selected states, reload persistence, a visible Settings label and waveform redraw after a palette-only change. The existing classic-theme browser check also passed. Appearance-picker and Carbon / Silver workspace screenshots were visually inspected. An initial browser locator matched settings controls in the toolbar, inspector and footer; scoping it to the toolbar resolved the test ambiguity. The full unit suite was not rerun for this appearance feature.
+
+## Darker black-base palette — 13 November 2026
+
+At the creator's request, darkened outer chrome and the preview stage to opaque #000000, panel bodies/timeline to #1C1C1C, headers to #242424 and editor/input surfaces to #171717. Cyan accents and the light-theme palette remain coordinated. The focused theme browser check passed for exact tokens, Monaco background, text/control contrast, waveform colors, light-theme persistence and compact viewport bounds. This was a color-only follow-up; the earlier reference-palette entry preserves the original sampled values.
+
+## Reference charcoal/cyan palette — 13 November 2026
+
+Sampled the creator's reference image for the main chrome (#1C1C1C), panel body (#262626), panel header (#303030) and accent (#00C1CD). Updated semantic dark/light tokens, matching Monaco backgrounds/cursors/selections, timeline colors and library waveforms. Dark text clips use rust and visual clips use teal; generated scene artwork retains its own styles.
+
+Build/TypeScript passed. Focused theme and layout browser checks passed in development mode, including exact palette tokens, Monaco's dark background, text/button/active-tab contrast of at least 4.5:1, expected waveform canvas colors in both themes, light-mode persistence, and 1280px layout bounds. The first contrast check exposed an insufficient light accent ratio; darkening that cyan resolved it. The layout fixture still assumed audio import automatically placed a timeline instance; it now explicitly uses the existing Add to timeline action before checking the inspector. Dark/light and workspace screenshots were visually inspected. The full unit suite was not rerun for this palette-only change.
+
+## Independent canvas ratio and 4K resolution — 13 November 2026
+
+Replaced the toolbar dropdown that mixed a pixel-size entry with fixed HD ratios. Separate Ratio and Resolution controls now recognize aspect independently of dimensions, expose 720p/1080p/2K/4K with exact pixels, and preserve the chosen tier through ratio changes. Landscape and portrait 4K match the existing editor bounds; ultrawide 4K fits within 3840×2160 (3840×1646).
+
+Build/TypeScript passed. Six focused unit cases across three files passed for canvas sizing, media bounds and export presets. Three production browser checks passed: existing ratio/preview sizing plus landscape/portrait/ultrawide 4K and export-default agreement; media dimension/image insertion behavior; and existing export defaults. The 4K toolbar/inspector screenshot was visually inspected. No real 4K video render or broad unit/browser rerun is claimed by this UI check.
+
+## Stem download recovery and clearer export UI — 13 November 2026
+
+The checkbox is now a larger labeled option with contents, format and an Included/Optional state. Its value persists in browser storage. Paired exports keep the dialog open and replace disabled settings with a compact file list, separate progress/errors and direct native download anchors. The floating export panel also labels the audio ZIP download.
+
+Build/TypeScript and all **six focused production browser checks** passed (stem delivery, four export-setting cases and concurrent exports). The stem case renders a real MP4 and real ZIP, suppresses the automatic ZIP anchor click, retrieves and validates the ZIP through the visible user-click download link, verifies the master/sample manifest, and confirms the checkbox remains checked after reload. Screenshots of the option and compact result dialog were visually reviewed. Duplicate primary-error announcements found during regression testing were removed; the existing export failure/retry check passes. The full unit suite was not rerun for this UI follow-up; the earlier 187-test result retains its recorded scope.
+
+## Separate stem download checkbox — 13 November 2026
+
+Replaced the user-facing stem format and its dedicated settings screen with **Download audio stems separately (ZIP)**, off by default. The selected video/image format exports normally; checking the box starts a separate processed-stem job from the same snapshot with an included master and an `-audio-stems.zip` filename. The video save picker applies to the video; the ZIP uses the browser download location. Both jobs retain their own dock status and cancellation controls.
+
+Build/TypeScript passed. The revised browser case passed with a stubbed primary-video response and a real stem worker/ZIP download, verifying the default-off checkbox, absence of a stem format option, preserved MP4 submission, processed master contents, speed and aligned sample count. Four existing export-settings browser checks also passed. Renderer-level dry/processed support remains covered by the previous PCM tests. This UI follow-up did not rerun the full unit suite.
+
+## Aligned audio stem export — 13 November 2026
+
+Implemented against documentation baseline `9fe9071`; the changes remain in the working tree.
+
+- `npm run build`: passed, including TypeScript and bundled server/worker. Existing large-chunk and dependency annotation warnings remain.
+- `npm test -- --reporter=dot` with host access: **187 tests passed across 43 files**. Eight stem checks exercise real FFmpeg output, 24-bit stereo sample counts, empty lanes, submillisecond and minute-long placement, speed changes, trims/loops/fades, dry/enhanced source selection, processed music ducking, shared headroom, master summation and cancellation/failure cleanup. Retention covers completed stem ZIPs.
+- Production browser checks: the real stem export and four existing export-settings cases passed. The stem case uses the editor, actual queue/worker/FFmpeg and owned ZIP download; it checks dry mode, omitted master, speed and manifest sample count.
+- Development browser checks: audio enhancement and the real stem workflow both passed. The enhancement test dynamically imports a source module and therefore requires the development server; its initial production invocation failed for that test-harness reason.
+- `npm run test:workflow`: passed, including combined-scene switching/assets, audible MP4 mixes at 0.5×/2×, WebM/MKV mixes and audio cancellation cleanup.
+- Initial sandboxed unit checks passed 168 and failed 17 because loopback fixture connections were denied and sandbox Chromium was unavailable. All passed with host access. An initial browser assertion expected a filename without the existing timeline suffix; the final test explicitly supplies a filename and passes.
+- The stem dialog screenshot was visually inspected. `git diff --check` passed. Broad unrelated browser suites, live provider checks and manual NLE/DAW import were not rerun or claimed complete.
+
 ## Documentation alignment review — 13 November 2026
 
 Reviewed source commit `a1f6763` and updated documentation only. Current scope is summarized in [project status](docs/PROJECT_STATUS.md). Earlier entries below retain their original dates, counts and scope; they are historical evidence rather than a fresh full-project test run.

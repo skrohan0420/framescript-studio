@@ -186,7 +186,7 @@ export function ExportDock({
                 <button
                   className="export-job-title"
                   title={
-                    job.name +
+                    job.options.format === "stems" ? job.name + " — 48 kHz / 24-bit stereo audio stems" : job.name +
                     " — " +
                     job.options.width +
                     " × " +
@@ -206,7 +206,7 @@ export function ExportDock({
                     title={`Download ${job.name}`}
                     onClick={() => download(job.download!)}
                   >
-                    <ArrowDownToLine size={13} />
+                    <ArrowDownToLine size={13} />{job.options.format === "stems" && <span>Download ZIP</span>}
                   </button>
                 )}
                 {!minimized &&

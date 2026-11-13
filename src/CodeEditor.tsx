@@ -1,3 +1,4 @@
+import { studioPalettes, studioPaletteTokens, studioEditorTheme } from "./studio-palettes";
 import Editor, {
   DiffEditor,
   loader,
@@ -31,40 +32,19 @@ import TsWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker"
           : new EditorWorker(),
 };
 loader.config({ monaco });
-monaco.editor.defineTheme("framescript-dark", {
-  base: "vs-dark",
-  inherit: true,
-  rules: [
-    { token: "comment", foreground: "8291A3" },
-    { token: "tag", foreground: "70B7FF" },
-    { token: "attribute.name", foreground: "A8D9BE" },
-    { token: "string", foreground: "DDBE8A" },
-    { token: "keyword", foreground: "80BFFF" },
-  ],
-  colors: {
-    "editor.background": "#141417",
-    "editor.foreground": "#F4F4F5",
-    "editorLineNumber.foreground": "#A5A5AF",
-    "editorLineNumber.activeForeground": "#F4F4F5",
-    "editor.lineHighlightBackground": "#242428",
-    "editor.selectionBackground": "#26413D",
-    "editorCursor.foreground": "#39D8C7",
-    "editorIndentGuide.background1": "#343439",
-  },
-});
-monaco.editor.defineTheme("framescript-light", {
-  base: "vs",
-  inherit: true,
-  rules: [],
-  colors: {
-    "editor.background": "#FBFBFC",
-    "editor.foreground": "#19191D",
-    "editorLineNumber.foreground": "#62626C",
-    "editor.lineHighlightBackground": "#EFEFF2",
-    "editor.selectionBackground": "#D6EBE5",
-    "editorCursor.foreground": "#06766B",
-  },
-});
+for (const palette of studioPalettes) for (const light of [false, true]) {
+  const tokens = studioPaletteTokens(palette.id, light);
+  monaco.editor.defineTheme(studioEditorTheme(palette.id, light), {
+    base: light ? "vs" : "vs-dark", inherit: true,
+    rules: light ? [] : [{ token: "comment", foreground: tokens["--muted"].slice(1) }, { token: "tag", foreground: tokens["--accent"].slice(1) }, { token: "string", foreground: "C5B79A" }, { token: "keyword", foreground: "A2B4C8" }],
+    colors: {
+      "editor.background": tokens["--editor"], "editor.foreground": tokens["--text"],
+      "editorLineNumber.foreground": tokens["--muted"], "editorLineNumber.activeForeground": tokens["--text"],
+      "editor.lineHighlightBackground": tokens["--raised"], "editor.selectionBackground": tokens["--visual-fill"],
+      "editorCursor.foreground": tokens["--accent"], "editorIndentGuide.background1": tokens["--subtle-border"],
+    },
+  });
+}
 
 export type SourceEditorProps = EditorProps & { gutterBaseline?: string };
 

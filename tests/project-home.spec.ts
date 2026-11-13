@@ -18,6 +18,7 @@ test("manual save records code versions that can be restored", async ({
     .getByRole("button", { name: "Project settings", exact: true })
     .click();
   const settings = page.getByRole("dialog");
+  await settings.getByRole("tab", { name: "Editor", exact: true }).click();
   const settingSaved = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/settingsSet") &&
@@ -95,8 +96,10 @@ test("manual save records code versions that can be restored", async ({
     .filter({ hasText: "const savedVersion = 3;" })
     .first()
     .click();
+  await diff.locator(".editor.modified textarea.inputarea").focus();
   await page.keyboard.press("Control+A");
   await page.keyboard.insertText("const savedVersion = 2;");
+  await expect(diff.locator(".editor.modified .view-lines").filter({ hasText: "const savedVersion = 2;" }).first()).toBeVisible();
   await options.click();
   await changes.click();
   await expect(editor.locator(".view-lines")).toContainText(

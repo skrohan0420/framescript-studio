@@ -27,7 +27,7 @@ test("studio themes keep readable text, named icon actions and usable panels", a
     route.fulfill({ json: { result: project } }),
   );
   await page.route("**/api/settingsGet", (route) =>
-    route.fulfill({ json: { result: { theme, layoutVersion: 2 } } }),
+    route.fulfill({ json: { result: { theme, palette: "classic", layoutVersion: 2 } } }),
   );
   await page.route("**/api/settingsSet", (route) => {
     theme = route.request().postDataJSON().args[0].theme ?? theme;
@@ -43,12 +43,20 @@ test("studio themes keep readable text, named icon actions and usable panels", a
   await expect(page.locator(".project-home")).toBeVisible();
   await page.screenshot({ path: "test-results/premium-home-dark.png" });
   await page.goto("/#editor");
+  await expect(page.locator(".monaco-editor-background").first()).toHaveCSS("background-color", "rgb(23, 23, 23)");
   for (const mode of ["dark", "light"]) {
     if (mode === "light")
       await page
         .getByRole("button", { name: "Switch to light theme", exact: true })
         .click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", mode);
+    if (mode === "dark") {
+      const palette = await page.evaluate(() => {
+        const style = getComputedStyle(document.documentElement);
+        return ["--base", "--surface", "--panel-header", "--accent"].map(token => style.getPropertyValue(token).trim());
+      });
+      expect(palette).toEqual(["#000000", "#1c1c1c", "#242424", "#00c1cd"]);
+    }
     const ratios = await page.evaluate(() => {
       const styles = getComputedStyle(document.documentElement);
       const rgb = (token: string) => {
@@ -96,8 +104,8 @@ test("studio themes keep readable text, named icon actions and usable panels", a
         .first(),
     ).toBeVisible();
     const laneColors = mode === "dark"
-      ? { voice: "#83c7f1", music: "#c3aff5", sfx: "#ebc184" }
-      : { voice: "#22649a", music: "#6b479e", sfx: "#8a6022" };
+      ? { voice: "#00b6e8", music: "#57ced0", sfx: "#73b3d6" }
+      : { voice: "#12668c", music: "#14787e", sfx: "#386b8a" };
     for (const [lane, color] of Object.entries(laneColors)) {
       const waveform = page.locator(`.audio-library-tile[data-lane=${lane}] .audio-waveform-thumbnail`);
       await expect.poll(() => waveform.evaluate(
