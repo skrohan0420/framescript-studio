@@ -371,7 +371,7 @@ export const AudioTimeline = memo(function AudioTimeline({
                     {...controls("move")}
                   >
                     <AudioWaveform clip={clip} />
-                    <span className="audio-clip-name">{clip.name}</span>
+                    <span className="audio-clip-name">{clip.name}{clip.enhanced && " · ✓ Enhanced"}</span>
                   </button>
                   <button
                     className="audio-trim"

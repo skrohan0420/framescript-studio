@@ -6,6 +6,7 @@ import { restoreTechniques } from "../shared/animation-techniques";
 import { useEffect, useRef, useState } from "react";
 import {
   Clipboard,
+  ClipboardPaste,
   RotateCcw,
   Timer,
   Music,
@@ -187,6 +188,7 @@ export function PromptTemplates({
     format: "document",
     consistency: true,
     typographyEnabled: false,
+    textPlanning: "AI decides",
     mascotEnabled: false,
     textItems: [],
   };
@@ -224,6 +226,10 @@ export function PromptTemplates({
         "animationEasing",
         "animationSync",
         "subtitles",
+        "textPlanning",
+        "textDensity",
+        "textPurpose",
+        "textBehavior",
         "textFont",
         "textScale",
         "textPlacement",
@@ -310,6 +316,10 @@ export function PromptTemplates({
   useStatusActivity(busy ? "Preparing prompt package…" : "");
   const [uncopiedPrompt, setUncopiedPrompt] = useState("");
   const [timedVoiceId, setTimedVoiceId] = useState("");
+  const [narrationSource, setNarrationSource] = useState<{
+    text: string;
+    names: string;
+  } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeSection, setActiveSection] = useState(() => {
     try {
@@ -434,10 +444,17 @@ export function PromptTemplates({
       );
       return;
     }
+    const narration = transcriptSrt(words);
+    setNarrationSource({
+      text: narration,
+      names: (timedVoice ? [timedVoice] : timedVoices)
+        .map((clip) => clip.name)
+        .join(", "),
+    });
     setDraft((previous) => ({
       ...previous,
       script: words.map((word) => word.text).join(" "),
-      timedNarration: transcriptSrt(words),
+      timedNarration: narration,
       duration: project.settings.duration,
     }));
     setDurationInput(null);
@@ -758,6 +775,11 @@ export function PromptTemplates({
                   ? `${parseNarrationInput(draft.timedNarration).format} · timing detected`
                   : "Plain text · timing inferred"}
               </small>
+              <small className="prompt-narration-source">
+                {narrationSource?.text === (draft.timedNarration || draft.script)
+                  ? `Text from audio: ${narrationSource.names}`
+                  : "Pasted or edited text · audio source unverified"}
+              </small>
             </label>
             <div className="prompt-story-direction">
               <small>Story direction · optional</small>
@@ -830,6 +852,27 @@ export function PromptTemplates({
                 <Music size={16} />
               </button>
             </div>
+            {voice && (
+              <div className="prompt-audio-timing" role="status">
+                <small>
+                  Audio: {voice.name} · {Number(voice.length.toFixed(2))}s.
+                  {Math.abs(draft.duration - voice.length) > 0.05
+                    ? ` Duration mismatch: animation is ${Number(draft.duration.toFixed(2))}s. Duration is not automatically matched to audio.`
+                    : " Animation duration matches this audio clip."}
+                </small>
+                {Math.abs(draft.duration - voice.length) > 0.05 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      update("duration", voice.length);
+                      setDurationInput(null);
+                    }}
+                  >
+                    Match audio length
+                  </button>
+                )}
+              </div>
+            )}
             <div
               className="prompt-field-suggestions"
               role="group"
@@ -1123,6 +1166,7 @@ export function PromptTemplates({
                 onChange={setReferences}
               />
               <button
+                className="prompt-import-code-button"
                 disabled={busy || (master && output !== "structured")}
                 onClick={
                   output === "structured"
@@ -1130,6 +1174,7 @@ export function PromptTemplates({
                     : () => onOpenCode(output === "document")
                 }
               >
+                {output === "structured" ? <Layers size={17} aria-hidden="true" /> : <ClipboardPaste size={17} aria-hidden="true" />}
                 {output === "structured"
                   ? "Import generated scene"
                   : output === "document"

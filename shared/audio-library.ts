@@ -6,6 +6,11 @@ export function retainAudioSources(
 ): Project {
   const sources = new Map<string, AudioClip>();
   const library = project.audioLibrary ?? previous?.audioLibrary;
+  const importOrders = new Map<string, number>();
+  let nextOrder = Math.max(-1, ...(library ?? []).map(clip => clip.importOrder ?? -1), ...(previous?.audioLibrary ?? []).map(clip => clip.importOrder ?? -1)) + 1;
+  // Older projects use their saved library order as their import history.
+  for (const clip of library ?? [])
+    importOrders.set(clip.id, clip.importOrder ?? previous?.audioLibrary?.find(source => source.id === clip.id)?.importOrder ?? nextOrder++);
   const allowed = new Map(library?.map((source) => [source.id, source.data]));
   for (const clip of [
     ...(library ?? []),
@@ -16,12 +21,16 @@ export function retainAudioSources(
     }),
     ...(project.audio ?? []),
   ]) {
-    if (library && clip.sourceId && !allowed.has(clip.sourceId)) continue;
+    if (library && clip.sourceId && !allowed.has(clip.sourceId) &&
+      !(clip.enhanced && !previous && project.audio?.includes(clip))) continue;
     const existing = sources.get(clip.data);
     const id = existing?.id ?? clip.sourceId ?? clip.id;
+    const importOrder = existing?.importOrder ?? importOrders.get(id) ?? nextOrder++;
+    importOrders.set(id, importOrder);
     sources.set(clip.data, {
       ...clip,
       id,
+      importOrder,
       sourceId: id,
       sceneId: undefined,
       start: 0,
@@ -37,7 +46,7 @@ export function retainAudioSources(
     throw Error("The audio library supports at most 100 source recordings.");
   return {
     ...project,
-    ...(sources.size ? { audioLibrary: [...sources.values()] } : {}),
+    ...(sources.size ? { audioLibrary: [...sources.values()].sort((a, b) => a.importOrder! - b.importOrder!) } : {}),
     ...(project.audio
       ? {
           audio: project.audio.map((clip) => ({

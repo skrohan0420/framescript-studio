@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import type { Project, AudioClip } from "../shared/project";
 import { sceneOffset } from "../shared/workflow";
 import { useStudio } from "./store";
+import { speechRanges, musicDuckGain } from "../shared/audio-ducking";
 export function AudioPlayback({
   project,
   master,
@@ -42,19 +43,15 @@ export function AudioPlayback({
       }
     return undefined;
   }, [project.audio]);
+  const voiceActivity = useMemo(() => speechRanges(
+      project,
+      (project.audio ?? []).filter(
+        (a) =>
+          master || !a.sceneId || a.sceneId === project.workflow?.selectedId,
+      ),
+    ), [project.audio, project.workflow, master]);
   useEffect(() => {
     if (!playing) blocked.current.clear();
-    const voiceActive = project.audio?.some(
-      (a) =>
-        a.lane === "voice" &&
-        !a.muted &&
-        globalTime >=
-          a.start + (a.sceneId ? sceneOffset(project, a.sceneId) : 0) &&
-        globalTime <
-          a.start +
-            (a.sceneId ? sceneOffset(project, a.sceneId) : 0) +
-            a.length,
-    );
     for (const clip of project.audio ?? []) {
       let node = nodes.current.get(clip.id);
       if (!node) {
@@ -98,7 +95,7 @@ export function AudioPlayback({
       const volume =
         clip.volume *
         envelope *
-        (voiceActive && clip.lane === "music" ? 0.35 : 1);
+        (clip.lane === "music" ? musicDuckGain(voiceActivity, globalTime) : 1);
       if (clip.volume > 1 && !gains.current.has(clip.id)) {
         try {
           const context = (audioContext.current ??= new AudioContext());

@@ -13,6 +13,26 @@ const draft: PromptDraft = {
   notes: "",
   format: "document",
 };
+it("delegates text selection with density and behavior while ignoring saved manual copy", () => {
+  const settings = {
+    ...draft,
+    typographyEnabled: true,
+    textPlanning: "AI decides",
+    textDensity: "Rich",
+    textBehavior: "Follow subjects",
+    screenText: "STALE MANUAL TITLE",
+    textItems: [promptTextSchema.parse({ id: "old", kind: "Title", text: "STALE ITEM" })],
+  };
+  const prompt = buildCodePrompt(settings, 1920, 1080);
+  expect(prompt).toContain("AI TEXT DIRECTION");
+  expect(prompt).toContain("Density: Rich");
+  expect(prompt).toContain("Behavior: Follow subjects");
+  expect(prompt).not.toContain("STALE MANUAL TITLE");
+  expect(prompt).not.toContain("STALE ITEM");
+  expect(
+    buildCodePrompt({ ...settings, typographyEnabled: false }, 1920, 1080),
+  ).not.toContain("AI TEXT DIRECTION");
+});
 it("excludes all saved typography settings unless explicitly enabled", () => {
   const saved = {
     ...draft,

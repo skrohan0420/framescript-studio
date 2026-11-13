@@ -1,4 +1,5 @@
 import { WindowsCredentialStore } from "./credentials";
+import { masterVoice } from "./voice-enhancement";
 import { rpcSchemas, type RpcName, type RpcResults } from "../shared/rpc";
 import { StudioDatabase } from "./database";
 import {
@@ -424,6 +425,8 @@ async function invoke(
       return elevenCatalog(
         client.elevenKey || process.env.ELEVENLABS_API_KEY || "",
       );
+    case "enhanceVoice":
+      return masterVoice(args[0]);
     case "transcribeAudio":
       return transcribeAudio(
         client.elevenKey || process.env.ELEVENLABS_API_KEY || "",

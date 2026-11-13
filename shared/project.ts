@@ -106,6 +106,17 @@ export const audioSchema = z
     transcriptWords: z.array(transcriptWordSchema).max(10000).optional(),
     generatedSource: z.string().max(300).optional(),
     sourceId: z.string().max(100).optional(),
+    enhanced: z.boolean().optional(),
+    importOrder: z.number().int().nonnegative().optional(),
+    enhancement: z.object({
+      version: z.number().int().min(1).max(4).optional(),
+      comparisonOriginalGain: z.number().min(0).max(1).optional(),
+      comparisonProcessedGain: z.number().min(0).max(1).optional(),
+      originalData: z.string().startsWith("data:audio/").max(50_000_000),
+      originalPeaks: z.array(z.number().min(0).max(1)).max(4096).optional(),
+      processedData: z.string().startsWith("data:audio/").max(50_000_000),
+      processedPeaks: z.array(z.number().min(0).max(1)).max(4096).optional(),
+    }).optional(),
   })
   .refine((a) => a.trimIn < a.duration, {
     message: "Audio trim must start before the end of the recording",

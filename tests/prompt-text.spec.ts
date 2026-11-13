@@ -22,6 +22,18 @@ test("text is opt-in and independent labels/counters persist without leaking whe
   const generated = panel.locator('textarea[aria-label="Generated prompt"]');
   expect(await generated.inputValue()).not.toContain("TYPOGRAPHY & SUBTITLES");
   await toggle.check();
+  await expect(panel.getByLabel("Who chooses the text?", { exact: true })).toHaveValue("AI decides");
+  await panel.getByLabel("Text density", { exact: true }).selectOption("Rich");
+  await panel.getByRole("button", { name: "Key takeaways", exact: true }).click();
+  await panel.getByRole("button", { name: "Numbers & comparisons", exact: true }).click();
+  expect(await generated.inputValue()).toContain("Purpose: Key ideas & labels | Key takeaways | Numbers & comparisons");
+  await panel.getByRole("button", { name: "Key ideas & labels", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Key ideas & labels", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(panel.getByRole("button", { name: "Key takeaways", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await panel.getByLabel("Text behavior", { exact: true }).selectOption("Follow subjects");
+  expect(await generated.inputValue()).toContain("Density: Rich");
+  expect(await generated.inputValue()).toContain("Behavior: Follow subjects");
+  await panel.getByLabel("Who chooses the text?", { exact: true }).selectOption("Manual text");
   await panel
     .getByRole("button", { name: "Add text item", exact: true })
     .click();

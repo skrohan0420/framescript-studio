@@ -23,6 +23,7 @@ import {
   Magnet,
   Minus,
   Scissors,
+  Sparkles,
 } from "lucide-react";
 import { useStudio, useProjectState } from "./store";
 import {
@@ -33,6 +34,7 @@ import {
   totalDuration,
 } from "../shared/workflow";
 import { AudioTimeline } from "./AudioTimeline";
+import { toggleAudioEnhancement } from "./enhance-audio";
 import { TimelineRulerMarks } from "./TimelineRulerMarks";
 import { startTimelineDrag } from "./timeline-drag";
 import { TextTimeline } from "./TextTimeline";
@@ -108,6 +110,41 @@ export const Timeline = memo(function Timeline({
   const trimCleanup = useRef<(() => void) | null>(null);
   useEffect(() => () => trimCleanup.current?.(), []);
   const notify = useStatusNotice();
+  const [enhancing, setEnhancing] = useState(false);
+  const enhanceLock = useRef(false);
+  const selectedAudioClip = selection?.kind === "audio"
+    ? p.audio?.find(clip => clip.id === selection.id) : undefined;
+  const enhanceSelected = async () => {
+    if (!selectedAudioClip || enhanceLock.current) return;
+    const clip = selectedAudioClip;
+    const initial = useStudio.getState();
+    enhanceLock.current = true;
+    setEnhancing(true);
+    initial.setPlaying(false);
+    notify("Enhancing audio locally…");
+    try {
+      const result = await toggleAudioEnhancement(clip);
+      const current = useStudio.getState();
+      const latest = current.project.audio?.find(item => item.id === clip.id);
+      if (current.session !== initial.session || latest?.data !== clip.data)
+        throw Error("Audio changed during enhancement. Select the clip and try again.");
+      const library = current.project.audioLibrary ?? [];
+      const source = library.find(item => item.id === clip.sourceId || item.data === clip.data);
+      const sourceId = source?.id ?? clip.sourceId ?? clip.id;
+      if (!source && library.length >= 100) throw Error("Audio library is full. Free a slot and try again.");
+      current.change({
+        audioLibrary: source ? library.map(item => item.id === source.id
+          ? { ...item, ...result } : item) : [...library, { ...clip, ...result, id: sourceId, sourceId }],
+        audio: current.project.audio?.map(item => item.id === clip.id || (item.sourceId === sourceId && item.data === clip.data) ? { ...item, ...result, sourceId } : item),
+      }, "Enhance audio");
+      notify(result.enhanced ? "Audio enhanced. Click Enhanced to hear the original." : "Enhancement off. Original audio restored.");
+    } catch (error) {
+      notify((error as Error).message);
+    } finally {
+      enhanceLock.current = false;
+      setEnhancing(false);
+    }
+  };
   const trimVisual = (
     event: ReactPointerEvent<HTMLElement>,
     id: string,
@@ -1063,6 +1100,15 @@ export const Timeline = memo(function Timeline({
               Extend
             </button>
           )}
+        {selectedAudioClip && (
+          <button className="timeline-extend" disabled={enhancing} aria-pressed={selectedAudioClip.enhanced === true}
+            aria-label="Enhance audio" aria-busy={enhancing}
+            title={selectedAudioClip.enhanced ? "Turn enhancement off" : "Enhance voice clarity, control sibilance and normalize loudness locally"}
+            onClick={() => void enhanceSelected()}>
+            <Sparkles size={15} aria-hidden="true" />
+            {enhancing ? "Enhancing…" : selectedAudioClip.enhanced ? "Enhanced" : "Enhance"}
+          </button>
+        )}
         <button
           title={splitHint ?? "Split at playhead"}
           aria-label="Split at playhead"

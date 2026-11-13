@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useProjectState, useStudio } from "./store";
 import { audioDetails, clipFromAudio, readData } from "./audio";
+import { toggleAudioEnhancement } from "./enhance-audio";
 import {
   initialWorkflow,
   totalDuration,
@@ -71,9 +72,39 @@ export function MediaLibrary({
   const [filter, setFilter] = useState("all");
   const [lane, setLane] = useState<AudioClip["lane"]>("voice");
   const [importing, setImporting] = useState(false);
+  const [enhancingSource, setEnhancingSource] = useState<string | null>(null);
+  const enhancementLock = useRef(false);
+  const enhanceSource = async (clip: AudioClip) => {
+    if (enhancementLock.current) return;
+    enhancementLock.current = true;
+    setEnhancingSource(clip.id);
+    const session = useStudio.getState().session;
+    stopPreview();
+    useStudio.getState().setPlaying(false);
+    try {
+      const result = await toggleAudioEnhancement(clip);
+      const current = useStudio.getState();
+      const source = current.project.audioLibrary?.find(item => item.id === clip.id);
+      if (current.session !== session || source?.data !== clip.data)
+        throw Error("Audio changed during enhancement. Try again.");
+      current.change({
+        audioLibrary: current.project.audioLibrary?.map(item => item.id === clip.id ? { ...item, ...result } : item),
+        audio: current.project.audio?.map(item =>
+          item.data === clip.data && (item.sourceId === clip.id || !item.sourceId)
+            ? { ...item, ...result, sourceId: clip.id } : item),
+      }, "Enhance library audio");
+      notify(result.enhanced ? "Audio enhanced. Click again to hear the original." : "Enhancement off. Original audio restored.");
+    } catch (error) {
+      onError((error as Error).message);
+    } finally {
+      enhancementLock.current = false;
+      setEnhancingSource(null);
+    }
+  };
   const [search, setSearch] = useState("");
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [comparison, setComparison] = useState<{ id: string; original: boolean } | null>(null);
   const previewPlayer = useRef<HTMLAudioElement | null>(null);
   const timelinePlaying = useStudio((state) => state.playing);
   const stopPreview = () => {
@@ -102,7 +133,8 @@ export function MediaLibrary({
     )
       stopPreview();
   }, [mode, timelinePlaying, project.audioLibrary, previewId]);
-  const inspectAudio = (source: AudioClip) => {
+  const inspectAudio = (source: AudioClip, compareOriginal?: boolean) => {
+    if (compareOriginal === undefined) setComparison(null);
     setSelectedSource(source.id);
     const instance = project.audio?.find(
       (clip) =>
@@ -110,15 +142,16 @@ export function MediaLibrary({
         (!clip.sceneId || clip.sceneId === project.workflow?.selectedId),
     );
     if (instance) onSelectAudio(instance.id);
-    if (previewId === source.id) {
+    if (previewId === source.id && compareOriginal === undefined) {
       stopPreview();
       return;
     }
     stopPreview();
     useStudio.getState().setPlaying(false);
-    const player = new Audio(source.data);
+    const variant = source.enhancement;
+    const player = new Audio(compareOriginal === undefined || !variant ? source.data : compareOriginal ? variant.originalData : variant.processedData);
     previewPlayer.current = player;
-    player.volume = 0.7;
+    player.volume = 0.7 * (compareOriginal === undefined || !variant ? 1 : compareOriginal ? variant.comparisonOriginalGain ?? 1 : variant.comparisonProcessedGain ?? 1);
     player.onended = () => {
       if (previewPlayer.current === player) stopPreview();
     };
@@ -617,17 +650,6 @@ export function MediaLibrary({
                     <span className="sr-only"> timeline clips</span>
                   </small>
                 </div>
-                {project.audio?.some(
-                  (item) =>
-                    item.sourceId === clip.id || item.data === clip.data,
-                ) && (
-                  <span
-                    className="audio-on-timeline"
-                    aria-label={`${clip.name} is on the timeline`}
-                  >
-                    <Check size={12} aria-hidden="true" /> On timeline
-                  </span>
-                )}
                 <div
                   className="audio-card-actions"
                   role="group"
@@ -641,6 +663,28 @@ export function MediaLibrary({
                   >
                     <Plus size={15} />
                   </button>
+                  <button
+                    aria-label={`Enhance ${clip.name}`}
+                    title={clip.enhanced ? "Turn enhancement off" : "Enhance audio locally"}
+                    aria-pressed={clip.enhanced === true}
+                    disabled={!!enhancingSource}
+                    aria-busy={enhancingSource === clip.id}
+                    onClick={() => void enhanceSource(clip)}
+                  >
+                    <Sparkles size={15} />
+                  </button>
+                  {enhancingSource === clip.id && <small role="status">Enhancing…</small>}
+                  {clip.enhancement?.comparisonOriginalGain !== undefined && (
+                    <button className="audio-compare" title="Compare original and enhanced at matched loudness; does not change the timeline"
+                      aria-label={`Compare ${comparison?.id === clip.id && comparison.original ? "enhanced" : "original"} ${clip.name}`}
+                      onClick={() => {
+                        const original = !(comparison?.id === clip.id && comparison.original);
+                        setComparison({ id: clip.id, original });
+                        inspectAudio(clip, original);
+                      }}>
+                      {comparison?.id === clip.id && comparison.original ? "Hear enhanced" : "Hear original"}
+                    </button>
+                  )}
                   {clip.lane === "voice" && (
                     <SilenceEditor clip={clip} onError={onError} />
                   )}
@@ -687,6 +731,22 @@ export function MediaLibrary({
                         )}
                       </button>
                     </div>
+                  )}
+                  {project.audio?.some(
+                    (item) =>
+                      item.sourceId === clip.id || item.data === clip.data,
+                  ) && (
+                    <span
+                      className="audio-on-timeline"
+                      aria-label={`${clip.name} is on the timeline`}
+                    >
+                      <Check size={12} aria-hidden="true" /> On timeline
+                    </span>
+                  )}
+                  {clip.enhanced && (
+                    <span className="audio-on-timeline" aria-label={`${clip.name} is enhanced`}>
+                      <Check size={12} aria-hidden="true" /> Enhanced
+                    </span>
                   )}
                   <button
                     className="audio-library-remove"

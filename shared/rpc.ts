@@ -134,6 +134,7 @@ export const rpcSchemas = {
   transcribeAudio: z.tuple([
     z.object({ data: z.string().max(40000000), name: z.string().max(300) }),
   ]),
+  enhanceVoice: z.tuple([z.object({ data: z.string().startsWith("data:audio/").max(50_000_000), sampleRate: z.number().int().min(8000).max(96000), frames: z.number().int().positive().max(345600000), channels: z.number().int().min(1).max(2) })]),
   generateImage: z.tuple([
     z.object({
       model: z.string(),
@@ -275,4 +276,5 @@ export interface RpcResults {
   generateImage: { data: string };
   generateAudio: { data: string };
   transcribeAudio: { text: string; words: TranscriptWord[] };
+  enhanceVoice: { data: string; comparisonOriginalGain: number; comparisonProcessedGain: number };
 }

@@ -187,6 +187,14 @@ test("timed voiceover fills the prompt with scene-aligned cues", async ({
   await expect(page.getByLabel("Prompt script", { exact: true })).toHaveValue(
     "1\n00:00:02,200 --> 00:00:02,800\nExplosion.\n",
   );
+  await expect(page.locator(".prompt-narration-source")).toContainText(
+    `Text from audio: ${project.audio[0].name}`,
+  );
+  await page.getByLabel("Prompt duration (seconds)").fill("8");
+  await expect(page.locator(".prompt-audio-timing")).toContainText("Duration mismatch");
+  await page.getByRole("button", { name: "Match audio length", exact: true }).click();
+  await expect(page.getByLabel("Prompt duration (seconds)")).toHaveValue("3");
+  await expect(page.locator(".prompt-audio-timing")).toContainText("Animation duration matches");
   const copy = async () => {
     const status = page.locator(".status-bar .status-notice");
     const download = page.waitForEvent("download");
@@ -200,6 +208,7 @@ test("timed voiceover fills the prompt with scene-aligned cues", async ({
   expect(copied).toContain("timing authority");
   const input = page.getByLabel("Prompt script", { exact: true });
   await input.fill("WEBVTT\n\n00:01.000 --> 00:03.000\nA timed idea.");
+  await expect(page.locator(".prompt-narration-source")).toContainText("audio source unverified");
   await expect(page.locator(".prompt-input-format")).toContainText(
     "VTT · timing detected",
   );
@@ -308,6 +317,9 @@ test("prompt templates build, copy and preserve a brief without an AI connection
     .getByLabel("Include typography in prompt", { exact: true })
     .check();
   await panel
+    .getByLabel("Who chooses the text?", { exact: true })
+    .selectOption("Manual text");
+  await panel
     .getByLabel("Exact on-screen text (optional)", { exact: true })
     .fill("THE MILKY WAY");
   await panel
@@ -324,7 +336,9 @@ test("prompt templates build, copy and preserve a brief without an AI connection
   await panel
     .getByLabel("Title placement", { exact: true })
     .selectOption("Top left");
-  await panel.getByLabel("Text color", { exact: true }).fill("#ffeedd");
+  await expect(panel.getByLabel("Text color", { exact: true })).toHaveCount(0);
+  await expect(panel.getByLabel("Font weight", { exact: true })).toHaveCount(0);
+  await panel.getByLabel("Font treatment", { exact: true }).selectOption("Editorial serif");
   await panel
     .getByLabel("Entrance time (seconds)", { exact: true })
     .fill("0.6");
@@ -333,8 +347,8 @@ test("prompt templates build, copy and preserve a brief without an AI connection
     "96px",
   );
   await expect(panel.getByTestId("typography-title-preview")).toHaveCSS(
-    "color",
-    "rgb(255, 238, 221)",
+    "font-family",
+    'Georgia, "Times New Roman", serif',
   );
   await panel
     .getByRole("button", { name: "Replay typography preview", exact: true })

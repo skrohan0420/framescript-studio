@@ -109,45 +109,55 @@ export function PromptTextItems({ draft, update, width, height }: Props) {
   };
   return (
     <section className="prompt-text-items" aria-label="Individual video text">
-      <h3>Individual video text</h3>
+      <div className="text-items-heading">
+        <h3>Text overlays</h3>
+        <small>{items.length} / 30 items</small>
+      </div>
       <p className="type-control-help">
-        Add up to 30 independent items. Each has its own words, subject, timing,
-        position, font, colors and motion. Use Custom text for other treatments.
-        Nothing is added to the timeline automatically.
+        Labels, counters and custom text, each with its own timing and style.
+        Added to your prompt; timeline clips are created separately.
       </p>
-      <label className="field">
-        <span>Text type</span>
-        <select
-          aria-label="Text item type"
-          value={kind}
-          onChange={(event) =>
-            setKind(event.target.value as PromptText["kind"])
-          }
+      <div className="text-item-add-row">
+        <label className="field">
+          <span>Text type</span>
+          <select
+            aria-label="Text item type"
+            value={kind}
+            onChange={(event) =>
+              setKind(event.target.value as PromptText["kind"])
+            }
+          >
+            {textKinds.map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="text-item-add-button"
+          disabled={items.length >= 30}
+          onClick={() => {
+            const item = promptTextSchema.parse({
+              id: crypto.randomUUID(),
+              kind,
+              end: Math.min(draft.duration, 10),
+              size: Math.round(height * 0.05),
+              ...(kind === "Timer / countdown"
+                ? { from: Math.min(draft.duration, 10), to: 0 }
+                : {}),
+            });
+            update("textItems", [...items, item]);
+            setSelected(item.id);
+            setTime(0);
+          }}
         >
-          {textKinds.map((value) => (
-            <option key={value}>{value}</option>
-          ))}
-        </select>
-      </label>
-      <button
-        disabled={items.length >= 30}
-        onClick={() => {
-          const item = promptTextSchema.parse({
-            id: crypto.randomUUID(),
-            kind,
-            end: Math.min(draft.duration, 10),
-            size: Math.round(height * 0.05),
-            ...(kind === "Timer / countdown"
-              ? { from: Math.min(draft.duration, 10), to: 0 }
-              : {}),
-          });
-          update("textItems", [...items, item]);
-          setSelected(item.id);
-          setTime(0);
-        }}
-      >
-        Add text item
-      </button>
+          Add text item
+        </button>
+      </div>
+      {!items.length && (
+        <div className="text-items-empty">
+          No overlays yet. Choose a text type and add your first item.
+        </div>
+      )}
       {!!items.length && (
         <>
           <label className="field">

@@ -3,6 +3,7 @@ import path from "node:path";
 import { runProcess } from "./process";
 import type { Project, ExportOptions } from "../shared/project";
 import { sceneOffset } from "../shared/workflow";
+import { speechRanges, musicDuckExpression } from "../shared/audio-ducking";
 export function audioPlan(p: Project, o: ExportOptions) {
   const offset = p.workflow ? sceneOffset(p, p.workflow.selectedId) : 0;
   return (p.audio ?? [])
@@ -44,12 +45,8 @@ export async function mixAudio(
   const output = path.join(work, "mixed." + o.format);
   const args = ["-y", "-i", video],
     filters: string[] = [];
-  const voices = clips
-    .filter((a) => a.lane === "voice")
-    .map((a) => ({
-      start: Math.max(0, a.start) / o.speed,
-      end: Math.min(o.duration, a.start + a.length) / o.speed,
-    }));
+  const offset = p.workflow ? sceneOffset(p, p.workflow.selectedId) : 0;
+  const voices = speechRanges(p, (p.audio ?? []).filter(a => !a.sceneId || !p.workflow || a.sceneId === p.workflow.selectedId), offset, o.duration);
   try {
     for (let i = 0; i < clips.length; i++) {
       if (signal.aborted) throw Error("Export cancelled");
@@ -86,13 +83,13 @@ export async function mixAudio(
       );
       if (clip.lane === "music" && voices.length)
         parts.push(
-          `volume='if(gt(${voices.map((v) => `between(t,${v.start},${v.end})`).join("+")},0),0.35,1)':eval=frame`,
+          `volume='${musicDuckExpression(voices, o.speed)}':eval=frame`,
         );
       filters.push(`[${i + 1}:a]${parts.join(",")}[a${i}]`);
     }
     const duration = Math.ceil((o.duration / o.speed) * o.fps) / o.fps;
     filters.push(
-      `${clips.map((_, i) => `[a${i}]`).join("")}amix=inputs=${clips.length}:duration=longest:normalize=0,alimiter=limit=0.95:latency=1,apad,atrim=duration=${duration}[mix]`,
+      `${clips.map((_, i) => `[a${i}]`).join("")}amix=inputs=${clips.length}:duration=longest:normalize=0,${clips.some(c => c.lane === "voice" && c.enhanced) ? "loudnorm=I=-16:TP=-2:LRA=7,aresample=192000,alimiter=limit=0.794328:level=0:attack=5:release=80:latency=1,aresample=48000," : "alimiter=limit=0.95:latency=1,"}apad,atrim=duration=${duration}[mix]`,
     );
     args.push(
       "-filter_complex",
@@ -105,6 +102,8 @@ export async function mixAudio(
       "copy",
       "-c:a",
       o.format === "webm" ? "libopus" : "aac",
+      "-b:a",
+      "192k",
       "-t",
       String(duration),
       output,

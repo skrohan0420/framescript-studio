@@ -101,7 +101,8 @@ it("keeps subtitles opt-in and includes typography direction when requested", ()
   expect(custom).toContain(
     "Title / label font size: 120px; subtitle font size: 48px",
   );
-  expect(custom).toContain("Text fill: #ffcc00");
+  expect(custom).toContain("AI chooses font weight, alignment, line height and letter spacing");
+  expect(custom).not.toContain("#ffcc00");
   expect(custom).toContain("maximum subtitle lines: 3");
 });
 it("includes every reference and editing preset as actionable direction", () => {

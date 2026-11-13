@@ -3,8 +3,15 @@ import {
   promptTextListSchema,
   type PromptText,
 } from "./prompt-text";
-import { animationDirection, type AnimationDirection } from "./animation-techniques";
-import { audioDirectionPrompt, restoreAudioDirection, type AudioDirection } from "./prompt-audio";
+import {
+  animationDirection,
+  type AnimationDirection,
+} from "./animation-techniques";
+import {
+  audioDirectionPrompt,
+  restoreAudioDirection,
+  type AudioDirection,
+} from "./prompt-audio";
 export const promptTemplates = [
   {
     id: "canvas",
@@ -391,6 +398,10 @@ export type PromptDraft = AnimationDirection & {
   mascotTiming?: string;
   mascotNotes?: string;
   typographyEnabled?: boolean;
+  textPlanning?: string;
+  textDensity?: string;
+  textPurpose?: string;
+  textBehavior?: string;
   textItems?: PromptText[];
   template: string;
   script: string;
@@ -469,9 +480,18 @@ function buildScenePrompt(
   structured: boolean,
 ) {
   const typographyEnabled = draft.typographyEnabled === true;
-  const items = typographyEnabled
-    ? promptTextListSchema.parse(draft.textItems ?? [])
-    : [];
+  const aiText = typographyEnabled && draft.textPlanning === "AI decides";
+  const aiTextDirection = aiText
+    ? `AI TEXT DIRECTION: Choose the on-screen wording, text types, placement and timing from the supplied narration and brief. The user delegates text selection to you. Do not require manually supplied titles or text items.
+Density: ${draft.textDensity || "Balanced"}. Minimal: only essential names or key takeaways, usually 1–2 short overlays per 30 seconds. Balanced: one concise overlay on major beats, usually 3–5 per 30 seconds. Rich: frequent explanatory labels and key phrases, usually 6–8 per 30 seconds. Scale to duration and content; these are upper guides, never quotas. Avoid simultaneous competing blocks.
+Purpose: ${draft.textPurpose || "Key ideas & labels"}. When multiple purposes are selected, combine them where relevant within the same density budget; do not multiply the amount of text per purpose. Select only useful text for these purposes, grounded in supplied facts; never invent numbers, claims or dialogue. Keep overlays concise and do not duplicate full narration unless subtitles are explicitly enabled.
+Behavior: ${draft.textBehavior || "Follow scene beats"}. Follow scene beats: enter with the relevant concept and leave before the next. Build progressively: reveal supporting words or labels as the explanation develops, then clear the group. Hold key takeaways: keep the main takeaway visible through its relevant beat. Follow subjects: anchor labels near their subjects and track their motion without covering them.
+Honor supplied narration timestamps, allow readable holds and exits, avoid overlapping subtitles or focal subjects, and preserve safe margins. If the brief and narration provide no usable content, omit text rather than inventing placeholder copy.`
+    : "";
+  const items =
+    typographyEnabled && !aiText
+      ? promptTextListSchema.parse(draft.textItems ?? [])
+      : [];
   const itemPrompt = typographyEnabled
     ? textLayerPrompt(items, draft.duration)
     : "";
@@ -485,7 +505,9 @@ function buildScenePrompt(
       "Build a coherent graphic system with reusable shapes, spacing, stroke weights and corner radii. Choreograph entrances, transformations and exits around a clear hierarchy. Use alignment, masks and shape relationships to connect ideas; avoid unrelated objects drifting independently.",
     explain:
       "Make cause and effect visually explicit. Introduce components before showing their interactions, and preserve their positions or use motivated moves. Keep quantities and relative scales faithful to supplied facts; do not invent statistics. Reveal diagrams progressively, with labels only if explicitly requested.",
-    type: "Use only the supplied on-screen wording or explicitly requested subtitles, preserving spelling, punctuation and case. Establish a deliberate type scale, alignment and line breaks. Give each phrase sufficient reading time, keep letterforms intact, and coordinate emphasis with narration. If neither display text nor subtitles are requested, keep text absent.",
+    type: aiText
+      ? "Select concise text from the brief according to AI TEXT DIRECTION. Establish a deliberate hierarchy, readable holds and narration-aligned emphasis."
+      : "Use only the supplied on-screen wording or explicitly requested subtitles, preserving spelling, punctuation and case. Establish a deliberate type scale, alignment and line breaks. Give each phrase sufficient reading time, keep letterforms intact, and coordinate emphasis with narration. If neither display text nor subtitles are requested, keep text absent.",
     depth:
       "Establish foreground, midground and background with a shared perspective and stable vanishing point. Move layers at depth-appropriate rates. Keep camera travel restrained, avoid unintended clipping and perspective distortion, and maintain a readable subject silhouette throughout the move.",
     repair:
@@ -640,29 +662,30 @@ Story direction: ${draft.storyStructure?.trim() || "Follow the structure of the 
 Treat story direction as staging guidance, never as spoken narration or subtitle copy. Preserve the user's script and supplied cue times; do not append these instructions to the script, invent dialogue, or reorder timed phrases to force a story structure.
 Plan a clear opening, development and resolved ending internally before writing code. Give each beat a focal subject, meaningful action and readable hold. Show concepts through objects and interactions. Use transitions that explain relationships between beats. Respect supplied timestamps over inferred pacing. Keep important subjects and text within a 10% safe margin with clear foreground/background contrast. Resolve the final pose without an abrupt cut or unfinished action.
 Camera / framing: ${draft.camera.trim() || "Intentional framing; smooth movement only when it helps the animation."}
-On-screen text: ${typographyEnabled ? draft.screenText.trim() || (itemPrompt ? "Only the explicitly configured text items below." : draft.subtitles && draft.subtitles !== "Off" ? "Subtitles only, as configured below. No additional titles or labels." : "None. Do not add titles, captions or labels.") : "None. Do not add any text, titles, captions, labels, counters, watermarks or placeholder copy. Narration is context only."}
+On-screen text: ${aiText ? aiTextDirection : typographyEnabled ? draft.screenText.trim() || (itemPrompt ? "Only the explicitly configured text items below." : draft.subtitles && draft.subtitles !== "Off" ? "Subtitles only, as configured below. No additional titles or labels." : "None. Do not add titles, captions or labels.") : "None. Do not add any text, titles, captions, labels, counters, watermarks or placeholder copy. Narration is context only."}
 ${
   typographyEnabled &&
-  (draft.screenText.trim() ||
+  (aiText ||
+    draft.screenText.trim() ||
     (draft.subtitles && draft.subtitles !== "Off") ||
     itemPrompt)
     ? `
 TYPOGRAPHY & SUBTITLES
-Quick title / label text: ${draft.screenText.trim() || "No quick title requested; individual text items are specified separately below."}
+Quick title / label text: ${aiText ? "AI selects concise, factual wording under AI TEXT DIRECTION; ignore saved manual title and item choices." : draft.screenText.trim() || "No quick title requested; individual text items are specified separately below."}
 Subtitles: ${draft.subtitles && draft.subtitles !== "Off" ? `${draft.subtitles}. This explicitly requests subtitles in addition to any exact labels above. Use only the supplied narration, preserving words and punctuation; never invent caption copy. If no narration is supplied, omit subtitles. Prefer supplied word timestamps; if only untimed narration exists, estimate readable phrase timing without claiming exact speech synchronization.` : "Global captions off. Narration remains context only, except for any explicitly enabled individual caption item below."}
 Font treatment: ${draft.textFont?.trim() || "System sans-serif with a clear readable hierarchy."}
 Type scale: ${draft.textScale?.trim() || "Balanced hierarchy; size text relative to the output frame."}
 Placement: ${draft.textPlacement?.trim() || "Bottom-center subtitles and subject-adjacent labels, within safe margins."}
 Animation: ${draft.textAnimation?.trim() || "Subtle fade with readable holds."}
-Readability treatment: ${draft.textTreatment?.trim() || "High contrast with a restrained shadow or backing where needed."}
-Text colors: ${draft.textColor?.trim() || "Use the scene palette with clear contrast."}
+Readability treatment: AI chooses a restrained shadow, outline or backing only where needed for contrast.
+Text colors: AI chooses text, emphasis and backing colors from the scene palette with clear readable contrast.
 EXPLICIT TYPE SPECIFICATION (pixels at the specified output resolution)
 Title / label font size: ${draft.titleSize ?? Math.round(height * 0.065)}px; subtitle font size: ${draft.captionSize ?? Math.round(height * 0.04)}px. Scale these proportionally with the output frame, not the browser's device pixel ratio.
 Title placement: ${draft.titlePlacement || "Center"}; subtitle placement: ${draft.captionPlacement || "Bottom center"}. Keep title and subtitle blocks separate and avoid overlap; respect the 10% safe margin.
-Font weight: ${draft.textWeight ?? 600}; alignment: ${draft.textAlign || "center"}; line height: ${draft.textLineHeight ?? 1.2}; letter spacing: ${draft.textTracking ?? 0}px.
-Text fill: ${draft.textFill || "#F5F5F5"}; emphasis / active-word color: ${draft.textAccent || "#36D3DF"}; backing color when a backing treatment is selected: ${draft.textBacking || "#111827"}.
+Appearance: AI chooses font weight, alignment, line height and letter spacing for each text role. Preserve the selected font family. Choose fill, emphasis and backing colors to match the scene and maintain contrast. Saved manual appearance values are not constraints. Individual text items, when explicitly configured, retain their own appearance overrides.
 Text entrance duration: ${draft.textAnimationDuration ?? 0.4} seconds per phrase; maximum subtitle lines: ${draft.captionLines ?? 2}. Keep the entrance brief enough to preserve reading time; if word-level animation is selected, stagger words within this entrance duration rather than repeating a long entrance for every word. Do not stretch or recolor text arbitrarily between beats. Apply exact numeric settings above in preference to general type-scale suggestions.
-${structured ? "These selections describe the intended typography. Preserve exact text for any supported static label." : "Apply these typography settings only to explicitly requested text. Keep labels, titles and subtitles as separate reusable HTML elements; scope CSS to those elements so scene geometry is unaffected. Use local system-font fallbacks and no downloaded fonts. Respect the configured maximum subtitle lines, wrap at phrase boundaries, reserve their screen space, and avoid covering focal subjects. Keep text visible long enough to read; animate phrase containers rather than scattering individual letters unless the selected animation calls for it. Word highlighting requires actual word timestamps; otherwise use phrase highlighting. Never display debug timestamps or placeholder copy."}
+${aiText ? "Apply these typography settings to AI-selected text as well as explicitly enabled subtitles. AI TEXT DIRECTION authorizes concise overlays even when captions are off. For structured output, choose at most one static label from the supplied content; omit unsupported animated text behavior." : ""}
+${structured ? "These selections describe the intended typography. Preserve exact text for any supported static label." : "Apply these typography settings to requested text, including delegated AI text choices when enabled. Keep labels, titles and subtitles as separate reusable HTML elements; scope CSS to those elements so scene geometry is unaffected. Use local system-font fallbacks and no downloaded fonts. Respect the configured maximum subtitle lines, wrap at phrase boundaries, reserve their screen space, and avoid covering focal subjects. Keep text visible long enough to read; animate phrase containers rather than scattering individual letters unless the selected animation calls for it. Word highlighting requires actual word timestamps; otherwise use phrase highlighting. Never display debug timestamps or placeholder copy."}
 ${itemPrompt ? `INDIVIDUAL TEXT ITEMS — each item's settings override global defaults only for that item. Do not apply title/subtitle default placement or size to these items. Use installed font fallbacks. All item values must be derived deterministically from scene time.\n${itemPrompt}` : ""}
 `
     : ""
@@ -686,7 +709,7 @@ Background music (BGM): ${draft.bgm ? "Requested" : "Not requested"}.
 Sound effects (SFX): ${draft.sfx ? "Requested" : "Not requested"}.
 ${audioDirectionPrompt(draft)}
 
-Use the creative direction above within the structured output contract. Approximate unsupported visuals with supported shapes and tracks. The contract has no audio, 3D renderer, custom code, timed captions, or advanced typography. If text is requested, use only wording explicitly requested for display and choose at most one static label. Keep the timeline name separate from on-screen text.
+Use the creative direction above within the structured output contract. Approximate unsupported visuals with supported shapes and tracks. The contract has no audio, 3D renderer, custom code, timed captions, or advanced typography. If text is requested, ${aiText ? "select concise wording from the supplied brief under AI TEXT DIRECTION" : "use only wording explicitly requested for display"} and choose at most one static label. Keep the timeline name separate from on-screen text.
 
 ${existingCode}`.trim();
 
