@@ -1,8 +1,6 @@
 import { useStatusActivity, useStatusNotice } from "./editor-status";
 import { PromptAnimation } from "./PromptAnimation";
 import { PromptAudio } from "./PromptAudio";
-import { restoreAudioDirection } from "../shared/prompt-audio";
-import { restoreTechniques } from "../shared/animation-techniques";
 import { useEffect, useRef, useState } from "react";
 import {
   Clipboard,
@@ -18,7 +16,6 @@ import {
   Wrench,
   Check,
   X,
-  Palette,
   Fingerprint,
   Cat,
   SlidersHorizontal,
@@ -35,11 +32,9 @@ import { PromptTypography } from "./PromptTypography";
 import { PromptMascot } from "./PromptMascot";
 import { PromptTemplateChoice } from "./PromptTemplateChoice";
 import { PromptDirectionStudio } from "./PromptDirectionStudio";
-import { promptTextListSchema } from "../shared/prompt-text";
 import {
   buildCodePrompt,
   buildStructuredSceneBrief,
-  artStyles,
   promptTemplates,
   type PromptDraft,
 } from "../shared/prompt-templates";
@@ -55,6 +50,8 @@ import {
 } from "../shared/code-generate";
 import type { PromptReferences as References } from "../shared/prompt-references";
 import { PromptReferences } from "./PromptReferences";
+import { buildDirectorPrompt } from "../shared/director-prompt";
+import { buildIdentityPrompt } from "../shared/identity-prompt";
 import { bridge, download } from "./bridge";
 
 const storageKey = "framescript.prompt-draft.v1";
@@ -184,7 +181,7 @@ export function PromptTemplates({
     duration: project.settings.duration,
     bgm: false,
     sfx: false,
-    style: "Cinematic, consistent colors, smooth deliberate motion",
+    style: "",
     visuals: "",
     camera: "",
     screenText: "",
@@ -201,10 +198,6 @@ export function PromptTemplates({
       const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null");
       if (!saved || typeof saved !== "object") return defaults;
       const restored = { ...defaults };
-      restored.audio = restoreAudioDirection(saved.audio);
-      restored.animationTechniques = restoreTechniques(
-        saved.animationTechniques,
-      );
       if (["auto", "2d", "2.5d", "3d"].includes(saved.renderingMode))
         restored.renderingMode = saved.renderingMode;
       for (const key of [
@@ -217,48 +210,14 @@ export function PromptTemplates({
         if (typeof saved[key] === "boolean") restored[key] = saved[key];
       for (const key of [
         "script",
+        "selectedDirection",
+        "fullScript",
+        "identityGuide",
         "timedNarration",
-        "style",
         "referenceStyle",
-        "editingStyle",
         "referenceInfluence",
         "referenceNotes",
-        "pacingEnergy",
-        "transitionPreference",
-        "editingNotes",
-        "animationIntensity",
-        "animationEasing",
-        "animationSync",
-        "subtitles",
-        "textPlanning",
-        "textDensity",
-        "textPurpose",
-        "textBehavior",
-        "textFont",
-        "textScale",
-        "textPlacement",
-        "textAnimation",
-        "textTreatment",
-        "textColor",
-        "titlePlacement",
-        "captionPlacement",
-        "textAlign",
-        "textFill",
-        "textAccent",
-        "textBacking",
-        "visuals",
-        "camera",
-        "screenText",
-        "notes",
-        "audience",
         "storyStructure",
-        "mood",
-        "palette",
-        "lighting",
-        "characters",
-        "environment",
-        "motion",
-        "avoid",
         "mascotName",
         "mascotIdentity",
         "mascotRole",
@@ -271,24 +230,6 @@ export function PromptTemplates({
         if (typeof saved[key] === "string") restored[key] = saved[key];
       if (promptTemplates.some((item) => item.id === saved.template))
         restored.template = saved.template;
-      const items = promptTextListSchema.safeParse(saved.textItems);
-      if (items.success) restored.textItems = items.data;
-      for (const [key, min, max] of [
-        ["titleSize", 8, 600],
-        ["captionSize", 8, 300],
-        ["textWeight", 100, 900],
-        ["textLineHeight", 0.8, 2.5],
-        ["textTracking", -5, 20],
-        ["textAnimationDuration", 0.1, 3],
-        ["captionLines", 1, 3],
-      ] as const) {
-        if (
-          typeof saved[key] === "number" &&
-          saved[key] >= min &&
-          saved[key] <= max
-        )
-          restored[key] = saved[key];
-      }
       if (
         typeof saved.duration === "number" &&
         saved.duration >= 0.1 &&
@@ -330,15 +271,12 @@ export function PromptTemplates({
       const saved = localStorage.getItem("framescript.prompt-tab");
       return [
         "brief",
-        "look",
         "reference",
         "animation",
-        "pacing",
         "audio",
         "identity",
         "mascot",
         "typography",
-        "details",
         "output",
       ].includes(saved ?? "")
         ? saved!
@@ -471,15 +409,19 @@ export function PromptTemplates({
       "Timed voiceover added. Cue times follow the audio’s trim and position in this scene.",
     );
   };
+  const hasDirection = !!draft.selectedDirection?.trim();
+  const implementationDraft = draft;
   let request: GeneratePackage | undefined;
   let prompt = "",
     promptError = "";
   try {
+    if (output === "structured" && ["3d", "2.5d"].includes(draft.renderingMode ?? ""))
+      throw Error("Structured output supports native 2D shapes. Choose 2D/automatic rendering or a code output.");
     const { width, height, fps } = project.settings;
     const source = includeCode ? project : undefined;
     if (output === "structured") {
       const input = generateInputSchema.parse({
-        brief: buildStructuredSceneBrief(draft, width, height, source),
+        brief: buildStructuredSceneBrief(implementationDraft, width, height, source),
         width,
         height,
         fps,
@@ -494,7 +436,7 @@ export function PromptTemplates({
     } else {
       const input = codeGenerateInputSchema.parse({
         format: output,
-        prompt: buildCodePrompt({ ...draft, format: output }, width, height, source),
+        prompt: buildCodePrompt({ ...implementationDraft, format: output }, width, height, source),
         references,
       });
       request = { kind: "code", input };
@@ -515,6 +457,32 @@ export function PromptTemplates({
     }
   };
 
+  const directorPrompt = buildDirectorPrompt(
+    draft, project.settings.width, project.settings.height, output,
+    includeCode ? project : undefined,
+  );
+  const copyDirector = () => run(async () => {
+    const text = references.length
+      ? `${directorPrompt}\n\nATTACHED REFERENCES\nAttach your selected reference files directly to this AI conversation, or attach the optional context ZIP. These references are not embedded in this copied text.`
+      : directorPrompt;
+    try {
+      await navigator.clipboard.writeText(text);
+      setUncopiedPrompt("");
+      notify("Director prompt copied. No ZIP required; attach reference files separately if needed.");
+    } catch {
+      setUncopiedPrompt(text);
+      notify("Clipboard unavailable. Copy the exported director prompt below.");
+    }
+  });
+  const exportDirector = () => run(async () => {
+    setUncopiedPrompt("");
+    const session = useStudio.getState().session;
+    const input = codeGenerateInputSchema.parse({ format: "document", prompt: directorPrompt, references });
+    const result = await bridge.call("codeGeneratePackage", input);
+    if (useStudio.getState().session !== session) throw Error("The project changed. Export a fresh director prompt.");
+    download(result);
+    notify("Optional director context ZIP download started.");
+  });
   const copyAndDownload = (request: GeneratePackage) =>
     run(async () => {
       notify("Ready");
@@ -610,15 +578,12 @@ export function PromptTemplates({
       >
         {[
           ["brief", "Brief"],
-          ["look", "Visuals"],
           ["reference", "Reference look"],
           ["animation", "Animation"],
-          ["pacing", "Editing & pacing"],
           ["audio", "Audio"],
           ["identity", "Identity"],
           ["mascot", "Mascot"],
           ["typography", "Typography"],
-          ["details", "Details"],
           ["output", "Output"],
         ].map(([id, label]) => (
           <button
@@ -634,15 +599,12 @@ export function PromptTemplates({
             onKeyDown={(event) => {
               const ids = [
                 "brief",
-                "look",
                 "reference",
                 "animation",
-                "pacing",
                 "audio",
                 "identity",
                 "mascot",
                 "typography",
-                "details",
                 "output",
               ];
               const index = ids.indexOf(id);
@@ -665,14 +627,10 @@ export function PromptTemplates({
           >
             {id === "brief" ? (
               <Clipboard size={17} />
-            ) : id === "look" ? (
-              <Palette size={17} />
             ) : id === "reference" ? (
               <Sparkles size={17} />
             ) : id === "animation" ? (
               <Orbit size={17} />
-            ) : id === "pacing" ? (
-              <Timer size={17} />
             ) : id === "audio" ? (
               <Music size={17} />
             ) : id === "identity" ? (
@@ -681,8 +639,6 @@ export function PromptTemplates({
               <Cat size={17} />
             ) : id === "typography" ? (
               <Type size={17} />
-            ) : id === "details" ? (
-              <SlidersHorizontal size={17} />
             ) : (
               <Code2 size={17} />
             )}
@@ -752,15 +708,20 @@ export function PromptTemplates({
                 {project.settings.width} × {project.settings.height}
               </span>
             </div>
-            <label className="field">
-              <span>Audience & goal</span>
-              <input
-                aria-label="Audience & goal"
-                placeholder="Who is this for, and what should they understand?"
-                value={draft.audience ?? ""}
-                onChange={(e) => update("audience", e.target.value)}
-              />
-            </label>
+            <details className="brief-script-context prompt-options">
+              <summary>Full video script <small>{draft.fullScript?.trim() ? "Script added · optional context" : "Optional context"}</small></summary>
+              <div className="prompt-options-content">
+              <label className="field" htmlFor="prompt-full-script">
+                <span>Full video script</span>
+                <textarea id="prompt-full-script" rows={8} maxLength={100000}
+                  aria-describedby="prompt-full-script-help"
+                  value={draft.fullScript ?? ""}
+                  onChange={(event) => update("fullScript", event.target.value)}
+                  placeholder="Paste the whole video script so the AI understands the complete story…" />
+              </label>
+              <p id="prompt-full-script-help" className="type-hint">Used by the director and identity prompts for whole-video context. Only the scene narration below is animated; its timestamps control this scene. The AI infers the intended audience and takeaway from your script.</p>
+              </div>
+            </details>
             <div className="prompt-timing">
               <label className="field">
                 <span>Duration (seconds)</span>
@@ -841,7 +802,7 @@ export function PromptTemplates({
               ))}
             </div>
             <div className="prompt-script-heading">
-              <label htmlFor="prompt-script-input">Script / narration</label>
+              <label htmlFor="prompt-script-input">Scene narration / timestamps</label>
             <div className="prompt-timed-toolbar prompt-voiceover-action">
               {timedVoices.length > 1 && (
                 <select
@@ -874,13 +835,14 @@ export function PromptTemplates({
 
               <textarea
                 id="prompt-script-input"
-                aria-label="Prompt script"
+                aria-label="Scene narration / timestamps"
+                aria-describedby="prompt-scene-script-help"
                 onPaste={(event) => {
                   if (!event.clipboardData.getData("text/plain").trim() || !voice) return;
                   update("duration", voice.length);
                   setDurationInput(null);
                 }}
-                rows={3}
+                rows={8}
                 placeholder="Paste your script, SRT, VTT or timestamped narration…"
                 maxLength={100000}
                 value={draft.timedNarration || draft.script}
@@ -894,7 +856,7 @@ export function PromptTemplates({
 
                 }}
               />
-              <small className="prompt-input-format">
+              <small id="prompt-scene-script-help" className="prompt-input-format">
                 {draft.timedNarration
                   ? `${parseNarrationInput(draft.timedNarration).format} · timing detected`
                   : "Plain text · timing inferred"}
@@ -916,55 +878,6 @@ export function PromptTemplates({
         <div
           className="prompt-form-card prompt-tab-panel"
           role="tabpanel"
-          id="prompt-panel-look"
-          aria-labelledby="prompt-tab-look"
-          hidden={activeSection !== "look"}
-          data-prompt-section="look"
-          tabIndex={-1}
-        >
-          <div className="prompt-card-heading">
-            <strong>Visual subjects & art direction</strong>
-            <span>Optional</span>
-          </div>
-          {(
-            [
-              ["visuals", "Visual subjects / action"],
-              ["style", "Visual style"],
-            ] as const
-          ).map(([key, label]) => (
-            <label className="field" key={key}>
-              <span>{label}</span>
-              <textarea
-                aria-label={label}
-                rows={2}
-                placeholder={
-                  key === "visuals"
-                    ? "What should we see? Subjects, action, transitions…"
-                    : "Palette, lighting, illustration style…"
-                }
-                value={draft[key]}
-                onChange={(event) => update(key, event.target.value)}
-              />
-              {key === "visuals" && suggestions("visuals")}
-            </label>
-          ))}
-          <div className="prompt-style-chips" aria-label="Style suggestions">
-            {artStyles.map(([style, description]) => (
-              <button
-                key={style}
-                aria-label={`Use ${style.toLowerCase()} style`}
-                title={description}
-                aria-pressed={draft.style === `${style}: ${description}`}
-                onClick={() => update("style", `${style}: ${description}`)}
-              >
-                {style}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div
-          className="prompt-form-card prompt-tab-panel"
-          role="tabpanel"
           id="prompt-panel-reference"
           aria-labelledby="prompt-tab-reference"
           hidden={activeSection !== "reference"}
@@ -974,15 +887,6 @@ export function PromptTemplates({
             draft={draft}
             update={update}
           />
-        </div>
-        <div
-          className="prompt-form-card prompt-tab-panel"
-          role="tabpanel"
-          id="prompt-panel-pacing"
-          aria-labelledby="prompt-tab-pacing"
-          hidden={activeSection !== "pacing"}
-        >
-          <PromptDirectionStudio kind="pacing" draft={draft} update={update} />
         </div>
         <div
           className="prompt-form-card prompt-design-guide prompt-tab-panel"
@@ -1005,60 +909,32 @@ export function PromptTemplates({
             />
             Lock visual identity across shots
           </label>
-          <p className="type-hint">
-            Define recurring details once. Copy this guide with every scene to
-            keep the same visual language.
-          </p>
-          {(
-            [
-              [
-                "palette",
-                "Color palette",
-                "e.g. Midnight #101827, ivory #F5F0E8, coral #FF7861",
-              ],
-              [
-                "characters",
-                "Character / subject identity",
-                "Silhouette, proportions, clothing, materials and signature details…",
-              ],
-              [
-                "environment",
-                "World & environment",
-                "Location, recurring props, scale and background treatment…",
-              ],
-              [
-                "lighting",
-                "Lighting",
-                "e.g. Soft key light from upper left, warm highlights, gentle shadows",
-              ],
-              [
-                "mood",
-                "Mood & atmosphere",
-                "e.g. Curious, optimistic, calm and spacious",
-              ],
-              [
-                "motion",
-                "Motion & transitions",
-                "e.g. Slow anticipation, spring-free easing, match-cut transitions",
-              ],
-              [
-                "avoid",
-                "Avoid / negative direction",
-                "Unwanted colors, effects, objects or style changes…",
-              ],
-            ] as const
-          ).map(([key, label, placeholder]) => (
-            <label className="field" key={key}>
-              <span>{label}</span>
-              <textarea
-                aria-label={label}
-                rows={2}
-                placeholder={placeholder}
-                value={draft[key] ?? ""}
-                onChange={(e) => update(key, e.target.value)}
-              />
-            </label>
-          ))}
+          <p className="type-hint">Generate a reusable identity from Reference look and your script, then paste the guide below. The lock preserves its invariants across shots.</p>
+          <div className="director-export-action">
+            <button className="director-export-button" disabled={busy} onClick={() => void run(async () => {
+              const text = buildIdentityPrompt(draft, output);
+              try {
+                await navigator.clipboard.writeText(text);
+                notify("Identity prompt copied. Attach identity reference images in your external AI conversation if needed.");
+              } catch {
+                setUncopiedPrompt(text);
+                selectSection("output");
+                notify("Clipboard unavailable. Copy the exported identity prompt in Output.");
+              }
+            })}>
+              <Fingerprint size={18} aria-hidden="true" /> Copy Identity Prompt
+            </button>
+            <small>Review three options externally, choose or refine one, then paste its detailed final guide here.</small>
+          </div>
+          <label className="field">
+            Video theme &amp; visual identity guide
+            <textarea rows={12} maxLength={30000} value={draft.identityGuide ?? ""}
+              onChange={(event) => update("identityGuide", event.target.value)}
+              placeholder="Paste the selected whole-video theme and its detailed visual instructions…" />
+          </label>
+          <details><summary>Preview identity prompt</summary>
+            <textarea aria-label="Identity prompt" rows={10} value={buildIdentityPrompt(draft, output)} readOnly />
+          </details>
         </div>
         <div
           className="prompt-form-card prompt-tab-panel"
@@ -1079,8 +955,6 @@ export function PromptTemplates({
           <PromptTypography
             draft={draft}
             update={update}
-            width={project.settings.width}
-            height={project.settings.height}
           />
         </div>
         <div
@@ -1098,48 +972,48 @@ export function PromptTemplates({
         <div
           className="prompt-tab-panel"
           role="tabpanel"
-          id="prompt-panel-details"
-          aria-labelledby="prompt-tab-details"
-          hidden={activeSection !== "details"}
-        >
-          <details
-            open
-            className="prompt-options"
-            data-prompt-section="details"
-            tabIndex={-1}
-          >
-            <summary>
-              Fine-tune the animation{" "}
-              <small>Camera, text & extra direction</small>
-            </summary>
-            <div className="prompt-options-content">
-              {(
-                [
-                  ["camera", "Camera / framing"],
-                  ["notes", "Additional requirements"],
-                ] as const
-              ).map(([key, label]) => (
-                <label className="field" key={key}>
-                  <span>{label}</span>
-                  <textarea
-                    aria-label={label}
-                    rows={2}
-                    value={draft[key]}
-                    onChange={(event) => update(key, event.target.value)}
-                  />
-                  {suggestions(key)}
-                </label>
-              ))}
-            </div>
-          </details>
-        </div>
-        <div
-          className="prompt-tab-panel"
-          role="tabpanel"
           id="prompt-panel-output"
           aria-labelledby="prompt-tab-output"
           hidden={activeSection !== "output"}
         >
+          <details className="prompt-options" open>
+            <summary><span className="output-section-title"><Clapperboard size={18} aria-hidden="true" /> Explore a direction</span><small>Optional · external AI</small></summary>
+            <div className="prompt-options-content">
+              <ol className="director-workflow" aria-label="Creative direction workflow">
+                <li><strong>Copy &amp; attach</strong><span>Send the director prompt and context ZIP to your AI.</span></li>
+                <li><strong>Choose &amp; refine</strong><span>Review three approaches and develop your preferred option.</span></li>
+                <li><strong>Bring it back</strong><span>Paste only the final direction below.</span></li>
+              </ol>
+              <p className="type-hint">Scene narration, timestamps and optional full-script context are included from Brief.</p>
+              <div className="director-export-action director-transfer">
+                <div className="director-transfer-buttons">
+                <button className="director-export-button" disabled={busy} aria-busy={busy}
+                  onClick={() => void copyDirector()}>
+                  <Clapperboard size={18} aria-hidden="true" />
+                  Copy Director Prompt
+                </button>
+                <button className="director-context-button" disabled={busy} onClick={() => void exportDirector()}>
+                  <Package size={15} aria-hidden="true" /> Download context ZIP (optional)
+                </button>
+                </div>
+                <small>Paste the prompt into your AI. Attach references directly or use the optional ZIP.</small>
+              </div>
+              <label className="field">
+                <span>Selected creative direction <small>{hasDirection ? "In use" : "Optional"}</small></span>
+                <textarea id="selected-creative-direction" aria-describedby="direction-draft-help" rows={10} maxLength={30000}
+                  value={draft.selectedDirection ?? ""}
+                  onChange={(event) => update("selectedDirection", event.target.value)}
+                  placeholder="Paste the final refined direction here, rather than all the alternatives." />
+              </label>
+              <p id="direction-draft-help" className="direction-draft-notice" role="status">
+                {hasDirection ? "This direction is automatically included in the final prompt and ZIP. Edits apply immediately."
+                  : "Paste your selected direction to use it automatically, or leave this empty to generate directly."}
+              </p>
+              <details><summary>Preview director prompt</summary>
+                <textarea aria-label="Director prompt" rows={12} value={directorPrompt} readOnly />
+              </details>
+            </div>
+          </details>
           <details
             className="prompt-options"
             data-prompt-section="output"
@@ -1147,7 +1021,7 @@ export function PromptTemplates({
             open
           >
             <summary>
-              Output settings <small>{outputLabels[output]}</small>
+              <span className="output-section-title"><Package size={18} aria-hidden="true" /> Prepare your package</span><small>{outputLabels[output]}</small>
             </summary>
             <div className="prompt-options-content">
               <label className="field">
@@ -1185,6 +1059,11 @@ export function PromptTemplates({
                 run={run}
                 onChange={setReferences}
               />
+
+            </div>
+          </details>
+          <section className="output-import-section" aria-labelledby="output-import-heading">
+            <div><h3 id="output-import-heading">Import your generated result</h3><p>After your AI returns animation code, bring it into the editor for preview.</p></div>
               <button
                 className="prompt-import-code-button"
                 disabled={busy || (master && output !== "structured")}
@@ -1201,8 +1080,7 @@ export function PromptTemplates({
                     ? "Paste full HTML document"
                     : "Open code editor"}
               </button>
-            </div>
-          </details>
+          </section>
           <p className="muted">
             Draft saved on this device. No AI connection required. Text stays
             off-screen unless you specify it.

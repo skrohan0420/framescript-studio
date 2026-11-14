@@ -1,33 +1,7 @@
 import { useStatusNotice } from "./editor-status";
-import {
-  Check,
-  Move,
-  ListOrdered,
-  Waves,
-  Route,
-  PencilLine,
-  Layers,
-  Video,
-  Boxes,
-} from "lucide-react";
-import {
-  animationTechniques,
-  type AnimationDirection,
-  type TechniqueSelection,
-} from "../shared/animation-techniques";
+import type { AnimationDirection } from "../shared/animation-techniques";
 import { threeStarter } from "../shared/three-runtime";
-import { PromptTemplateChoice } from "./PromptTemplateChoice";
 import type { PromptDraft } from "../shared/prompt-templates";
-const techniqueIcons = {
-  transform: Move,
-  stagger: ListOrdered,
-  spring: Waves,
-  path: Route,
-  reveal: PencilLine,
-  parallax: Layers,
-  camera: Video,
-  assembly: Boxes,
-};
 
 export function PromptAnimation({
   draft,
@@ -37,18 +11,12 @@ export function PromptAnimation({
   update: <K extends keyof PromptDraft>(key: K, value: PromptDraft[K]) => void;
 }) {
   const notify = useStatusNotice();
-  const selected = draft.animationTechniques ?? [];
-  const change = (id: string, patch: Partial<TechniqueSelection>) =>
-    update(
-      "animationTechniques",
-      selected.map((item) => (item.id === id ? { ...item, ...patch } : item)),
-    );
   return (
     <>
       <div className="prompt-section-caption">
-        <strong>Animation techniques</strong>
+        <strong>Rendering mode</strong>
         <p>
-          Choose how subjects move. Combine techniques and fine-tune each one.
+          Choose 2D, 2.5D or 3D. The director plans motion techniques, camera behavior and timing.
         </p>
       </div>
       <div className="prompt-form-card animation-rendering">
@@ -73,7 +41,7 @@ export function PromptAnimation({
         <p className="type-hint">
           {draft.renderingMode === "3d"
             ? "Real 3D meshes, lights and cameras. Three.js is included locally for preview and export. Start with procedural geometry; imported models and addons are not included yet."
-            : "Rendering controls the scene construction. Animation choices below work across 2D and 3D."}
+            : "Rendering controls scene construction. The director chooses suitable movement within this mode."}
         </p>
         {draft.renderingMode === "3d" && (
           <>
@@ -97,169 +65,6 @@ export function PromptAnimation({
           </>
         )}
       </div>
-      <div className="prompt-template-grid animation-technique-grid">
-        {animationTechniques.map((item) => (
-          <PromptTemplateChoice
-            key={item.id}
-            id={item.id}
-            name={item.name}
-            actionLabel={item.name}
-            details={item}
-            selected={selected.some((s) => s.id === item.id)}
-            onSelect={() =>
-              update(
-                "animationTechniques",
-                selected.some((s) => s.id === item.id)
-                  ? selected.filter((s) => s.id !== item.id)
-                  : [...selected, { id: item.id, variant: item.variants[0] }],
-              )
-            }
-          >
-            {(() => {
-              const Icon = techniqueIcons[item.id];
-              return <Icon size={17} />;
-            })()}
-            <span>{item.name}</span>
-            {selected.some((s) => s.id === item.id) && <Check size={13} />}
-          </PromptTemplateChoice>
-        ))}
-      </div>
-      <p className="type-hint">
-        Hover or focus a technique for details and an example. Select it to
-        customize.
-      </p>
-      {selected.length > 0 && (
-        <div className="prompt-form-card animation-shared">
-          <strong>Shared motion settings</strong>
-          {(
-            [
-              [
-                "animationIntensity",
-                "Motion intensity",
-                ["Subtle", "Moderate", "Expressive"],
-              ],
-              [
-                "animationEasing",
-                "Easing",
-                ["Smooth ease in/out", "Linear", "Ease out", "Ease in"],
-              ],
-              [
-                "animationSync",
-                "Synchronization",
-                [
-                  "Follow narration cues",
-                  "Continuous motion",
-                  "Emphasize key reveals",
-                ],
-              ],
-            ] as const
-          ).map(([key, label, options]) => (
-            <label className="field" key={key}>
-              <span>{label}</span>
-              <select
-                aria-label={label}
-                value={
-                  draft[key] ??
-                  (key === "animationIntensity" ? "Moderate" : options[0])
-                }
-                onChange={(e) => update(key, e.target.value)}
-              >
-                {options.map((option) => (
-                  <option key={option}>{option}</option>
-                ))}
-              </select>
-            </label>
-          ))}
-        </div>
-      )}
-      {selected.map((item) => {
-        const technique = animationTechniques.find((t) => t.id === item.id);
-        if (!technique) return null;
-        return (
-          <fieldset className="prompt-form-card animation-config" key={item.id}>
-            <legend>{technique.name}</legend>
-            <p className="type-hint">
-              {technique.detail} Example: {technique.example}
-            </p>
-            <label className="field">
-              <span>{technique.name} variation</span>
-              <select
-                aria-label={`${technique.name} variation`}
-                value={item.variant ?? technique.variants[0]}
-                onChange={(e) => change(item.id, { variant: e.target.value })}
-              >
-                {technique.variants.map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>{technique.control}</span>
-              <input
-                value={item.amount ?? ""}
-                placeholder={technique.placeholder}
-                onChange={(e) => change(item.id, { amount: e.target.value })}
-              />
-            </label>
-            <div className="animation-timing">
-              <label className="field">
-                <span>{technique.name} start (seconds)</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={draft.duration}
-                  step={0.1}
-                  value={item.start ?? 0}
-                  onChange={(e) =>
-                    change(item.id, {
-                      start: Math.max(
-                        0,
-                        Math.min(draft.duration, Number(e.target.value)),
-                      ),
-                    })
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{technique.name} duration (seconds)</span>
-                <input
-                  type="number"
-                  min={0.05}
-                  max={draft.duration}
-                  step={0.1}
-                  placeholder="Remaining scene"
-                  value={item.duration ?? ""}
-                  onChange={(e) =>
-                    change(item.id, {
-                      duration:
-                        e.target.value === ""
-                          ? undefined
-                          : Math.max(
-                              0.05,
-                              Math.min(draft.duration, Number(e.target.value)),
-                            ),
-                    })
-                  }
-                />
-              </label>
-            </div>
-            <button
-              type="button"
-              onClick={() =>
-                update(
-                  "animationTechniques",
-                  selected.filter((s) => s.id !== item.id),
-                )
-              }
-            >
-              Remove {technique.name.toLowerCase()}
-            </button>
-          </fieldset>
-        );
-      })}
-      <p className="type-hint">
-        These choices guide the scene’s movement and timing.
-      </p>
     </>
   );
 }

@@ -1,4 +1,5 @@
 import { useStudio, useProjectState } from "./store";
+import { useState } from "react";
 import { Field } from "./components";
 import {
   activateScene,
@@ -26,6 +27,18 @@ export function ManualTimelines({
   const state = useProjectState(),
     p = state.project;
   const workflow = p.workflow ?? initialWorkflow(p);
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
+  const rename = (id: string, value: string) => {
+    const name = value.trim();
+    const store = useStudio.getState();
+    const latest = store.project.workflow;
+    const scene = latest?.scenes.find((item) => item.id === id);
+    if (name && scene && !scene.locked && name !== scene.title) {
+      store.change({ workflow: { ...latest!, scenes: latest!.scenes.map((item) =>
+        item.id === id ? { ...item, title: name } : item) } }, "Rename timeline");
+    }
+    setRenaming(null);
+  };
   const current = workflow.scenes.find(
     (item) => item.id === workflow.selectedId,
   )!;
@@ -58,14 +71,39 @@ export function ManualTimelines({
     <div className="manual-timelines">
       <div className="timeline-tabs" role="tablist" aria-label="Timelines">
         {workflow.scenes.map((item, index) => (
-          <button
+          renaming?.id === item.id ? <input
+            key={item.id}
+            className="timeline-name-input"
+            aria-label="Timeline name"
+            autoFocus
+            maxLength={200}
+            value={renaming.value}
+            onFocus={(event) => event.currentTarget.select()}
+            onChange={(event) => setRenaming({ id: item.id, value: event.target.value })}
+            onBlur={(event) => rename(item.id, event.currentTarget.value)}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.currentTarget.value = item.title;
+                event.currentTarget.blur();
+              }
+            }}
+          /> : <button
             key={item.id}
             role="tab"
             aria-selected={workflow.selectedId === item.id}
             className={workflow.selectedId === item.id ? "active" : ""}
-            title={item.title}
+            title={`${item.title}${item.locked ? " · Locked" : " · Double-click or press F2 to rename"}`}
+            onDoubleClick={() => !item.locked && setRenaming({ id: item.id, value: item.title })}
             onClick={() => select({ ...p, workflow }, item.id)}
             onKeyDown={(event) => {
+              if (event.key === "F2" && !item.locked) {
+                event.preventDefault();
+                setRenaming({ id: item.id, value: item.title });
+                return;
+              }
               let next = index;
               if (event.key === "ArrowRight")
                 next = (index + 1) % workflow.scenes.length;

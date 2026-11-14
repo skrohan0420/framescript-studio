@@ -3378,3 +3378,9 @@ button.audio-cut-deleted:hover { background-color: #e65d6e55; }
 .save-status-spinner { animation: save-status-spin 1s linear infinite; }
 @keyframes save-status-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .save-status-spinner { animation: none; } }
+.director-export-action { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; padding-block: 8px; }
+.director-export-action .director-export-button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 40px; padding: 10px 16px; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-wash); color: var(--accent); font-weight: 600; cursor: pointer; }
+.director-export-action .director-export-button:hover:not(:disabled) { background: var(--accent); color: var(--base); }
+.director-export-action .director-export-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.director-export-action .director-export-button:disabled { opacity: .5; cursor: wait; }
+.director-export-action > small { color: var(--secondary); }

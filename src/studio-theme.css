@@ -261,3 +261,135 @@ button.audio-cut-deleted { color: var(--error); border-color: var(--error); back
   color: color-mix(in srgb, var(--secondary) 85%, var(--accent) 15%);
   box-shadow: none;
 }
+
+.brief-script-context { padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--subtle-border); }
+.brief-script-context .field > span { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.brief-script-context .field > span small { color: var(--secondary); font-weight: 400; }
+#prompt-panel-brief textarea { min-height: 170px; font-size: 13px; line-height: 1.65; padding: 12px; resize: vertical; }
+#prompt-panel-brief .type-hint, #prompt-panel-brief .prompt-input-format, #prompt-panel-brief .prompt-narration-source { font-size: 12px; line-height: 1.6; color: var(--secondary); }
+#prompt-panel-brief .prompt-timing button { min-width: 40px; min-height: 40px; }
+#prompt-panel-brief .field input { min-height: 40px; font-size: 13px; }
+/* Shared navigation selection: filled accent surface, clear outline, no inset underline. */
+:is(.prompt-section-nav, .workflow-tabs, .editor-tabs, .right-tabs, .library-tabs, .media-filter-tabs, .timeline-tabs) button,
+.settings-nav [role=tab] {
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+:is(.prompt-section-nav, .workflow-tabs, .editor-tabs, .right-tabs, .library-tabs, .media-filter-tabs, .timeline-tabs) button:is(.active, [aria-selected=true]),
+.settings-nav [role=tab][aria-selected=true] {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 13%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  box-shadow: none;
+  font-weight: 600;
+}
+:is(.prompt-section-nav, .workflow-tabs, .editor-tabs, .right-tabs, .library-tabs, .media-filter-tabs, .timeline-tabs) button:hover:not(:disabled):not(.active):not([aria-selected=true]),
+.settings-nav [role=tab]:hover:not([aria-selected=true]) {
+  color: var(--text);
+  background: var(--raised);
+}
+:is(.prompt-section-nav, .workflow-tabs, .editor-tabs, .right-tabs, .library-tabs, .media-filter-tabs, .timeline-tabs) button:focus-visible,
+.settings-nav [role=tab]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.prompt-section-nav {
+  gap: 6px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--subtle-border);
+}
+.prompt-section-nav button {
+  min-height: 36px;
+  padding: 8px 12px;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--secondary);
+  justify-content: center;
+}
+.prompt-section-nav button svg { width: 15px; height: 15px; }
+.prompt-section-nav button span { font-size: 12px; }
+@media (max-width: 650px) {
+  .prompt-section-nav { gap: 4px; padding: 8px; }
+  .prompt-section-nav button { padding: 7px 9px; min-height: 34px; gap: 6px; }
+  .prompt-section-nav button span { font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.prompt-section-nav, .workflow-tabs, .editor-tabs, .right-tabs, .library-tabs, .media-filter-tabs, .timeline-tabs) button,
+  .settings-nav [role=tab] { transition: none; }
+}
+
+/* Keep the timeline playhead clear over waveforms and selected clips. */
+.timeline-cursor::after {
+  left: 5px;
+  width: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--surface);
+}
+.timeline-cursor::before {
+  width: 12px;
+  height: 12px;
+  left: 0;
+  top: -10px;
+  background: var(--accent);
+}
+
+/* Output: clear package, direction and import groups. */
+#prompt-panel-output { gap: 18px; }
+#prompt-panel-output > .prompt-options { border-radius: 12px; border: 1px solid var(--subtle-border); background: var(--surface); overflow: hidden; }
+#prompt-panel-output > .prompt-options > summary { padding: 16px 18px; min-height: 56px; font-size: 13px; }
+#prompt-panel-output > .prompt-options[open] > summary { border-bottom: 1px solid var(--subtle-border); }
+.output-section-title { display: inline-flex; gap: 10px; align-items: center; font-weight: 600; }
+#prompt-panel-output .prompt-options-content { padding: 18px; gap: 14px; }
+#prompt-panel-output p { margin: 0; font-size: 12px; line-height: 1.65; color: var(--secondary); }
+#prompt-panel-output .field { font-size: 12px; gap: 8px; }
+#prompt-panel-output select { min-height: 42px; font-size: 13px; }
+#prompt-panel-output input[type=file] { padding: 10px; border-style: dashed; background: var(--editor); }
+#prompt-panel-output input[type=file]::file-selector-button { padding: 8px 12px; margin-right: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--raised); color: var(--text); cursor: pointer; }
+.director-workflow { list-style: none; counter-reset: director-step; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 0; padding: 0; }
+.director-workflow li { counter-increment: director-step; display: grid; grid-template-columns: 26px 1fr; align-content: start; gap: 5px 9px; padding: 12px; border: 1px solid var(--subtle-border); border-radius: 9px; background: var(--editor); }
+.director-workflow li::before { content: counter(director-step); grid-row: span 2; display: grid; place-items: center; width: 25px; height: 25px; border-radius: 50%; background: var(--accent-wash); color: var(--accent); font-size: 11px; font-weight: 600; }
+.director-workflow strong { font-size: 12px; }
+.director-workflow span { font-size: 12px; line-height: 1.55; color: var(--secondary); }
+#selected-creative-direction { min-height: 210px; font-size: 13px; line-height: 1.65; padding: 12px; resize: vertical; }
+#prompt-panel-output .field > span { display: flex; align-items: center; gap: 8px; }
+#prompt-panel-output .field > span small { border-radius: 4px; padding: 2px 6px; background: var(--raised); color: var(--secondary); font-size: 10px; }
+#prompt-panel-output .direction-draft-notice { padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--accent-wash); border-radius: 0 6px 6px 0; }
+.output-import-section { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 18px; border: 1px solid var(--subtle-border); border-radius: 12px; }
+.output-import-section h3 { font-size: 13px; margin: 0 0 5px; }
+.output-import-section .prompt-import-code-button { min-height: 40px; padding: 9px 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--raised); color: var(--text); }
+@media(max-width:650px) { .director-workflow { grid-template-columns: 1fr; } #prompt-panel-output .prompt-options-content { padding: 14px; } }
+
+/* Legible disclosure indicators, scoped to their own summary. */
+.prompt-options > summary::before,
+.prompt-options[open] > summary::before {
+  content: "";
+  display: block;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  justify-self: center;
+  width: 9px;
+  height: 9px;
+  margin: 0 8px;
+  border-right: 2px solid var(--secondary);
+  border-bottom: 2px solid var(--secondary);
+  transform: rotate(-45deg);
+  transition: transform .15s ease;
+}
+.prompt-options[open] > summary::before { transform: rotate(45deg); }
+.prompt-options > summary:hover::before { border-color: var(--text); }
+.prompt-options > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: 8px; }
+@media(prefers-reduced-motion: reduce) { .prompt-options > summary::before { transition: none; } }
+
+.director-transfer { align-items: stretch; gap: 12px; padding: 16px; border: 1px solid var(--subtle-border); border-radius: 10px; background: var(--editor); }
+.director-transfer-buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.director-transfer-buttons .director-export-button { min-height: 42px; padding: 10px 16px; }
+.director-transfer-buttons .director-context-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--secondary); font-size: 12px; }
+.director-transfer-buttons .director-context-button:hover:not(:disabled) { background: var(--raised); color: var(--text); border-color: var(--secondary); }
+.director-transfer-buttons .director-context-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.director-transfer-buttons .director-context-button:disabled { opacity: .5; }
+.director-transfer > small { font-size: 12px; line-height: 1.6; }
+@media(max-width:500px) { .director-transfer-buttons > button { width: 100%; } }
+
+.timeline-tabs .timeline-name-input { width: 180px; min-width: 100px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--accent); border-radius: 6px; font-size: 12px; background: var(--editor); color: var(--text); }

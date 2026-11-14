@@ -1,3 +1,15 @@
+# Creative Direction final-package wiring — November 14, 2026
+
+Connected explicit selected-direction approval to final code/structured prompt and ZIP generation, with input-change review gates. Verified actual director, code and structured ZIP contents, references, preview equality and approval invalidation in a browser test. Build and 29 focused unit tests passed. Scene-owned persistence and continuation integration remain pending; see [VERIFICATION.md](VERIFICATION.md) and the [feature tracker](docs/CREATIVE_DIRECTION_PROGRESS.md).
+
+# Creative Direction first step — November 14, 2026
+
+Added an optional director prompt/context export and preview in Output, plus an editable browser-local direction draft. The director requests three storytelling approaches and a refined specification after selection, with timing and output capability constraints. Approval, scene-specific storage and final coding-prompt integration remain pending; the UI labels the pasted direction as draft only. TypeScript and both focused director-prompt tests passed. Browser delivery has not yet been checked. See the [feature tracker](docs/CREATIVE_DIRECTION_PROGRESS.md).
+
+# Creative Direction documentation — November 14, 2026
+
+Documented the optional director-prompt, external refinement, paste-back, approval, and implementation-export workflow on `codex/creative-direction`. Reference look remains user-controlled. See the [feature design](docs/CREATIVE_DIRECTION.md) and [progress tracker](docs/CREATIVE_DIRECTION_PROGRESS.md) for proposed behavior, open decisions, and acceptance criteria. Documentation only; feature implementation has not started.
+
 # More appearance palettes — November 13, 2026
 
 Expanded Settings → Appearance to 15 palettes with eight muted additions: Plum / Smoke, Burgundy / Ash, Forest / Sage, Slate / Ice, Copper / Ink, Espresso / Cream, Ocean / Fog and Black / White. All support dark/light modes, immediate preview and saved selection. Build, 30-combination contrast checks and three production appearance/settings browser cases passed; see [VERIFICATION.md](VERIFICATION.md).

@@ -68,12 +68,12 @@ it("restores old drafts and recovers invalid fields without losing valid choices
   );
 });
 
-it("includes the selected direction in coded and structured prompts and excludes disabled audio", () => {
+it("includes audio direction in coded prompts and excludes disabled audio", () => {
   const audio = {
     ...audioPresets[2].audio,
     notes: "One soft impact when the galaxy appears.",
   };
-  for (const build of [buildCodePrompt, buildStructuredSceneBrief]) {
+  for (const build of [buildCodePrompt]) {
     const prompt = build({ ...draft, bgm: true, sfx: true, audio }, 1920, 1080);
     for (const text of [
       "Music style: Cinematic",
@@ -108,4 +108,10 @@ it("includes the selected direction in coded and structured prompts and excludes
     expect(silent).not.toContain("SOUNDTRACK DIRECTION");
     expect(silent).not.toContain(audio.notes);
   }
+});
+
+it("does not request unsupported audio in structured prompts", () => {
+  const prompt = buildStructuredSceneBrief({ ...draft, bgm: true, sfx: true, audio: audioPresets[2].audio }, 1920, 1080);
+  expect(prompt).toContain("Audio: Unsupported in structured output");
+  expect(prompt).not.toContain("Music style: Cinematic");
 });

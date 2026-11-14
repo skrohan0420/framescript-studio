@@ -1,5 +1,13 @@
 # Verification record
 
+## Creative Direction final-package wiring — 14 November 2026
+
+Audited the simplified builder through director export and final Generate ZIP assembly. Fixed the missing selected-direction connection and added explicit approval/change detection. Approved specifications now replace overlapping generic creative planning and text/audio defaults while retaining runtime, timing, rendering, identity and soundtrack contracts. Empty direction preserves direct generation; nonempty unapproved directions block final export. Structured output excludes unsupported audio and UI validation rejects incompatible dimensional modes.
+
+`npm run build` passed (existing bundle-size and dependency annotation warnings). All 29 focused tests across director, prompt-template, prompt-audio and mascot suites passed. `npx playwright test tests/director-export.spec.ts` passed against a fresh dev server: real director/code/structured ZIPs include expected story/identity/direction and reference bytes; final code TASK.md equals preview; structured schema and output contract are retained; editing direction or full-script context invalidates approval; clearing direction restores direct export. An added full-script-change check initially timed out on a label locator; the final run uses the textbox's accessible role/name and passed.
+
+Limits: approval is intentionally not restored across reload, while text remains in the browser-local draft. Project/scene-specific storage, continuation integration, external-model quality, generated animation execution and broad visual/accessibility review remain unverified or pending. Legacy browser tests targeting deliberately removed controls still need reconciliation; no full regression-suite pass is claimed.
+
 ## Continuation soundtrack verification — 13 November 2026
 
 Build/TypeScript passed. All seven focused generated-audio and continuation-package unit tests passed. The production continuation browser test passed with inherited music and an imported segment-local SFX manifest: narration retained its placement and trim, music carried from 2s through 5s, the new effect started at 2.5s, and Undo removed the extension and its audio.
