@@ -461,19 +461,6 @@ export function PromptTemplates({
     draft, project.settings.width, project.settings.height, output,
     includeCode ? project : undefined,
   );
-  const copyDirector = () => run(async () => {
-    const text = references.length
-      ? `${directorPrompt}\n\nATTACHED REFERENCES\nAttach your selected reference files directly to this AI conversation, or attach the optional context ZIP. These references are not embedded in this copied text.`
-      : directorPrompt;
-    try {
-      await navigator.clipboard.writeText(text);
-      setUncopiedPrompt("");
-      notify("Director prompt copied. No ZIP required; attach reference files separately if needed.");
-    } catch {
-      setUncopiedPrompt(text);
-      notify("Clipboard unavailable. Copy the exported director prompt below.");
-    }
-  });
   const exportDirector = () => run(async () => {
     setUncopiedPrompt("");
     const session = useStudio.getState().session;
@@ -481,7 +468,13 @@ export function PromptTemplates({
     const result = await bridge.call("codeGeneratePackage", input);
     if (useStudio.getState().session !== session) throw Error("The project changed. Export a fresh director prompt.");
     download(result);
-    notify("Optional director context ZIP download started.");
+    try {
+      await navigator.clipboard.writeText(directorPrompt);
+      notify("Director prompt copied and context ZIP download started.");
+    } catch {
+      setUncopiedPrompt(directorPrompt);
+      notify("Context ZIP download started. Copy the director prompt from the preview below.");
+    }
   });
   const copyAndDownload = (request: GeneratePackage) =>
     run(async () => {
@@ -988,15 +981,12 @@ export function PromptTemplates({
               <div className="director-export-action director-transfer">
                 <div className="director-transfer-buttons">
                 <button className="director-export-button" disabled={busy} aria-busy={busy}
-                  onClick={() => void copyDirector()}>
+                  onClick={() => void exportDirector()}>
                   <Clapperboard size={18} aria-hidden="true" />
-                  Copy Director Prompt
-                </button>
-                <button className="director-context-button" disabled={busy} onClick={() => void exportDirector()}>
-                  <Package size={15} aria-hidden="true" /> Download context ZIP (optional)
+                  Copy Director Prompt &amp; Download ZIP
                 </button>
                 </div>
-                <small>Paste the prompt into your AI. Attach references directly or use the optional ZIP.</small>
+                <small>Paste the copied prompt into your AI and attach the downloaded context ZIP.</small>
               </div>
               <label className="field">
                 <span>Selected creative direction <small>{hasDirection ? "In use" : "Optional"}</small></span>

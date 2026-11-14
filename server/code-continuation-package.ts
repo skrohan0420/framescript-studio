@@ -4,6 +4,7 @@ import ffmpeg from "ffmpeg-static";
 import { chromium } from "playwright";
 import {
   buildCodeContinuationPrompt,
+  buildContinuationDirectorPrompt,
   type CodeContinuationInput,
 } from "../shared/code-continuation";
 import { newProject } from "../shared/project";
@@ -88,7 +89,9 @@ export async function writeCodeContinuationPackage(
       chrome,
       { workers: 1, sequenceTimes: frames.map((frame) => frame.time) },
     );
-    const prompt = buildCodeContinuationPrompt(input);
+    const prompt = input.purpose === "director"
+      ? buildContinuationDirectorPrompt(input)
+      : buildCodeContinuationPrompt(input);
     const files = [
       { path: "TASK.md", role: "task", content: prompt },
       {
@@ -158,7 +161,7 @@ export async function writeCodeContinuationPackage(
     await archiveGenerateFiles(destination, files, {
       packageType: "framescript-task",
       packageVersion: "1",
-      mode: "extend-code",
+      mode: input.purpose === "director" ? "creative-direction" : "extend-code",
       format: "document",
       handoff: input.handoff,
       timelineHandoff: input.timelineHandoff,

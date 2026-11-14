@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { newProject } from "../shared/project";
-import { codeContinuationInputSchema } from "../shared/code-continuation";
+import { codeContinuationInputSchema, buildContinuationDirectorPrompt, buildCodeContinuationPrompt } from "../shared/code-continuation";
 
 vi.mock("../server/export", () => ({ renderExport: vi.fn() }));
 vi.mock("../server/structured-generate-package", () => ({
@@ -36,6 +36,24 @@ it.each([
       camera: "",
       narration: "",
     });
+    const directorInput = {
+      ...input,
+      inheritedContext: JSON.stringify({ fullScript: "The complete star story", identityGuide: "Keep violet subjects" }),
+      narration: "00:00:01.000 --> 00:00:02.000\nReveal the core",
+      selectedDirection: "Hold the violet core, then reveal its layers",
+    };
+    const director = buildContinuationDirectorPrompt(directorInput);
+    expect(director).toContain("The complete star story");
+    expect(director).toContain("Keep violet subjects");
+    expect(director).toContain("Reveal the core");
+    expect(director).toContain(input.source.js);
+    expect(director).toContain(`exact source boundary: ${sourceOffset + duration}s`);
+    expect(director).toContain("references/handoff.png");
+    expect(director).toContain("First propose THREE");
+    expect(buildCodeContinuationPrompt(directorInput)).toContain(directorInput.selectedDirection);
+    expect(buildCodeContinuationPrompt(directorInput)).toContain("Keep violet subjects");
+    expect(buildCodeContinuationPrompt(directorInput)).toContain("INHERITED SETTINGS");
+    expect(buildContinuationDirectorPrompt({ ...directorInput, fullScript: "Updated full story" })).toContain("Updated full story");
     vi.mocked(renderExport).mockImplementation(
       async (
         capturedProject,

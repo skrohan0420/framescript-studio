@@ -3,6 +3,7 @@ import {
   ArrowRightFromLine,
   AudioLines,
   Clipboard,
+  Clapperboard,
   Code2,
   Eye,
   Image,
@@ -46,63 +47,6 @@ const inheritedFields = [
   ["palette", "Palette"],
   ["editingStyle", "Editing style"],
 ] as const;
-const directionSuggestions = {
-  "What happens next": [
-    [
-      "Continue the motion",
-      "Carry the subject's motion through the handoff and into the next beat.",
-    ],
-    [
-      "Reveal a detail",
-      "Reveal the next important detail while keeping the existing subject in view.",
-    ],
-    [
-      "Build a comparison",
-      "Bring in a second element beside the existing subject to show a clear comparison.",
-    ],
-    [
-      "Match narration",
-      "Reveal each new visual as the narration introduces it.",
-    ],
-  ],
-  Pacing: [
-    [
-      "Match previous pace",
-      "Keep the rhythm established in the previous segment.",
-    ],
-    [
-      "Hold, then reveal",
-      "Hold briefly on the handoff composition, then reveal the next beat.",
-    ],
-    [
-      "Follow narration",
-      "Time visual beats to the narration and hold through pauses.",
-    ],
-    [
-      "Slow for emphasis",
-      "Slow down on the key detail and give viewers time to read it.",
-    ],
-  ],
-  "Camera direction": [
-    [
-      "Continue camera move",
-      "Carry the existing camera move through the handoff.",
-    ],
-    [
-      "Slow push-in",
-      "Ease in from the handoff framing toward the main detail.",
-    ],
-    [
-      "Pull back",
-      "Ease out from the handoff framing to reveal the wider context.",
-    ],
-    [
-      "Hold framing",
-      "Keep the camera at the handoff framing and let the subject move.",
-    ],
-  ],
-} as const;
-
 export function CodeContinuationPanel({
   sceneId,
   segmentId,
@@ -127,13 +71,29 @@ export function CodeContinuationPanel({
   const sourceOffset = source?.sourceOffset;
   const savedContext = source?.context;
   const inherited = useMemo(() => {
-    if (!savedContext) return;
+    if (!savedContext) {
+      try {
+        const saved = JSON.parse(localStorage.getItem("framescript.prompt-draft.v1") ?? "null");
+        if (!saved || typeof saved !== "object" || Array.isArray(saved)) return;
+        const { script, timedNarration, selectedDirection, directionApproval, ...settings } = saved;
+        return settings as Partial<PromptDraft>;
+      } catch { return; }
+    }
     try {
       return JSON.parse(savedContext) as Partial<PromptDraft> | null;
     } catch {
       return;
     }
   }, [savedContext]);
+  const savedFullScript = useMemo(() => {
+    if (inherited?.fullScript?.trim()) return inherited.fullScript;
+    try {
+      const draft = JSON.parse(localStorage.getItem("framescript.prompt-draft.v1") ?? "null");
+      return typeof draft?.fullScript === "string" ? draft.fullScript : "";
+    } catch {
+      return "";
+    }
+  }, [inherited, open]);
   const handoffPreview = useMemo(() => {
     if (
       html === undefined ||
@@ -162,9 +122,8 @@ export function CodeContinuationPanel({
   const [section, setSection] = useState<Section>("handoff");
   const scroll = useRef<HTMLDivElement>(null);
   const [narration, setNarration] = useState<string>();
-  const [direction, setDirection] = useState("");
-  const [pacing, setPacing] = useState("");
-  const [camera, setCamera] = useState("");
+  const [fullScript, setFullScript] = useState<string>();
+  const [selectedDirection, setSelectedDirection] = useState("");
   const [references, setReferences] = useState<References>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -203,39 +162,6 @@ export function CodeContinuationPanel({
     setError("");
     setUncopiedPrompt("");
   };
-  const suggestions = (
-    field: keyof typeof directionSuggestions,
-    current: string,
-    update: (value: string) => void,
-  ) => (
-    <div
-      className="prompt-field-suggestions"
-      role="group"
-      aria-label={field + " suggestions"}
-    >
-      {directionSuggestions[field].map(([label, value]) => (
-        <button
-          key={label}
-          type="button"
-          title={value}
-          aria-pressed={
-            field === "What happens next" ? undefined : current === value
-          }
-          onClick={() => {
-            if (field === "What happens next") {
-              if (current.includes(value)) return;
-              update([current.trimEnd(), value].filter(Boolean).join("\n"));
-            } else {
-              update(current === value ? "" : value);
-            }
-            invalidate();
-          }}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
     setError("");
@@ -256,7 +182,34 @@ export function CodeContinuationPanel({
       throw Error("The timeline changed. Prepare a fresh extension ZIP.");
     return state;
   };
-  const copyAndDownload = () =>
+  const makeInput = (purpose: "implementation" | "director" = "implementation") => {
+    if (!source) throw Error("Select a visual clip to extend.");
+    return codeContinuationInputSchema.parse({
+        source: source.code,
+        title: source.scene.title,
+        settings: { ...project.settings, duration: source.duration, speed: 1 },
+        assets: project.assets.filter((asset) =>
+          Object.values(source.code).some((code) =>
+            code.includes(`asset://${asset.id}`),
+          ),
+        ),
+        sourceOffset: source.sourceOffset,
+        handoff: source.handoff,
+        timelineHandoff: source.timelineHandoff,
+        lastFrameTime: source.lastFrameTime,
+        duration,
+        inheritedContext: inherited ? JSON.stringify(inherited) : source.context,
+        direction: "",
+        pacing: "",
+        camera: "",
+        narration: script,
+        references,
+        fullScript: fullScript ?? savedFullScript,
+        selectedDirection,
+        purpose,
+      });
+  };
+  const copyAndDownload = (purpose: "implementation" | "director" = "implementation") =>
     run(async () => {
       if (!source)
         throw Error(
@@ -272,27 +225,7 @@ export function CodeContinuationPanel({
         throw Error(
           "Save and apply the current visual code before extending it.",
         );
-      const input = codeContinuationInputSchema.parse({
-        source: source.code,
-        title: source.scene.title,
-        settings: { ...project.settings, duration: source.duration, speed: 1 },
-        assets: project.assets.filter((asset) =>
-          Object.values(source.code).some((code) =>
-            code.includes(`asset://${asset.id}`),
-          ),
-        ),
-        sourceOffset: source.sourceOffset,
-        handoff: source.handoff,
-        timelineHandoff: source.timelineHandoff,
-        lastFrameTime: source.lastFrameTime,
-        duration,
-        inheritedContext: source.context,
-        direction,
-        pacing,
-        camera,
-        narration: script,
-        references,
-      });
+      const input = makeInput(purpose);
       const exported = await bridge.call("codeContinuationPackage", input);
       const pending = {
         input,
@@ -321,11 +254,11 @@ export function CodeContinuationPanel({
       } finally {
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
-      setTask(pending);
+      if (purpose === "implementation") setTask(pending);
       try {
         await navigator.clipboard.writeText(exported.prompt);
         notify(
-          "Extension prompt copied and ZIP download started. Paste the AI result in Output.",
+          purpose === "director" ? "Director context ZIP downloaded. Paste the selected direction in Direction." : "Extension prompt copied and ZIP download started. Paste the AI result in Output.",
         );
       } catch {
         setUncopiedPrompt(exported.prompt);
@@ -333,10 +266,20 @@ export function CodeContinuationPanel({
       }
     });
   const reviewResult = async () => {
-    if (!task || !source) return;
+    if (!source) return;
     setBusy(true);
     try {
-      checkTask(task);
+      if (!validDuration) throw Error("Set a valid extension duration before reviewing.");
+      const current = useStudio.getState();
+      const pending = task ?? {
+        input: makeInput(),
+        session: current.session,
+        revision: current.revision,
+      };
+      const applied = continuationSource(appliedProject, sceneId, segmentId);
+      if (!applied || JSON.stringify(applied.code) !== JSON.stringify(source.code))
+        throw Error("Save and apply the current visual code before extending it.");
+      checkTask(pending);
       const html = result
         .trim()
         .replace(/^```(?:html)?\s*\n/i, "")
@@ -352,18 +295,18 @@ export function CodeContinuationPanel({
         );
       const { parse } = await import("@babel/parser");
       parse(code.js, { sourceType: "script" });
-      const state = checkTask(task);
-      const segmentId = crypto.randomUUID();
+      const state = checkTask(pending);
+      const newSegmentId = crypto.randomUUID();
       setReview({
         patch: appendCodeContinuation(
           state.project,
           source.scene,
-          task.input,
+          pending.input,
           code,
-          segmentId,
+          newSegmentId,
         ),
-        task,
-        segmentId,
+        task: pending,
+        segmentId: newSegmentId,
       });
       setError("");
     } catch (failure) {
@@ -624,6 +567,13 @@ export function CodeContinuationPanel({
                     </label>
                   </div>
                   <label className="field">
+                    <span>Full script · broader story context</span>
+                    <textarea rows={5} maxLength={100000} value={fullScript ?? savedFullScript}
+                      placeholder="Full video script for story context"
+                      onChange={(event) => { setFullScript(event.target.value); invalidate(); }} />
+                    <small>Automatically uses the previous scene’s full script or your saved Prompt Builder script. Edit only if needed.</small>
+                  </label>
+                  <label className="field">
                     <span>Timed narration</span>
                     <textarea
                       className="extend-script"
@@ -647,55 +597,27 @@ export function CodeContinuationPanel({
               >
                 <fieldset disabled={busy} className="prompt-form-card">
                   <div className="extend-card-heading">
-                    <h4>Continuation direction</h4>
+                    <h4>Explore a direction</h4>
                     <span className="extend-tag">Optional</span>
                   </div>
-                  <div>
-                    <label className="field">
-                      <span id="extend-direction-label">What happens next</span>
-                      <textarea
-                        aria-labelledby="extend-direction-label"
-                        rows={4}
-                        value={direction}
-                        placeholder="Describe what the viewer should see after the handoff"
-                        onChange={(event) => {
-                          setDirection(event.target.value);
-                          invalidate();
-                        }}
-                      />
-                    </label>
-                    {suggestions("What happens next", direction, setDirection)}
-                  </div>
-                  <div className="extend-field-grid extend-field-grid-even">
-                    <div>
-                      <label className="field">
-                        <span>Pacing</span>
-                        <input
-                          value={pacing}
-                          placeholder="e.g. Hold briefly, then reveal"
-                          onChange={(event) => {
-                            setPacing(event.target.value);
-                            invalidate();
-                          }}
-                        />
-                      </label>
-                      {suggestions("Pacing", pacing, setPacing)}
-                    </div>
-                    <div>
-                      <label className="field">
-                        <span>Camera direction</span>
-                        <input
-                          value={camera}
-                          placeholder="e.g. Continue the slow zoom"
-                          onChange={(event) => {
-                            setCamera(event.target.value);
-                            invalidate();
-                          }}
-                        />
-                      </label>
-                      {suggestions("Camera direction", camera, setCamera)}
+                  <ol className="director-workflow" aria-label="Creative direction workflow">
+                    <li><strong>Copy &amp; attach</strong><span>Send the director prompt and context ZIP to your AI.</span></li>
+                    <li><strong>Choose &amp; refine</strong><span>Review three approaches and develop your preferred option.</span></li>
+                    <li><strong>Bring it back</strong><span>Paste only the final direction below.</span></li>
+                  </ol>
+                  <p className="type-hint">Previous settings, identity, full script and scene code continue automatically. The context ZIP adds handoff and motion images.</p>
+                  <div className="director-export-action director-transfer">
+                    <div className="director-transfer-buttons">
+                      <button type="button" className="director-export-button" disabled={!validDuration} onClick={() => copyAndDownload("director")}><Clapperboard size={18} aria-hidden="true" /> Copy Director Prompt &amp; Download ZIP</button>
                     </div>
                   </div>
+                  <label className="field">
+                    <span>Selected creative direction</span>
+                    <textarea rows={10} maxLength={30000} value={selectedDirection}
+                      placeholder="Paste the director's SELECTED CREATIVE DIRECTION"
+                      onChange={(event) => { setSelectedDirection(event.target.value); invalidate(); }} />
+                    <small>Included automatically in the extension prompt and ZIP.</small>
+                  </label>
                 </fieldset>
               </div>
               <div
@@ -738,12 +660,12 @@ export function CodeContinuationPanel({
                     </label>
                   )}
                 </div>
+              </div>
                 <div className="prompt-form-card">
                   <div className="extend-card-heading">
                     <h4>Import continuation</h4>
                   </div>
-                  {task ? (
-                    <>
+                  <>
                       <label className="field">
                         <span>Paste continuation HTML</span>
                         <textarea
@@ -756,21 +678,15 @@ export function CodeContinuationPanel({
                       <button
                         type="button"
                         className="primary extend-review-button"
-                        disabled={!result.trim() || busy}
+                        disabled={!validDuration || !result.trim() || busy}
                         onClick={() => void reviewResult()}
                       >
                         <Eye size={16} aria-hidden="true" />
                         Review extension
                       </button>
-                    </>
-                  ) : (
-                    <p>
-                      Use Copy and Download to prepare the task before importing
-                      its result.
-                    </p>
-                  )}
+                  </>
+                  <p>Paste the complete continuation HTML to review it with the current extension settings.</p>
                 </div>
-              </div>
             </>
           ) : (
             <p className="prompt-form-card">

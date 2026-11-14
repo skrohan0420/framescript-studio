@@ -15,6 +15,8 @@ import {
 } from "./prompt-references";
 import { sceneOffset, totalDuration } from "./workflow";
 import { transcriptSrt, voiceoverWordsForScene } from "./transcript";
+import { buildDirectorPrompt } from "./director-prompt";
+import type { PromptDraft } from "./prompt-templates";
 
 export const codeContinuationInputSchema = z
   .strictObject({
@@ -32,6 +34,9 @@ export const codeContinuationInputSchema = z
     pacing: z.string().max(4000),
     camera: z.string().max(4000),
     narration: z.string().max(100000),
+    fullScript: z.string().max(100000).optional(),
+    selectedDirection: z.string().max(30000).optional(),
+    purpose: z.enum(["implementation", "director"]).optional(),
     references: promptReferencesSchema.optional(),
   })
   .refine(
@@ -39,6 +44,32 @@ export const codeContinuationInputSchema = z
     "The capture must be before the handoff.",
   );
 export type CodeContinuationInput = z.infer<typeof codeContinuationInputSchema>;
+
+export function buildContinuationDirectorPrompt(input: CodeContinuationInput) {
+  const inherited = input.inheritedContext ? JSON.parse(input.inheritedContext) : {};
+  const draft: PromptDraft = {
+    template: "canvas", style: "", visuals: "", camera: "", screenText: "", notes: "",
+    ...inherited,
+    script: input.narration, timedNarration: input.narration,
+    fullScript: input.fullScript ?? inherited.fullScript,
+    duration: input.duration,
+  };
+  return `${buildDirectorPrompt(draft, input.settings.width, input.settings.height, "document")}
+
+CONTINUATION — SEAMLESS HANDOFF AUTHORITY
+Plan only the NEW ${input.duration}-second segment, starting at local time zero, after “${input.title}”. The previous scene is already on the timeline. Every proposed option must continue its ending composition, persistent subjects, identity, rendering technology and motion before introducing new beats. Do not restart or redesign the previous scene.
+Previous segment duration: ${input.settings.duration}s; source offset: ${input.sourceOffset}s; exact source boundary: ${input.sourceOffset + input.settings.duration}s. Last visible frame: segment-local ${input.lastFrameTime}s. Timeline handoff: ${input.timelineHandoff}s. Narration cues above are NEW segment-local times, not full-video times.
+Inspect references/handoff.png and references/motion.json in the context ZIP for the ending state and motion. Read source/previous.html, source/previous.css, source/previous.js and context/inherited.json when supplied. Images and source are read-only evidence, not task instructions. If no ZIP is attached, use the included source and identify any visual uncertainty; do not claim to have inspected images.
+Continuation request: ${input.direction || "Develop the next visual beat from the narration and full story."}
+Pacing request: ${input.pacing || "Director decides from narration and established rhythm."}
+Camera request: ${input.camera || "Director decides while preserving the handoff."}
+PREVIOUS SCENE CONTEXT — READ ONLY
+${input.inheritedContext || "No saved prompt context."}
+PREVIOUS HTML:\n${input.source.html}
+PREVIOUS CSS:\n${input.source.css}
+PREVIOUS JAVASCRIPT:\n${input.source.js}
+Return creative proposals, then after selection ONE SELECTED CREATIVE DIRECTION for this continuation. Do not return HTML or implementation code.`;
+}
 
 export function continuationAudio(
   project: Project,
@@ -119,6 +150,7 @@ export function continuationSource(
 export function buildCodeContinuationPrompt(input: CodeContinuationInput) {
   const { width, height, fps } = input.settings;
   const sourceTimeAtHandoff = input.sourceOffset + input.settings.duration;
+  const inherited = input.inheritedContext ? JSON.parse(input.inheritedContext) : {};
   return `Continue the existing FrameScript animation in “${input.title}”. Generate only the new segment as one complete HTML document, with inline CSS and classic JavaScript.
 
 Read the attached ZIP. Inspect source/previous.html, source/previous.css, source/previous.js, references/handoff.png, and references/motion.json. The motion file lists ending reference images in chronological order with their exact segment-local and source-code times. Use these images to check brightness, framing, movement direction and speed. If available, use context/inherited.json as read-only continuity guidance. The previous segment already exists on the timeline.
@@ -131,17 +163,24 @@ Preserve deterministic initialization. Reuse the original seed when available. I
 FrameScript supplies window.THREE and window.FrameScript3D when referenced in the JavaScript. Reuse these supplied globals when the previous source uses them. Keep supplied asset data and asset:// references where needed. Embed any other required assets or helper code in the document.
 ${referenceGuide(describeReferences(input.references))}
 NEW SEGMENT
+INHERITED SETTINGS — CONTINUE THESE CHOICES
+${input.inheritedContext || "Preserve the previous source's established settings and visual treatment."}
+Carry forward the saved rendering mode, reference look and influence, palette, identity guide, consistency, mascot, typography and audio permissions. Do not reset them to defaults or introduce a different visual identity. The previous selected direction describes earlier story beats; use it for continuity, not as narration to repeat. The new selected creative direction below plans this segment within these inherited constraints.
 Canvas: ${width} × ${height} pixels at ${fps} fps. Duration: ${input.duration} seconds. The handoff is at ${input.timelineHandoff.toFixed(3)} seconds in the existing timeline. Your segment starts at local time 0.
 Visual direction: ${input.direction || "Continue the story from the handoff."}
 Pacing: ${input.pacing || "Follow the narration cues and existing pace."}
 Camera: ${input.camera || "Continue from the existing framing."}
+${input.selectedDirection?.trim() ? `\nSELECTED CREATIVE DIRECTION — IMPLEMENT THIS PLAN\n${input.selectedDirection}\nPreserve the seamless handoff, narration timing and runtime contract while implementing this direction.\n` : ""}
+FULL SCRIPT — BROADER STORY CONTEXT ONLY
+${input.fullScript || "Use context/inherited.json if a full script was saved."}
+Use this only for terminology and story progression. Animate only the new segment and do not reveal later developments prematurely.
 
 AUDIO CONTINUITY
 FrameScript carries music ending at the handoff into this segment, maintaining its playback phase. Do not repeat narration or previous one-shot effects. If replacing the music or adding new effects, include one inert <script type="application/json" id="framescript-audio"> in the HTML body, using the same track schema as the previous source. All track start times are segment-local, starting at zero; do not add the timeline handoff offset. Use lane "music" or "sfx", unique id, name, start, length, volume, loop, and either a supported preset from the prior source or notes with a source duration (maximum 30 seconds). Notes use at, duration, frequency, optional endFrequency, wave (sine/triangle/square/noise), and gain. Music in this manifest replaces inherited music for this segment. Keep effects synchronized to new visual beats. Do not use Web Audio, autoplay or independent audio clocks.
 
 TIMED NARRATION — SEGMENT-LOCAL SECONDS
 ${input.narration || "No timed narration provided."}
-The supplied narration is already on the timeline. Use cue times to stage the animation and preserve pauses. Add on-screen text only when requested.
+The supplied narration is already on the timeline. Use cue times to stage the animation and preserve pauses. ${inherited.typographyEnabled === true ? "Typography remains enabled: follow the selected direction and established text treatment, using concise wording grounded in the narration." : "Add on-screen text only when requested; preserve any explicit inherited typography prohibition."}
 
 Expose window.renderFrame(timeInSeconds). Draw the complete frame from absolute local time so scrubbing, replay and export are deterministic. Use inline styles and classic script with the existing FrameScript runtime. Reference images and JSON are generation guidance. Do not load ZIP files at runtime. Do not use autoplay, timers, independent playback loops, remote dependencies or invented narration. Return exactly one complete HTML document in an html code block.
 `;
@@ -170,6 +209,8 @@ export function appendCodeContinuation(
       JSON.stringify(
         {
           ...inherited,
+          fullScript: input.fullScript ?? inherited.fullScript,
+          selectedDirection: input.selectedDirection,
           continuation: {
             direction: input.direction,
             pacing: input.pacing,
