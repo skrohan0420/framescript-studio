@@ -136,6 +136,9 @@ Visual direction: ${input.direction || "Continue the story from the handoff."}
 Pacing: ${input.pacing || "Follow the narration cues and existing pace."}
 Camera: ${input.camera || "Continue from the existing framing."}
 
+AUDIO CONTINUITY
+FrameScript carries music ending at the handoff into this segment, maintaining its playback phase. Do not repeat narration or previous one-shot effects. If replacing the music or adding new effects, include one inert <script type="application/json" id="framescript-audio"> in the HTML body, using the same track schema as the previous source. All track start times are segment-local, starting at zero; do not add the timeline handoff offset. Use lane "music" or "sfx", unique id, name, start, length, volume, loop, and either a supported preset from the prior source or notes with a source duration (maximum 30 seconds). Notes use at, duration, frequency, optional endFrequency, wave (sine/triangle/square/noise), and gain. Music in this manifest replaces inherited music for this segment. Keep effects synchronized to new visual beats. Do not use Web Audio, autoplay or independent audio clocks.
+
 TIMED NARRATION — SEGMENT-LOCAL SECONDS
 ${input.narration || "No timed narration provided."}
 The supplied narration is already on the timeline. Use cue times to stage the animation and preserve pauses. Add on-screen text only when requested.

@@ -4,6 +4,7 @@ import { newProject, projectSchema, type Project } from "../shared/project";
 import { selectedScene, synchronizeScene } from "../shared/workflow";
 import {
   applyGeneratedAudio,
+  applyContinuationAudio,
   audioManifestSource,
 } from "../shared/generated-audio";
 import { retainAudioSources } from "../shared/audio-library";
@@ -136,6 +137,12 @@ export const useStudio = create<State>((set, get) => ({
         });
         return;
       }
+    }
+    try {
+      project = applyContinuationAudio(project, s.project);
+    } catch (error) {
+      set({ error: "Generated audio: " + (error as Error).message, errorLocation: undefined, errorCode: undefined });
+      return;
     }
     if (
       project.workflow &&

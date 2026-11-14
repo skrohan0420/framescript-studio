@@ -22,6 +22,10 @@ import {
   Fingerprint,
   Cat,
   SlidersHorizontal,
+  Zap,
+  BookOpen,
+  Clapperboard,
+  Package,
 } from "lucide-react";
 import { useProjectState, useStudio } from "./store";
 import { sceneOffset } from "../shared/workflow";
@@ -407,7 +411,12 @@ export function PromptTemplates({
             );
           }}
         >
+          {key === "script" && (() => {
+            const Icon = label === "Hook & reveal" ? Zap : label === "Explainer" ? BookOpen : label === "Short story" ? Clapperboard : Package;
+            return <Icon size={14} aria-hidden="true" />;
+          })()}
           {label}
+          {key === "script" && draft.storyStructure === value && <Check size={13} aria-hidden="true" />}
         </button>
       ))}
     </div>
@@ -752,66 +761,6 @@ export function PromptTemplates({
                 onChange={(e) => update("audience", e.target.value)}
               />
             </label>
-            <label className="field">
-              <span>Script / narration</span>
-              <textarea
-                aria-label="Prompt script"
-                rows={3}
-                placeholder="Paste your script, SRT, VTT or timestamped narration…"
-                maxLength={100000}
-                value={draft.timedNarration || draft.script}
-                onChange={(event) => {
-                  const parsed = parseNarrationInput(event.target.value);
-                  setDraft((previous) => ({
-                    ...previous,
-                    script: parsed.script,
-                    timedNarration: parsed.timedNarration,
-                  }));
-
-                }}
-              />
-              <small className="prompt-input-format">
-                {draft.timedNarration
-                  ? `${parseNarrationInput(draft.timedNarration).format} · timing detected`
-                  : "Plain text · timing inferred"}
-              </small>
-              <small className="prompt-narration-source">
-                {narrationSource?.text === (draft.timedNarration || draft.script)
-                  ? `Text from audio: ${narrationSource.names}`
-                  : "Pasted or edited text · audio source unverified"}
-              </small>
-            </label>
-            <div className="prompt-story-direction">
-              <small>Story direction · optional</small>
-              {suggestions("script")}
-            </div>
-            <div className="prompt-timed-toolbar">
-              {timedVoices.length > 1 && (
-                <select
-                  aria-label="Timed voiceover source"
-                  value={timedVoice?.id ?? ""}
-                  onChange={(event) => setTimedVoiceId(event.target.value)}
-                >
-                  <option value="">All voiceover clips in this scene</option>
-                  {timedVoices.map((clip) => (
-                    <option key={clip.id} value={clip.id}>
-                      {clip.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <button
-                disabled={!timedVoices.length}
-                title={
-                  timedVoices.length
-                    ? "Use word timestamps from the voiceover, aligned to its scene position and trim"
-                    : "Extract the voiceover text first to get word timestamps"
-                }
-                onClick={useTimedVoice}
-              >
-                <Timer size={14} /> Use timed voiceover
-              </button>
-            </div>
             <div className="prompt-timing">
               <label className="field">
                 <span>Duration (seconds)</span>
@@ -857,7 +806,7 @@ export function PromptTemplates({
                 <small>
                   Audio: {voice.name} · {Number(voice.length.toFixed(2))}s.
                   {Math.abs(draft.duration - voice.length) > 0.05
-                    ? ` Duration mismatch: animation is ${Number(draft.duration.toFixed(2))}s. Duration is not automatically matched to audio.`
+                    ? ` Duration mismatch: animation is ${Number(draft.duration.toFixed(2))}s. Paste a script or choose Match audio length to use the narration duration.`
                     : " Animation duration matches this audio clip."}
                 </small>
                 {Math.abs(draft.duration - voice.length) > 0.05 && (
@@ -891,6 +840,77 @@ export function PromptTemplates({
                 </button>
               ))}
             </div>
+            <div className="prompt-script-heading">
+              <label htmlFor="prompt-script-input">Script / narration</label>
+            <div className="prompt-timed-toolbar prompt-voiceover-action">
+              {timedVoices.length > 1 && (
+                <select
+                  aria-label="Timed voiceover source"
+                  value={timedVoice?.id ?? ""}
+                  onChange={(event) => setTimedVoiceId(event.target.value)}
+                >
+                  <option value="">All voiceover clips in this scene</option>
+                  {timedVoices.map((clip) => (
+                    <option key={clip.id} value={clip.id}>
+                      {clip.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                disabled={!timedVoices.length}
+                title={
+                  timedVoices.length
+                    ? "Use word timestamps from the voiceover, aligned to its scene position and trim"
+                    : "Extract the voiceover text first to get word timestamps"
+                }
+                onClick={useTimedVoice}
+              >
+                <Timer size={15} aria-hidden="true" /> Use timed voiceover
+              </button>
+            </div>
+            </div>
+            <div className="field">
+
+              <textarea
+                id="prompt-script-input"
+                aria-label="Prompt script"
+                onPaste={(event) => {
+                  if (!event.clipboardData.getData("text/plain").trim() || !voice) return;
+                  update("duration", voice.length);
+                  setDurationInput(null);
+                }}
+                rows={3}
+                placeholder="Paste your script, SRT, VTT or timestamped narration…"
+                maxLength={100000}
+                value={draft.timedNarration || draft.script}
+                onChange={(event) => {
+                  const parsed = parseNarrationInput(event.target.value);
+                  setDraft((previous) => ({
+                    ...previous,
+                    script: parsed.script,
+                    timedNarration: parsed.timedNarration,
+                  }));
+
+                }}
+              />
+              <small className="prompt-input-format">
+                {draft.timedNarration
+                  ? `${parseNarrationInput(draft.timedNarration).format} · timing detected`
+                  : "Plain text · timing inferred"}
+              </small>
+              <small className="prompt-narration-source">
+                {narrationSource?.text === (draft.timedNarration || draft.script)
+                  ? `Text from audio: ${narrationSource.names}`
+                  : "Pasted or edited text · audio source unverified"}
+              </small>
+            </div>
+            <div className="prompt-story-direction">
+              <small>Story direction <span>Optional · choose one</span></small>
+              {suggestions("script")}
+            </div>
+
+
           </div>
         </div>
         <div

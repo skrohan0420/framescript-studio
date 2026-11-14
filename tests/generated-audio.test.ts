@@ -86,3 +86,23 @@ it("applies requested track volume and fades while keeping legacy defaults", () 
     applyGeneratedAudio({ ...newProject(), html: manifest }).audio![0],
   ).toMatchObject({ fadeIn: 0.02, fadeOut: 0.04 });
 });
+
+it("generates continuation scores at the handoff and carries prior music without repeating effects", async () => {
+  const { applyContinuationAudio } = await import("../shared/generated-audio");
+  const base = applyGeneratedAudio({ ...newProject(), html: manifest });
+  const scene = base.workflow!.scenes[0];
+  const previous = { ...base, workflow: { ...base.workflow!, selectedId: scene.id } };
+  const extension = { id: "tail", start: 10, duration: 3, html: "<div>Tail</div>", css: "", js: "" };
+  const project = { ...previous, workflow: { ...previous.workflow, scenes: [{ ...scene, duration: 13, visualContinuations: [extension] }] } };
+  const carried = applyContinuationAudio(project, previous);
+  expect(carried.audio).toHaveLength(2);
+  expect(carried.audio![1]).toMatchObject({ start: 10, length: 3, lane: "music", loop: true, fadeIn: 0 });
+  expect(applyContinuationAudio(carried, carried).audio).toHaveLength(2);
+  const fx = { ...tracks[0], id: "hit", lane: "sfx", start: 0.5, length: 1 };
+  const html = '<script type="application/json" id="framescript-audio">' + JSON.stringify({ tracks: [fx] }) + '</script>';
+  const changed = { ...carried, workflow: { ...project.workflow, scenes: [{ ...project.workflow.scenes[0], visualContinuations: [{ ...extension, html }] }] } };
+  const result = applyContinuationAudio(changed, carried);
+  expect(result.audio).toHaveLength(3);
+  expect(result.audio!.find(clip => clip.name === "Score" && clip.lane === "sfx")).toMatchObject({ start: 10.5, length: 1 });
+  expect(result.audio!.filter(clip => clip.lane === "music")).toHaveLength(2);
+});

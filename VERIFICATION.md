@@ -1,5 +1,12 @@
 # Verification record
 
+## Continuation soundtrack verification — 13 November 2026
+
+Build/TypeScript passed. All seven focused generated-audio and continuation-package unit tests passed. The production continuation browser test passed with inherited music and an imported segment-local SFX manifest: narration retained its placement and trim, music carried from 2s through 5s, the new effect started at 2.5s, and Undo removed the extension and its audio.
+
+Ran `npx tsx tests/continuation-audio-export.ts` after the browser case. It rendered two real MP4s from the browser-saved fixture, isolating music and SFX, then decoded their audio with FFmpeg. Music RMS exceeded 0.001 before, immediately after and late after the handoff. The effect was audible in its expected interval and silent before/after. Evidence: `test-results/continuation-audio/`. This is signal/timing verification, not a subjective listening review or verification of the creator’s existing project. An initial browser attempt during the build failed with an empty server response; the final production run after build completion passed.
+
+
 ## Expanded appearance library — 13 November 2026
 
 Added Plum / Smoke, Burgundy / Ash, Forest / Sage, Slate / Ice, Copper / Ink, Espresso / Cream, Ocean / Fog and Black / White, bringing the library to 15 palettes and 30 dark/light combinations. The picker displays the available count, and its browser regression discovers palettes from the shared catalog rather than assuming seven.

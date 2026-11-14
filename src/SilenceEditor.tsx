@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Scissors,
-  Sparkles,
+  AudioLines,
   Undo2,
   Redo2,
   Play,
@@ -29,8 +29,10 @@ import { AudioWaveform } from "./AudioWaveform";
 export function SilenceEditor({
   clip,
   onError,
+  showLabels = false,
 }: {
   clip: AudioClip;
+  showLabels?: boolean;
   onError: (message: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -106,7 +108,7 @@ export function SilenceEditor({
           title="Auto remove silence"
           onClick={() => void auto()}
         >
-          <Sparkles size={14} />
+          <AudioLines size={14} />{showLabels && "Auto remove silence"}
         </button>
         <button
           disabled={busy}
@@ -114,7 +116,7 @@ export function SilenceEditor({
           title="Edit audio"
           onClick={() => void edit()}
         >
-          <Scissors size={13} />
+          <Scissors size={13} />{showLabels && "Edit audio"}
         </button>
         {(canUndo || canRedo) && (
           <>
@@ -127,7 +129,7 @@ export function SilenceEditor({
                 notify("Edit undone.");
               }}
             >
-              <Undo2 size={14} />
+              <Undo2 size={14} />{showLabels && "Undo audio edit"}
             </button>
             <button
               aria-label="Redo audio edit"
@@ -138,7 +140,7 @@ export function SilenceEditor({
                 notify("Edit restored.");
               }}
             >
-              <Redo2 size={14} />
+              <Redo2 size={14} />{showLabels && "Redo audio edit"}
             </button>
           </>
         )}
@@ -381,7 +383,7 @@ function AudioCutModal({
                 ])
               }
             >
-              <Sparkles size={14} />
+              <AudioLines size={14} />
             </button>
             <label title="Waveform zoom">
               <ZoomIn size={15} aria-hidden="true" />

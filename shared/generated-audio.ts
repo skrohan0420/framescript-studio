@@ -124,7 +124,7 @@ export function applyGeneratedAudio(project: Project): Project {
   const workflow = project.workflow ?? initialWorkflow(project);
   const existing = project.audio ?? [];
   const unmanaged = existing.filter(
-    (clip) => !clip.generatedSource || clip.sceneId !== workflow.selectedId,
+    (clip) => !clip.generatedSource || clip.generatedSource.startsWith("continuation:") || clip.sceneId !== workflow.selectedId,
   );
   const generated = manifest.tracks.flatMap((track): AudioClip[] => {
     if (track.start >= project.settings.duration)
@@ -175,4 +175,39 @@ export function applyGeneratedAudio(project: Project): Project {
     ...(manifest.tracks.length ? { workflow } : {}),
     audio: [...unmanaged, ...generated],
   };
+}
+
+/** Reconcile segment-local manifests without replacing the scene's original soundtrack. */
+export function applyContinuationAudio(project: Project, previous: Project): Project {
+  let audio = [...(project.audio ?? [])];
+  for (const scene of project.workflow?.scenes ?? []) {
+    for (const segment of scene.visualContinuations ?? []) {
+      const old = previous.workflow?.scenes.find(item => item.id === scene.id)?.visualContinuations?.find(item => item.id === segment.id);
+      if (old && old.html === segment.html && old.start === segment.start && old.duration === segment.duration) continue;
+      const prefix = `continuation:${segment.id}:`;
+      const rendered = applyGeneratedAudio({ ...project, html: segment.html,
+        settings: { ...project.settings, duration: segment.duration },
+        workflow: { ...project.workflow!, selectedId: scene.id }, audio: [] });
+      const generated: AudioClip[] = (rendered.audio ?? []).map(clip => ({ ...clip,
+        start: clip.start + segment.start, generatedSource: prefix + clip.generatedSource }));
+      audio = audio.filter(clip => !clip.generatedSource?.startsWith(prefix));
+      if (!old && !generated.some(clip => clip.lane === "music")) {
+        const preceding = audio.filter(clip => clip.sceneId === scene.id && clip.lane === "music" && !clip.muted &&
+          clip.start < segment.start && Math.abs(clip.start + clip.length - segment.start) < 0.05);
+        for (const clip of preceding) {
+          const phase = (clip.trimIn + segment.start - clip.start) % clip.duration;
+          generated.push({ ...clip, id: crypto.randomUUID(), start: segment.start,
+            trimIn: phase, length: segment.duration, loop: true, fadeIn: 0,
+            fadeOut: Math.min(clip.fadeOut, segment.duration / 2), generatedSource: prefix + "carry:" + clip.id });
+          audio = audio.map(item => item.id === clip.id ? { ...item, fadeOut: 0 } : item);
+        }
+      } else if (old && !generated.some(clip => clip.lane === "music")) {
+        generated.push(...(project.audio ?? []).filter(clip => clip.generatedSource?.startsWith(prefix + "carry:"))
+          .map(clip => ({ ...clip, start: segment.start, length: segment.duration })));
+      }
+      audio.push(...generated);
+    }
+  }
+  if (audio.length > 60) throw Error("Generated audio exceeds the project’s 60-clip limit.");
+  return { ...project, audio };
 }

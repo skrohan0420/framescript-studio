@@ -1,5 +1,5 @@
 import { useStatusActivity, useStatusNotice } from "./editor-status";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   FileAudio,
   ImagePlus,
@@ -13,6 +13,11 @@ import {
   Play,
   Pause,
   Check,
+  Trash2,
+  MoreHorizontal,
+  Volume2,
+  ChevronUp,
+  Code2,
 } from "lucide-react";
 import { useProjectState, useStudio } from "./store";
 import { audioDetails, clipFromAudio, readData } from "./audio";
@@ -23,6 +28,7 @@ import {
 } from "../shared/workflow";
 import type { AudioClip } from "../shared/project";
 import { AudioWaveform } from "./AudioWaveform";
+import { Modal } from "./components";
 import { SilenceEditor } from "./SilenceEditor";
 import { DimensionsControl } from "./DimensionsControl";
 import { bridge } from "./bridge";
@@ -68,8 +74,13 @@ export function MediaLibrary({
   onFrameSize: (size: MediaSize) => void;
 }) {
   const { project, change } = useProjectState();
+  const [pendingRemoval, setPendingRemoval] = useState<AudioClip | null>(null);
+  const isAudioInUse = (clip: AudioClip) => project.audio?.some(
+    (item) => item.sourceId === clip.id || item.data === clip.data,
+  ) ?? false;
   const input = useRef<HTMLInputElement>(null);
   const [filter, setFilter] = useState("all");
+  const [audioTab, setAudioTab] = useState<"imported" | "generated">("imported");
   const [lane, setLane] = useState<AudioClip["lane"]>("voice");
   const [importing, setImporting] = useState(false);
   const [enhancingSource, setEnhancingSource] = useState<string | null>(null);
@@ -212,7 +223,7 @@ export function MediaLibrary({
   const notify = useStatusNotice();
   useStatusActivity(transcribing ? "Extracting voiceover text…" : importing ? "Importing media…" : "");
   const [transcriptFormat, setTranscriptFormat] = useState<"text" | "srt">(
-    "text",
+    "srt",
   );
   const transcriptValue = (clip: AudioClip) =>
     transcriptFormat === "srt"
@@ -336,7 +347,8 @@ export function MediaLibrary({
       (filter !== "references" || asset.kind === "reference"),
   );
   const audio = (project.audioLibrary ?? []).filter((clip) =>
-    clip.name.toLowerCase().includes(search.toLowerCase()),
+    clip.name.toLowerCase().includes(search.toLowerCase()) &&
+    (audioTab === "generated" ? !!clip.generatedSource : !clip.generatedSource),
   );
   return (
     <section
@@ -512,6 +524,18 @@ export function MediaLibrary({
             </button>
           </div>
         )}
+        {mode === "audio" && (
+          <div className="media-filter-tabs" role="group" aria-label="Audio source">
+            {(["imported", "generated"] as const).map((tab) => (
+              <button key={tab} className={audioTab === tab ? "active" : ""}
+                aria-pressed={audioTab === tab} onClick={() => setAudioTab(tab)}>
+                {tab === "generated" ? <Code2 size={14} aria-hidden="true" /> : <Upload size={14} aria-hidden="true" />}
+                {tab === "generated" ? "Generated" : "Imported"}
+                <span>{(project.audioLibrary ?? []).filter((clip) => tab === "generated" ? !!clip.generatedSource : !clip.generatedSource).length}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <input
           className="library-search"
           aria-label="Search media"
@@ -520,7 +544,7 @@ export function MediaLibrary({
           onChange={(e) => setSearch(e.target.value)}
         />
         <div className="library-section-title">
-          <span>{mode === "media" ? "Imported media" : "Imported audio"}</span>
+          <span>{mode === "media" ? "Imported media" : audioTab === "generated" ? "Code-generated audio" : "Imported audio"}</span>
           <span>{mode === "media" ? assets.length : audio.length}</span>
         </div>
         {mode === "media" ? (
@@ -663,6 +687,25 @@ export function MediaLibrary({
                   >
                     <Plus size={15} />
                   </button>
+                  <div className="audio-card-statuses">
+                  {project.audio?.some(
+                    (item) =>
+                      item.sourceId === clip.id || item.data === clip.data,
+                  ) && (
+                    <span
+                      className="audio-on-timeline"
+                      aria-label={`${clip.name} is on the timeline`}
+                    >
+                      <Check size={12} aria-hidden="true" /> On timeline
+                    </span>
+                  )}
+                  {clip.enhanced && (
+                    <span className="audio-on-timeline" aria-label={`${clip.name} is enhanced`}>
+                      <Check size={12} aria-hidden="true" /> Enhanced
+                    </span>
+                  )}
+                  </div>
+                  <RecordingActions name={clip.name}>
                   <button
                     aria-label={`Enhance ${clip.name}`}
                     title={clip.enhanced ? "Turn enhancement off" : "Enhance audio locally"}
@@ -671,7 +714,7 @@ export function MediaLibrary({
                     aria-busy={enhancingSource === clip.id}
                     onClick={() => void enhanceSource(clip)}
                   >
-                    <Sparkles size={15} />
+                    <Sparkles size={15} /> {clip.enhanced ? "Turn enhancement off" : "Enhance audio"}
                   </button>
                   {enhancingSource === clip.id && <small role="status">Enhancing…</small>}
                   {clip.enhancement?.comparisonOriginalGain !== undefined && (
@@ -682,11 +725,12 @@ export function MediaLibrary({
                         setComparison({ id: clip.id, original });
                         inspectAudio(clip, original);
                       }}>
+                      <Volume2 size={15} aria-hidden="true" />
                       {comparison?.id === clip.id && comparison.original ? "Hear enhanced" : "Hear original"}
                     </button>
                   )}
                   {clip.lane === "voice" && (
-                    <SilenceEditor clip={clip} onError={onError} />
+                    <SilenceEditor clip={clip} onError={onError} showLabels />
                   )}
                   {clip.lane === "voice" && (
                     <div
@@ -706,7 +750,7 @@ export function MediaLibrary({
                             )
                           }
                         >
-                          <FileText size={14} />
+                          <FileText size={14} /> Show / hide transcript
                         </button>
                       )}
                       <button
@@ -729,43 +773,20 @@ export function MediaLibrary({
                         ) : (
                           <FileText size={14} />
                         )}
+                        {clip.transcript ? "Extract text again" : "Extract text"}
                       </button>
                     </div>
-                  )}
-                  {project.audio?.some(
-                    (item) =>
-                      item.sourceId === clip.id || item.data === clip.data,
-                  ) && (
-                    <span
-                      className="audio-on-timeline"
-                      aria-label={`${clip.name} is on the timeline`}
-                    >
-                      <Check size={12} aria-hidden="true" /> On timeline
-                    </span>
-                  )}
-                  {clip.enhanced && (
-                    <span className="audio-on-timeline" aria-label={`${clip.name} is enhanced`}>
-                      <Check size={12} aria-hidden="true" /> Enhanced
-                    </span>
                   )}
                   <button
                     className="audio-library-remove"
                     aria-label={`Remove ${clip.name} from library`}
-                    title="Remove from library"
-                    onClick={() => {
-                      change(
-                        {
-                          audioLibrary: project.audioLibrary?.filter(
-                            (source) => source.id !== clip.id,
-                          ),
-                        },
-                        "Remove library recording",
-                      );
-                      if (selectedSource === clip.id) setSelectedSource(null);
-                    }}
+                    title={isAudioInUse(clip) ? "Remove this recording from the timeline before deleting it" : "Remove from library"}
+                    disabled={isAudioInUse(clip)}
+                    onClick={() => setPendingRemoval(clip)}
                   >
-                    <X size={15} />
+                    <Trash2 size={15} /> Remove recording
                   </button>
+                  </RecordingActions>
                 </div>
                 {clip.lane === "voice" &&
                   transcriptId === clip.id &&
@@ -796,6 +817,36 @@ export function MediaLibrary({
                           >
                             Timed text · SRT
                           </button>
+                          <div className="transcript-header-copy">
+                            {(["text", "srt"] as const).map((format) => (
+                              <button
+                                key={format}
+                                className="transcript-copy"
+                                disabled={format === "srt" ? !clip.transcriptWords?.length : !clip.transcript}
+                                onClick={() => {
+                                  const value = format === "srt"
+                                    ? transcriptSrt(clip.transcriptWords ?? [])
+                                    : (clip.transcript ?? "");
+                                  void navigator.clipboard.writeText(value)
+                                    .then(() => notify(format === "srt" ? "SRT copied." : "Transcript copied."))
+                                    .catch(() => onError("Could not copy. Select and copy the transcript manually."));
+                                }}
+                              >
+                                <Copy size={13} aria-hidden="true" />
+                                {format === "srt" ? "Copy SRT" : "Copy text"}
+                              </button>
+                            ))}
+                            <button
+                              className="transcript-copy"
+                              aria-label="Collapse transcript"
+                              title="Collapse transcript"
+                              aria-expanded={true}
+                              aria-controls={`transcript-${clip.id}`}
+                              onClick={() => setTranscriptId(null)}
+                            >
+                              <ChevronUp size={15} aria-hidden="true" />
+                            </button>
+                          </div>
                         </div>
                         {transcriptFormat === "srt" &&
                           !clip.transcriptWords?.length && (
@@ -865,7 +916,7 @@ export function MediaLibrary({
                 ? "No matching files"
                 : mode === "media"
                   ? "Your media starts here"
-                  : "Bring your narration"}
+                  : audioTab === "generated" ? "No generated audio yet" : "Bring your narration"}
             </strong>
             <p>
               {mode === "media"
@@ -874,9 +925,9 @@ export function MediaLibrary({
                   : filter === "references"
                     ? "Images marked as references appear here."
                     : "Drop images here or import files. Insert them at the size set above."
-                : "Import narration, music or sound effects, then arrange them on the timeline."}
+                : audioTab === "generated" ? "Audio generated by scene code appears here." : "Import narration, music or sound effects, then arrange them on the timeline."}
             </p>
-            {!search && (
+            {!search && (mode !== "audio" || audioTab === "imported") && (
               <button
                 onClick={() =>
                   mode === "media" ? onImportImages() : input.current?.click()
@@ -898,6 +949,69 @@ export function MediaLibrary({
           </button>
         )}
       </div>
+      <Modal title="Remove recording?" open={pendingRemoval !== null} onClose={() => setPendingRemoval(null)}>
+        <p>Remove “{pendingRemoval?.name}” from the audio library?</p>
+        {pendingRemoval && isAudioInUse(pendingRemoval) && (
+          <p role="status">This recording is used on the timeline. Remove its timeline clips first.</p>
+        )}
+        <div className="modal-actions">
+          <button autoFocus onClick={() => setPendingRemoval(null)}>Cancel</button>
+          <button
+            disabled={!pendingRemoval || isAudioInUse(pendingRemoval)}
+            onClick={() => {
+              if (!pendingRemoval || isAudioInUse(pendingRemoval)) return;
+              change({ audioLibrary: project.audioLibrary?.filter((source) => source.id !== pendingRemoval.id) }, "Remove library recording");
+              if (selectedSource === pendingRemoval.id) setSelectedSource(null);
+              setPendingRemoval(null);
+            }}
+          ><Trash2 size={15} /> Remove recording</button>
+        </div>
+      </Modal>
     </section>
   );
+}
+
+function RecordingActions({ name, children }: { name: string; children: ReactNode }) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const position = () => {
+    if (!trigger.current || !panel.current) return;
+    const rect = trigger.current.getBoundingClientRect();
+    const menu = panel.current;
+    const width = menu.offsetWidth;
+    const height = menu.offsetHeight;
+    const left = rect.right + 6 + width <= window.innerWidth - 8
+      ? rect.right + 6 : Math.max(8, rect.left - width - 6);
+    menu.style.left = Math.min(left, Math.max(8, window.innerWidth - width - 8)) + "px";
+    menu.style.top = Math.max(8, Math.min(rect.top, window.innerHeight - height - 8)) + "px";
+  };
+  useEffect(() => {
+    if (!open) return;
+    position();
+    const dismiss = () => panel.current?.hidePopover();
+    window.addEventListener("resize", dismiss);
+    window.addEventListener("scroll", dismiss, true);
+    return () => {
+      window.removeEventListener("resize", dismiss);
+      window.removeEventListener("scroll", dismiss, true);
+    };
+  }, [open]);
+  return <div className="audio-more-actions">
+    <button ref={trigger} aria-label={`More actions for ${name}`} title="More recording actions"
+      aria-expanded={open} onClick={() => {
+        if (panel.current?.matches(":popover-open")) panel.current.hidePopover();
+        else { panel.current?.showPopover(); position(); }
+      }}><MoreHorizontal size={18} /></button>
+    <div ref={panel} popover="auto" className="audio-more-panel"
+      onToggle={(event) => setOpen((event.nativeEvent as ToggleEvent).newState === "open")}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") trigger.current?.focus();
+      }}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("button:not(:disabled)")) panel.current?.hidePopover();
+      }}>
+      {children}
+    </div>
+  </div>;
 }

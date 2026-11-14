@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { newProject, type Project } from "../shared/project";
 import { initialWorkflow } from "../shared/workflow";
 import { clipFromAudio } from "../src/audio";
@@ -36,7 +36,8 @@ test("extends a code visual at its handoff without shifting or replacing narrati
     trimIn: 1,
     transcriptWords: [{ text: "Continue.", start: 1.25, end: 1.6 }],
   };
-  project.audio = [first, second];
+  const music = { ...clipFromAudio(synthesizeSound("Ambient loop"), "music", scene.id), length: 2, loop: true, fadeIn: 0, fadeOut: 0.1 };
+  project.audio = [first, second, music];
   let saved: Project | undefined;
   await page.route("**/api/workspaceGet", (route) =>
     route.fulfill({ json: { result: project } }),
@@ -166,7 +167,7 @@ test("extends a code visual at its handoff without shifting or replacing narrati
   await builder
     .getByLabel("Paste continuation HTML")
     .fill(
-      `<!doctype html><html><head><style>#continued { color: cyan; }</style></head><body><div id="continued"></div><script>window.renderFrame = t => { document.querySelector('#continued').textContent = t.toFixed(2); };</script></body></html>`,
+      `<!doctype html><html><head><style>#continued { color: cyan; }</style></head><body><div id="continued"></div><script type="application/json" id="framescript-audio">{"tracks":[{"id":"extension-hit","name":"Extension hit","lane":"sfx","start":0.5,"length":0.3,"preset":"Gentle pulse"}]}</script><script>window.renderFrame = t => { document.querySelector('#continued').textContent = t.toFixed(2); };</script></body></html>`,
     );
   await builder.getByRole("button", { name: "Review extension" }).click();
   const review = page.getByRole("dialog", { name: "Review AI changes" });
@@ -211,25 +212,30 @@ test("extends a code visual at its handoff without shifting or replacing narrati
   expect(saved?.css).toBe(project.css);
   expect(saved?.js).toBe(project.js);
   expect(
-    saved?.audio?.map(({ id, start, trimIn, length }) => ({
+    saved?.audio?.filter(clip => clip.lane === "voice").map(({ id, start, trimIn, length }) => ({
       id,
       start,
       trimIn,
       length,
     })),
   ).toEqual(
-    project.audio.map(({ id, start, trimIn, length }) => ({
+    project.audio.filter(clip => clip.lane === "voice").map(({ id, start, trimIn, length }) => ({
       id,
       start,
       trimIn,
       length,
     })),
   );
+  expect(saved?.audio?.find(clip => clip.name === "Extension hit")).toMatchObject({ start: 2.5, length: 0.3 });
+  expect(saved?.audio?.find(clip => clip.generatedSource?.includes(":carry:"))).toMatchObject({ start: 2, length: 3, loop: true, fadeIn: 0 });
+  await mkdir("test-results/continuation-audio", { recursive: true });
+  await writeFile("test-results/continuation-audio/project.json", JSON.stringify(saved));
   await page
     .getByRole("button", { name: "Undo project change", exact: true })
     .click();
   await expect(
     page.getByRole("button", { name: "Continuation 1" }),
   ).toHaveCount(0);
+  await expect.poll(() => saved?.audio?.length).toBe(3);
   expect(reloadMessages).toEqual([]);
 });

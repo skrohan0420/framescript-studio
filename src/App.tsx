@@ -71,6 +71,8 @@ import {
   RotateCcw,
   Ruler,
   Save,
+  SaveOff,
+  LoaderCircle,
   Send,
   Settings2,
   Sparkles,
@@ -232,6 +234,7 @@ export function App() {
   const [leftView, setLeftView] = useState("code");
   const [promptsOpen, setPromptsOpen] = useState(false);
   const [importGeneratedScene, setImportGeneratedScene] = useState(false);
+  const [projectNameDraft, setProjectNameDraft] = useState<string | null>(null);
   const [previewRulers, setPreviewRulers] = useState(() => {
     try {
       return localStorage.getItem("framescript.preview-rulers.v1") !== "false";
@@ -2152,7 +2155,12 @@ export function App() {
       <span className="status-notice" role="status" title={notice}>{notice}</span>
       {statusDetails && <span className="status-activity" title={statusDetails} aria-label="Background activity">{statusDetails}</span>}
       <span className="toolbar-spacer" />
-      <span aria-label="Workspace save status">
+      <span className="workspace-save-indicator" aria-label="Workspace save status"
+        data-state={autosave ? storageSaveState : manualUnsaved ? "unsaved" : "saved"}
+        title={storageSaveError || (autosave ? "Workspace changes are saved automatically on this computer" : "Use Save to store your changes")}>
+        {autosave && storageSaveState === "saving" ? <LoaderCircle size={13} className="save-status-spinner" aria-hidden="true" />
+          : (autosave && storageSaveState === "error") || manualUnsaved ? <SaveOff size={13} aria-hidden="true" />
+          : <Save size={13} aria-hidden="true" />}
         {!autosave
           ? manualUnsaved
             ? "Manual save · Unsaved changes"
@@ -2343,13 +2351,25 @@ export function App() {
         <input
           className="project-title"
           aria-label="Project name"
-          value={p.name}
-          onChange={(e) => {
-            if (e.target.value)
-              s.change({ name: e.target.value }, "Rename project");
+          value={projectNameDraft ?? p.name}
+          maxLength={200}
+          onFocus={() => setProjectNameDraft(p.name)}
+          onChange={(e) => setProjectNameDraft(e.target.value)}
+          onBlur={(e) => {
+            const name = e.target.value.trim();
+            if (name && name !== p.name)
+              s.change({ name }, "Rename project");
+            setProjectNameDraft(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              e.currentTarget.value = p.name;
+              e.currentTarget.blur();
+            }
           }}
         />
-        <span className="dirty">{s.dirty ? "●" : "✓"}</span>
+
         <div className="toolbar-actions">
           <button
             aria-label="New project"
@@ -2375,6 +2395,7 @@ export function App() {
             <Save size={17} />
             <span className="action-label">Save</span>
           </button>
+          <div className="project-history-actions" role="group" aria-label="Project history">
           <button
             aria-label="Undo project change"
             title={shortcutTitle("undo")}
@@ -2382,6 +2403,7 @@ export function App() {
             onClick={s.undo}
           >
             <Undo2 size={17} />
+            <span>Undo</span>
           </button>
           <button
             aria-label="Redo project change"
@@ -2390,7 +2412,9 @@ export function App() {
             onClick={s.redo}
           >
             <Redo2 size={17} />
+            <span>Redo</span>
           </button>
+          </div>
         </div>
         <div className="toolbar-spacer" />
         {!manualMode && (
