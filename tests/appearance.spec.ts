@@ -57,6 +57,10 @@ test("settings exposes every live palette in both modes and remembers the chosen
         appearance.getByRole("button", { name: palette.name, exact: true }),
       ).toHaveAttribute("aria-pressed", "true");
       const tokens = studioPaletteTokens(palette.id, mode === "light");
+      if (palette.id === "aurora") {
+        await expect.poll(() => page.locator(".toolbar").evaluate(el => getComputedStyle(el).backgroundImage)).toContain("linear-gradient");
+        await page.screenshot({ path: `test-results/appearance-aurora-${mode}.png` });
+      }
       await expect
         .poll(() =>
           page
@@ -70,17 +74,18 @@ test("settings exposes every live palette in both modes and remembers the chosen
     }
   }
   await appearance
-    .getByRole("button", { name: "Warm / Stone", exact: true })
+    .getByRole("button", { name: "Sandstone", exact: true })
     .click();
   await expect.poll(() => preferences.palette).toBe("stone");
   await expect.poll(() => preferences.theme).toBe("light");
+  await page.screenshot({ path: "test-results/appearance-sandstone-light.png" });
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-palette", "stone");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await settings.click();
   await appearance.getByLabel("Appearance mode").selectOption("dark");
   await appearance
-    .getByRole("button", { name: "Carbon / Silver", exact: true })
+    .getByRole("button", { name: "Obsidian", exact: true })
     .click();
   await page.screenshot({ path: "test-results/appearance-palettes.png" });
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
@@ -97,7 +102,7 @@ test("settings exposes every live palette in both modes and remembers the chosen
   await page.screenshot({ path: "test-results/appearance-carbon-silver.png" });
   await settings.click();
   await appearance
-    .getByRole("button", { name: "Graphite / Blue", exact: true })
+    .getByRole("button", { name: "Cobalt", exact: true })
     .click();
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect

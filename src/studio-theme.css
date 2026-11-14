@@ -17,6 +17,9 @@
   --audio-sfx-tone: #386b8a;
 }
 body { background: var(--base); }
+/* Subtle two-tone chrome; code, inputs and timeline tracks remain solid. */
+.toolbar, .modal-head, .settings-nav, .prompt-heading { background-color: var(--surface); background-image: var(--chrome-gradient, none); }
+.center { background-image: var(--workspace-gradient, none); }
 button { border-radius: 7px; line-height: 1.25; }
 button > svg { flex-shrink: 0; stroke-width: 1.7; }
 button:disabled { opacity: .48; }
@@ -157,6 +160,24 @@ button.audio-cut-deleted { color: var(--error); border-color: var(--error); back
 .appearance-swatches i { flex:1; }
 .appearance-selected { font-size:10px;color:var(--muted);margin-top:3px; }
 .appearance-palettes [aria-pressed=true] .appearance-selected { color:var(--accent); }
+.appearance-palettes > button { padding: 14px; gap: 9px; transition: border-color .15s, background .15s; }
+.appearance-palettes > button:hover { border-color: var(--accent); }
+.appearance-palettes .appearance-swatches { height: 7px; }
+.appearance-workspace-preview { display: flex; flex-direction: column; height: 100px; border: 1px solid; border-radius: 6px; overflow: hidden; margin-bottom: 3px; }
+.appearance-preview-toolbar { display: flex; gap: 4px; height: 15px; align-items: center; padding: 0 7px; }
+.appearance-preview-toolbar i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: .5; }
+.appearance-preview-content { display: grid; grid-template-columns: 20% 1fr 27%; gap: 3px; flex: 1; padding: 3px; }
+.appearance-preview-sidebar { display: flex; flex-direction: column; gap: 5px; padding: 7px 5px; border-radius: 2px; }
+.appearance-preview-sidebar i { height: 3px; background: currentColor; opacity: .3; border-radius: 2px; }
+.appearance-preview-sidebar i:first-child { opacity: 1; }
+.appearance-preview-stage { display: grid; place-items: center; }
+.appearance-preview-stage i { width: 27px; height: 27px; border-radius: 8px; transform: rotate(-15deg); opacity: .85; }
+.appearance-preview-code { display: flex; flex-direction: column; gap: 5px; padding: 9px 5px; border-radius: 2px; }
+.appearance-preview-code i { height: 2px; background: currentColor; opacity: .65; }
+.appearance-preview-code i:nth-child(even) { width: 65%; margin-left: 6px; opacity: .35; }
+.appearance-preview-timeline { display: flex; gap: 4px; padding: 4px 8px; height: 20px; }
+.appearance-preview-timeline i { width: 55%; border-radius: 2px; opacity: .65; }
+.appearance-preview-timeline i + i { width: 30%; opacity: 1; }
 .modal:has(> .studio-settings) { width:min(1040px,calc(100vw - 32px));height:min(740px,calc(100dvh - 32px));max-height:calc(100dvh - 32px);padding:0;display:flex;flex-direction:column;overflow:hidden; }
 .modal:has(> .studio-settings) > .modal-head { margin:0;padding:18px 24px;flex-shrink:0;border-bottom:1px solid var(--subtle-border); }
 .studio-settings { display:flex;flex-direction:column;min-height:0;flex:1; }
@@ -393,3 +414,7 @@ button.audio-cut-deleted { color: var(--error); border-color: var(--error); back
 @media(max-width:500px) { .director-transfer-buttons > button { width: 100%; } }
 
 .timeline-tabs .timeline-name-input { width: 180px; min-width: 100px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--accent); border-radius: 6px; font-size: 12px; background: var(--editor); color: var(--text); }
+
+/* Subtle two-tone chrome; code, inputs and timeline tracks remain solid. */
+.toolbar, .modal-head, .settings-nav, .prompt-heading { background-color: var(--surface); background-image: var(--chrome-gradient, none); }
+.center { background-image: var(--workspace-gradient, none); }

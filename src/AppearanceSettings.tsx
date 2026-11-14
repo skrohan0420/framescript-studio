@@ -1,6 +1,7 @@
 import {
   studioPalettes,
   studioPaletteTokens,
+  studioPaletteFinish,
   type StudioPalette,
 } from "./studio-palettes";
 
@@ -33,8 +34,8 @@ export function AppearanceSettings({
         <div>
           <h3>Appearance</h3>
           <p>
-            Choose from {studioPalettes.length} workspace palettes. Changes
-            preview immediately and save automatically.
+            {studioPalettes.length} distinct palettes, each with dark and soft light surfaces.
+            Changes preview immediately and save automatically.
           </p>
         </div>
         <label className="field">
@@ -66,6 +67,21 @@ export function AppearanceSettings({
               {swatches(p.id).map((color, i) => (
                 <i key={i} style={{ background: color }} />
               ))}
+            </span>
+            <span className="appearance-workspace-preview" aria-hidden="true" style={{ background: studioPaletteFinish(p.id, light)["--workspace-gradient"] === "none" ? swatches(p.id)[0] : studioPaletteFinish(p.id, light)["--workspace-gradient"], borderColor: swatches(p.id)[2] }}>
+              <span className="appearance-preview-toolbar" style={{ background: studioPaletteFinish(p.id, light)["--chrome-gradient"] === "none" ? swatches(p.id)[1] : studioPaletteFinish(p.id, light)["--chrome-gradient"] }}>
+                <i style={{ background: swatches(p.id)[3] }} /><i /><i />
+              </span>
+              <span className="appearance-preview-content">
+                <span className="appearance-preview-sidebar" style={{ background: studioPaletteFinish(p.id, light)["--chrome-gradient"] === "none" ? swatches(p.id)[1] : studioPaletteFinish(p.id, light)["--chrome-gradient"] }}>
+                  <i style={{ background: swatches(p.id)[3] }} /><i /><i />
+                </span>
+                <span className="appearance-preview-stage"><i style={{ background: swatches(p.id)[3] }} /></span>
+                <span className="appearance-preview-code" style={{ background: swatches(p.id)[1], color: swatches(p.id)[3] }}><i /><i /><i /><i /></span>
+              </span>
+              <span className="appearance-preview-timeline" style={{ background: studioPaletteFinish(p.id, light)["--chrome-gradient"] === "none" ? swatches(p.id)[1] : studioPaletteFinish(p.id, light)["--chrome-gradient"] }}>
+                <i style={{ background: swatches(p.id)[3] }} /><i style={{ background: swatches(p.id)[2] }} />
+              </span>
             </span>
             <strong>{p.name}</strong>
             <small>{p.note}</small>

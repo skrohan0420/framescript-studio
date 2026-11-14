@@ -1,163 +1,216 @@
 export const studioPalettes = [
   {
-    id: "graphite",
-    name: "Graphite / Blue",
-    note: "Cool charcoal, steel blue",
-    base: "#121416",
-    panel: "#1b1e22",
-    raised: "#25292e",
-    accent: "#8ba3bd",
-    lightAccent: "#425d7b",
+    "id": "silver",
+    "name": "Obsidian",
+    "note": "Neutral ink · crisp silver",
+    "base": "#111214",
+    "panel": "#1b1d21",
+    "raised": "#292c32",
+    "accent": "#d2d6df",
+    "lightAccent": "#485367",
+    "lightBase": "#e0e3e8",
+    "lightPanel": "#edf0f4",
+    "lightRaised": "#d4d9e1"
   },
   {
-    id: "stone",
-    name: "Warm / Stone",
-    note: "Warm neutrals, soft stone",
-    base: "#171614",
-    panel: "#22201d",
-    raised: "#2c2925",
-    accent: "#b7aa94",
-    lightAccent: "#6b5b43",
+    "id": "graphite",
+    "name": "Cobalt",
+    "note": "Deep blue · electric periwinkle",
+    "base": "#0b1124",
+    "panel": "#141f38",
+    "raised": "#223150",
+    "accent": "#93b4ff",
+    "lightAccent": "#294db0",
+    "lightBase": "#dce3f1",
+    "lightPanel": "#eaf0fa",
+    "lightRaised": "#ccd7ec"
   },
   {
-    id: "silver",
-    name: "Carbon / Silver",
-    note: "Neutral charcoal, silver",
-    base: "#101112",
-    panel: "#1b1c1e",
-    raised: "#26282b",
-    accent: "#c7cbd0",
-    lightAccent: "#50565e",
+    "id": "plum",
+    "name": "Ultraviolet",
+    "note": "Black violet · luminous orchid",
+    "base": "#171023",
+    "panel": "#241932",
+    "raised": "#352647",
+    "accent": "#d4a3ff",
+    "lightAccent": "#7434a1",
+    "lightBase": "#e8dfef",
+    "lightPanel": "#f2eaf8",
+    "lightRaised": "#dfd1e9"
   },
   {
-    id: "navy",
-    name: "Deep Navy",
-    note: "Dark ink, quiet blue",
-    base: "#10141b",
-    panel: "#19212b",
-    raised: "#252f3c",
-    accent: "#8b9db5",
-    lightAccent: "#415774",
+    "id": "forest",
+    "name": "Pine",
+    "note": "Evergreen · fresh mint",
+    "base": "#0c1917",
+    "panel": "#142923",
+    "raised": "#213b31",
+    "accent": "#83dbb3",
+    "lightAccent": "#216546",
+    "lightBase": "#dce8de",
+    "lightPanel": "#eaf2e9",
+    "lightRaised": "#cdddcf"
   },
   {
-    id: "olive",
-    name: "Muted Olive",
-    note: "Forest charcoal, sage",
-    base: "#141611",
-    panel: "#1e221b",
-    raised: "#2a3025",
-    accent: "#a4ad91",
-    lightAccent: "#53603b",
+    "id": "ocean",
+    "name": "Lagoon",
+    "note": "Deep teal · tropical turquoise",
+    "base": "#091b23",
+    "panel": "#112e3a",
+    "raised": "#1c414c",
+    "accent": "#65dce5",
+    "lightAccent": "#12616b",
+    "lightBase": "#d9e8eb",
+    "lightPanel": "#e7f2f3",
+    "lightRaised": "#c8dfe3"
   },
   {
-    id: "clay",
-    name: "Clay / Sand",
-    note: "Earth tones, muted clay",
-    base: "#191412",
-    panel: "#251f1b",
-    raised: "#322a24",
-    accent: "#c0a18d",
-    lightAccent: "#785443",
+    "id": "copper",
+    "name": "Ember",
+    "note": "Warm charcoal · apricot orange",
+    "base": "#211412",
+    "panel": "#30201b",
+    "raised": "#453027",
+    "accent": "#ffb17b",
+    "lightAccent": "#934521",
+    "lightBase": "#eddfd4",
+    "lightPanel": "#f6ece1",
+    "lightRaised": "#e3cfbe"
   },
   {
-    id: "plum",
-    name: "Plum / Smoke",
-    note: "Smoky charcoal, dusty plum",
-    base: "#171318",
-    panel: "#231d26",
-    raised: "#302934",
-    accent: "#b4a2bf",
-    lightAccent: "#6d4f79",
+    "id": "stone",
+    "name": "Sandstone",
+    "note": "Walnut · golden amber",
+    "base": "#211d16",
+    "panel": "#302b21",
+    "raised": "#423b2c",
+    "accent": "#e4c06d",
+    "lightAccent": "#745317",
+    "lightBase": "#e8dfcd",
+    "lightPanel": "#f3ecdf",
+    "lightRaised": "#dcd0b9"
   },
   {
-    id: "burgundy",
-    name: "Burgundy / Ash",
-    note: "Wine charcoal, muted rose",
-    base: "#1a1315",
-    panel: "#281f22",
-    raised: "#352a2e",
-    accent: "#c3a0a8",
-    lightAccent: "#7b4d5b",
+    "id": "olive",
+    "name": "Matcha",
+    "note": "Moss green · bright chartreuse",
+    "base": "#181c11",
+    "panel": "#252d1b",
+    "raised": "#37412a",
+    "accent": "#c0dc7c",
+    "lightAccent": "#4d651e",
+    "lightBase": "#e2e7d3",
+    "lightPanel": "#eff2e3",
+    "lightRaised": "#d2dbbb"
   },
   {
-    id: "forest",
-    name: "Forest / Sage",
-    note: "Deep forest, soft sage",
-    base: "#101714",
-    panel: "#1b2620",
-    raised: "#27362d",
-    accent: "#a0b8a9",
-    lightAccent: "#3e6653",
+    "id": "classic",
+    "name": "Terminal",
+    "note": "Near black · phosphor green",
+    "base": "#080e0a",
+    "panel": "#101d15",
+    "raised": "#1b3022",
+    "accent": "#72ed9c",
+    "lightAccent": "#20643b",
+    "lightBase": "#dce7e0",
+    "lightPanel": "#e9f2ec",
+    "lightRaised": "#cbded1"
   },
-  {
-    id: "slate",
-    name: "Slate / Ice",
-    note: "Cool slate, pale blue gray",
-    base: "#13171a",
-    panel: "#20272c",
-    raised: "#2c353d",
-    accent: "#a6bac9",
-    lightAccent: "#446478",
-  },
-  {
-    id: "copper",
-    name: "Copper / Ink",
-    note: "Dark brown, brushed copper",
-    base: "#171412",
-    panel: "#251f1b",
-    raised: "#342a22",
-    accent: "#c5a187",
-    lightAccent: "#7b563b",
-  },
-  {
-    id: "espresso",
-    name: "Espresso / Cream",
-    note: "Coffee surfaces, warm cream",
-    base: "#191512",
-    panel: "#28211c",
-    raised: "#362e26",
-    accent: "#c8b79f",
-    lightAccent: "#6b5840",
-  },
-  {
-    id: "ocean",
-    name: "Ocean / Fog",
-    note: "Blue charcoal, misted teal",
-    base: "#101719",
-    panel: "#1b272b",
-    raised: "#28373c",
-    accent: "#9cbabd",
-    lightAccent: "#3b666c",
-  },
-  {
-    id: "mono",
-    name: "Black / White",
-    note: "Near-black surfaces, neutral white",
-    base: "#080808",
-    panel: "#161616",
-    raised: "#242424",
-    accent: "#dedede",
-    lightAccent: "#454545",
-  },
-  {
-    id: "classic",
-    name: "Classic / Cyan",
-    note: "Black surfaces, cyan accent",
-    base: "#000000",
-    panel: "#1c1c1c",
-    raised: "#262626",
-    accent: "#00c1cd",
-    lightAccent: "#006e77",
-  },
+{
+  "id": "aurora",
+  "name": "Aurora",
+  "note": "Soft gradient · mint into violet",
+  "base": "#0d1622",
+  "panel": "#172333",
+  "raised": "#273448",
+  "accent": "#96f0d2",
+  "lightAccent": "#246354",
+  "lightBase": "#dce5ee",
+  "lightPanel": "#edf3f8",
+  "lightRaised": "#d0dce9"
+},
+{
+  "id": "sunset",
+  "name": "Afterglow",
+  "note": "Soft gradient · coral into golden peach",
+  "base": "#21131e",
+  "panel": "#30202c",
+  "raised": "#44303b",
+  "accent": "#ffc19c",
+  "lightAccent": "#8b3d39",
+  "lightBase": "#edddd9",
+  "lightPanel": "#f9eee5",
+  "lightRaised": "#e8cdc6"
+},
+{
+  "id": "noir",
+  "name": "Noir Gold",
+  "note": "High contrast · black and champagne",
+  "base": "#050607",
+  "panel": "#101215",
+  "raised": "#22262b",
+  "accent": "#f4d18b",
+  "lightAccent": "#735013",
+  "lightBase": "#e1ded5",
+  "lightPanel": "#f4f0e5",
+  "lightRaised": "#d8d0bf"
+},
+{
+  "id": "blueprint",
+  "name": "Blueprint",
+  "note": "High contrast · midnight and vivid ice",
+  "base": "#030f25",
+  "panel": "#0b1d36",
+  "raised": "#18334e",
+  "accent": "#78d6ff",
+  "lightAccent": "#145c87",
+  "lightBase": "#d6e3ed",
+  "lightPanel": "#eaf4fb",
+  "lightRaised": "#bfd5e5"
+},
+{
+  "id": "synthwave",
+  "name": "Synthwave",
+  "note": "Creative gradient · pink and electric blue",
+  "base": "#140d25",
+  "panel": "#20162f",
+  "raised": "#332442",
+  "accent": "#ffacf0",
+  "lightAccent": "#8d286e",
+  "lightBase": "#e8ddee",
+  "lightPanel": "#f7edf9",
+  "lightRaised": "#dfcde6"
+}
 ] as const;
 export type StudioPalette = (typeof studioPalettes)[number]["id"];
 export function readStudioPalette(value: unknown): StudioPalette {
+  const legacy: Record<string, StudioPalette> = {
+    navy: "graphite", slate: "graphite", mono: "silver",
+    clay: "copper", espresso: "stone", burgundy: "plum",
+  };
+  if (typeof value === "string" && Object.hasOwn(legacy, value)) return legacy[value];
   return studioPalettes.some((p) => p.id === value)
     ? (value as StudioPalette)
     : "silver";
 }
 export const studioEditorTheme = (palette: StudioPalette, light: boolean) =>
   `framescript-${palette}-${light ? "light" : "dark"}`;
+
+// Keep decorative gradients separate from solid editor and control colors.
+export function studioPaletteFinish(id: StudioPalette, light: boolean): Record<string, string> {
+  const colors: Partial<Record<StudioPalette, [string, string]>> = {
+    aurora: ["#5ad9b0", "#a58bfa"],
+    sunset: ["#ec7c91", "#edb869"],
+    synthwave: ["#ec7cdd", "#638cf5"],
+  };
+  const pair = colors[id];
+  const tokens = studioPaletteTokens(id, light);
+  const strength = light ? 0.09 : 0.14;
+  return {
+    "--chrome-gradient": pair ? `linear-gradient(115deg, ${blend(tokens["--surface"], pair[0], strength)}, ${tokens["--surface"]} 52%, ${blend(tokens["--surface"], pair[1], strength)})` : "none",
+    "--workspace-gradient": pair ? `linear-gradient(135deg, ${blend(tokens["--base"], pair[0], strength)}, ${tokens["--base"]} 55%, ${blend(tokens["--base"], pair[1], strength)})` : "none",
+  };
+}
 function blend(a: string, b: string, weight: number) {
   return (
     "#" +
@@ -178,20 +231,12 @@ export function studioPaletteTokens(
   light: boolean,
 ): Record<string, string> {
   const p = studioPalettes.find((p) => p.id === id)!;
-  const warm = [
-    "stone",
-    "clay",
-    "olive",
-    "burgundy",
-    "copper",
-    "espresso",
-  ].includes(id);
   const classic = id === "classic";
-  const panel = light ? (warm ? "#faf8f4" : "#ffffff") : p.panel;
-  const raised = light ? (warm ? "#ece8e1" : "#e7eaee") : p.raised;
-  const base = light ? (warm ? "#efede8" : "#eceef1") : p.base;
-  const text = light ? "#202328" : "#e7e9ec";
-  const muted = light ? (warm ? "#635b51" : "#59616a") : "#b0b4ba";
+  const panel = light ? p.lightPanel : p.panel;
+  const raised = light ? p.lightRaised : p.raised;
+  const base = light ? p.lightBase : p.base;
+  const text = light ? "#202830" : "#edf0f5";
+  const muted = light ? "#4a535b" : "#bec5ce";
   const accent = light ? p.lightAccent : p.accent;
   const wave = classic
     ? light
@@ -202,11 +247,11 @@ export function studioPaletteTokens(
     "--base": base,
     "--surface": panel,
     "--raised": raised,
-    "--input": light ? panel : blend(p.base, p.panel, 0.55),
-    "--editor": classic ? (light ? "#fbfbfc" : "#171717") : panel,
-    "--stage": light ? "#dfe1e4" : p.base,
-    "--border": light ? "#92979e" : blend(raised, "#ffffff", 0.14),
-    "--subtle-border": light ? "#d0d3d7" : blend(raised, "#ffffff", 0.07),
+    "--input": light ? blend(panel, base, 0.35) : blend(p.base, p.panel, 0.55),
+    "--editor": panel,
+    "--stage": light ? blend(base, p.lightAccent, 0.12) : p.base,
+    "--border": light ? blend(base, p.lightAccent, 0.32) : blend(raised, "#ffffff", 0.14),
+    "--subtle-border": light ? blend(base, p.lightAccent, 0.17) : blend(raised, "#ffffff", 0.07),
     "--text": text,
     "--secondary": light ? "#454b53" : "#c6cbd0",
     "--muted": muted,

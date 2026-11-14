@@ -25,7 +25,7 @@ import { ExportDock } from "./ExportDock";
 import { ExportDownloads } from "./ExportDownloads";
 import { CanvasSizeControls } from "./CanvasSizeControls";
 import { StudioSettings } from "./StudioSettings";
-import { readStudioPalette, studioPaletteTokens, studioEditorTheme, type StudioPalette } from "./studio-palettes";
+import { readStudioPalette, studioPaletteFinish, studioPaletteTokens, studioEditorTheme, type StudioPalette } from "./studio-palettes";
 import { ExportProgress, exportProgressText } from "./ExportProgress";
 import { EditorStatus, StatusActivity } from "./editor-status";
 import { TabIdentity } from "./TabIdentity";
@@ -876,7 +876,7 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = light ? "light" : "dark";
     document.documentElement.dataset.palette = palette;
-    for (const [key, value] of Object.entries(studioPaletteTokens(palette, light)))
+    for (const [key, value] of Object.entries({ ...studioPaletteTokens(palette, light), ...studioPaletteFinish(palette, light) }))
       document.documentElement.style.setProperty(key, value);
   }, [light, palette]);
   useEffect(() => setProviderError(""), [provider, hasKey]);
