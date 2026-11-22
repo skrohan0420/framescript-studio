@@ -5,6 +5,8 @@ import { totalDuration } from "../shared/workflow";
 import type { AudioClip } from "../shared/project";
 import { updateAudioClip } from "../shared/audio-edit";
 import { useStatusNotice } from "./editor-status";
+import { CurrentPreviewDetails } from "./PreviewDetails";
+import { useId, useState } from "react";
 
 export function ProjectInspector({
   manual = false,
@@ -22,6 +24,9 @@ export function ProjectInspector({
   onVoice: () => void;
 }) {
   const { project, change } = useProjectState();
+  const [detailsTab, setDetailsTab] = useState<"project" | "preview" | "performance">("project");
+  const detailsId = useId();
+  const detailsTabs = ["project", "preview", "performance"] as const;
   const notify = useStatusNotice();
   const clip = project.audio?.find((clip) => clip.id === audioId);
   const asset = project.assets.find((asset) => asset.id === assetId);
@@ -146,22 +151,40 @@ export function ProjectInspector({
           <div className="inspector-heading">
             <Film size={17} />
             <div>
-              <h3>Project details</h3>
+              <h3>Studio details</h3>
             </div>
           </div>
+          <div className="inspector-detail-tabs" role="tablist" aria-label="Studio details">
+            {detailsTabs.map((tab, index) => <button key={tab} role="tab"
+              id={`${detailsId}-${tab}`} aria-controls={`${detailsId}-${tab}-panel`}
+              aria-selected={detailsTab === tab} tabIndex={detailsTab === tab ? 0 : -1}
+              onClick={() => setDetailsTab(tab)}
+              onKeyDown={event => {
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                event.preventDefault();
+                const next = event.key === "Home" ? 0 : event.key === "End" ? 2 :
+                  (index + (event.key === "ArrowRight" ? 1 : 2)) % 3;
+                setDetailsTab(detailsTabs[next]);
+                document.getElementById(`${detailsId}-${detailsTabs[next]}`)?.focus();
+              }}>{tab === "project" ? "Project" : tab === "preview" ? "Preview" : "Performance"}</button>)}
+          </div>
+          <div className="inspector-details-panel" role="tabpanel" id={`${detailsId}-${detailsTab}-panel`}
+            aria-labelledby={`${detailsId}-${detailsTab}`}>
+          {detailsTab === "project" ? <>
+          <h3 className="inspector-detail-title">Project overview</h3>
           <dl className="project-detail-list">
             <div>
               <dt>Name</dt>
               <dd>{project.name}</dd>
             </div>
             <div>
-              <dt>Resolution</dt>
+              <dt>Project canvas</dt>
               <dd>
                 {project.settings.width} × {project.settings.height}
               </dd>
             </div>
             <div>
-              <dt>Frame rate</dt>
+              <dt>Target FPS</dt>
               <dd>{project.settings.fps} fps</dd>
             </div>
             <div>
@@ -187,8 +210,11 @@ export function ProjectInspector({
             onClick={onSettings}
           >
             <Settings2 size={14} />
+            Project settings
           </button>
           {children}
+          </> : <CurrentPreviewDetails mode={detailsTab} />}
+          </div>
         </>
       )}
     </div>

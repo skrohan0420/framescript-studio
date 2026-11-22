@@ -45,6 +45,7 @@ function previewRuntime(
   scale: number,
   shortcuts?: string[],
   chordFor?: typeof keyboardChord,
+  reportFrames = true,
 ) {
   const w = window as any;
   if (shortcuts && chordFor) {
@@ -347,8 +348,13 @@ function previewRuntime(
       scheduled = true;
       requestAnimationFrame(() => {
         scheduled = false;
+        const started = performance.now();
         try {
           w.__fsSeek?.(latest);
+          if (reportFrames && typeof w.__fsSeek === "function")
+            parent.postMessage({ framescript: true, type: "preview-frame", value: {
+              renderMs: performance.now() - started,
+            } }, "*");
         } finally {
           parent.postMessage(
             { framescript: true, type: "preview-seek-done" },
@@ -435,7 +441,7 @@ function lazyComposition(
     }
     if (
       entry[0] === current &&
-      ["error", "preview-console", "preview-shortcut", "shape-pick"].includes(event.data.type)
+      ["error", "preview-console", "preview-shortcut", "shape-pick", "preview-frame"].includes(event.data.type)
     )
       parent.postMessage(event.data, "*");
   });
@@ -501,7 +507,7 @@ export function previewDocument(
       : "";
   // A single line keeps existing user-code line mapping intact.
   const script =
-    `(()=>{const __name=(fn)=>fn;(${previewRuntime.toString()})(${scale},${JSON.stringify(shortcuts)},(${keyboardChord.toString()}));${shapeScript}})()`.replace(
+    `(()=>{const __name=(fn)=>fn;(${previewRuntime.toString()})(${scale},${JSON.stringify(shortcuts)},(${keyboardChord.toString()}),${!composition && !clip?.visualContinuations?.length});${shapeScript}})()`.replace(
       /\r?\n/g,
       " ",
     );

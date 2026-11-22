@@ -19,7 +19,8 @@ import {
   writeTextLayer,
   textLayerSchema,
 } from "../shared/typography";
-import { selectedScene } from "../shared/workflow";
+import { selectedScene, totalDuration } from "../shared/workflow";
+import { usePreviewDetails } from "./PreviewDetails";
 import type { PreviewShapePick } from "./preview-shapes";
 import { Check } from "lucide-react";
 export function Preview({
@@ -67,6 +68,11 @@ export function Preview({
   const setError = useStudio((s) => s.setError);
   const project = projectOverride ?? storedProject;
   const clip = selectedScene(project);
+  const playing = useStudio(s => s.playing);
+  const [performanceSample, setPerformanceSample] = useState<{ fps: number; renderMs: number } | null>(null);
+  const completedFrames = useRef({ count: 0, renderMs: 0 });
+  const performanceSupported = !clip?.visualContinuations?.length &&
+    !compositionProject?.workflow?.scenes.some(scene => scene.visualContinuations?.length);
   const [active, setActive] = useState<number | null>(null);
   const [candidate, setCandidate] = useState<number | null>(null);
   const [frames, setFrames] = useState<
@@ -74,6 +80,31 @@ export function Preview({
   >([]);
   const nextFrame = useRef(0);
   const activeId = useRef<number | null>(null);
+  useEffect(() => {
+    completedFrames.current = { count: 0, renderMs: 0 };
+    setPerformanceSample(null);
+    if (!playing || active === null || !performanceSupported) return;
+    let started = performance.now();
+    const reset = () => {
+      started = performance.now();
+      completedFrames.current = { count: 0, renderMs: 0 };
+      setPerformanceSample(null);
+    };
+    document.addEventListener("visibilitychange", reset);
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      const now = performance.now();
+      const sample = completedFrames.current;
+      setPerformanceSample({ fps: sample.count * 1000 / (now - started),
+        renderMs: sample.count ? sample.renderMs / sample.count : 0 });
+      completedFrames.current = { count: 0, renderMs: 0 };
+      started = now;
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", reset);
+    };
+  }, [playing, active, performanceSupported, project.settings.fps, run]);
   const activeRef = useRef<HTMLIFrameElement>(null),
     candidateRef = useRef<HTMLIFrameElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -231,6 +262,11 @@ export function Preview({
       const pending = e.source === candidateRef.current?.contentWindow;
       const visible = e.source === activeRef.current?.contentWindow;
       if (!pending && !visible) return;
+      if (visible && e.data.type === "preview-frame" && useStudio.getState().playing && !document.hidden &&
+          Number.isFinite(e.data.value?.renderMs) && e.data.value.renderMs >= 0) {
+        completedFrames.current.count++;
+        completedFrames.current.renderMs += e.data.value.renderMs;
+      }
       if (
         visible &&
         e.data.type === "preview-shortcut" &&
@@ -405,6 +441,20 @@ export function Preview({
     );
   }, [shapeSelection?.clipId, shapeSelection?.objectId, active]);
   const s = Math.max(0.01, fit * zoom);
+  useEffect(() => {
+    usePreviewDetails.setState({ details: {
+      name: compositionProject ? compositionProject.name : clip?.title ?? project.name,
+      master: !!compositionProject, width: project.settings.width, height: project.settings.height,
+      duration: compositionProject ? totalDuration(compositionProject) : project.settings.duration,
+      quality, scale: resolutionScale, displayWidth: project.settings.width * s,
+      displayHeight: project.settings.height * s, magnification: s,
+      fps: project.settings.fps, speed: project.settings.speed, loop: project.settings.loop,
+      background: project.settings.background, ready: active !== null, updating: candidate !== null,
+      supported: performanceSupported, sample: performanceSample,
+    } });
+  }, [compositionProject, clip?.title, project.name, project.settings, quality,
+    resolutionScale, s, active, candidate, performanceSupported, performanceSample]);
+  useEffect(() => () => { usePreviewDetails.setState({ details: null }); }, []);
   const editingLayer =
     inlineText && textEditing
       ? readTextLayers(storedProject.html).find(

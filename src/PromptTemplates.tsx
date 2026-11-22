@@ -54,7 +54,6 @@ import { buildDirectorPrompt } from "../shared/director-prompt";
 import { buildIdentityPrompt } from "../shared/identity-prompt";
 import { bridge, download } from "./bridge";
 
-const storageKey = "framescript.prompt-draft.v1";
 const outputKey = "framescript.prompt-output";
 type GenerateOutput = CodeGenerateInput["format"] | "structured";
 type GeneratePackage =
@@ -193,12 +192,12 @@ export function PromptTemplates({
     mascotEnabled: false,
     textItems: [],
   };
-  const [draft, setDraft] = useState<PromptDraft>(() => {
+  const draft: PromptDraft = (() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null");
+      const saved = project.promptDraft;
       if (!saved || typeof saved !== "object") return defaults;
       const restored = { ...defaults };
-      if (["auto", "2d", "2.5d", "3d"].includes(saved.renderingMode))
+      if (saved.renderingMode === "auto" || saved.renderingMode === "2d" || saved.renderingMode === "2.5d" || saved.renderingMode === "3d")
         restored.renderingMode = saved.renderingMode;
       for (const key of [
         "bgm",
@@ -228,7 +227,7 @@ export function PromptTemplates({
         "mascotNotes",
       ] as const)
         if (typeof saved[key] === "string") restored[key] = saved[key];
-      if (promptTemplates.some((item) => item.id === saved.template))
+      if (typeof saved.template === "string" && promptTemplates.some((item) => item.id === saved.template))
         restored.template = saved.template;
       if (
         typeof saved.duration === "number" &&
@@ -240,7 +239,11 @@ export function PromptTemplates({
     } catch {
       return defaults;
     }
-  });
+  })();
+  const setDraft = (value: PromptDraft | ((previous: PromptDraft) => PromptDraft)) => {
+    const next = typeof value === "function" ? value(draft) : value;
+    useStudio.getState().change({ promptDraft: { ...next } }, "Prompt builder edit");
+  };
   const [includeCode, setIncludeCode] = useState(false);
   const [output, setOutput] = useState<GenerateOutput>(() => {
     try {
@@ -295,16 +298,12 @@ export function PromptTemplates({
   useEffect(() => {
     if (!onClose) return;
     const closeOnEscape = (event: KeyboardEvent) => {
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [onClose]);
-  useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(draft));
-    } catch {}
-  }, [draft]);
   const update = <K extends keyof PromptDraft>(
     key: K,
     value: PromptDraft[K],

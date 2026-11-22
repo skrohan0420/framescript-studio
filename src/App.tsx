@@ -1,3 +1,4 @@
+import { flushSync } from "react-dom";
 import {
   useCallback,
   useEffect,
@@ -170,6 +171,29 @@ export function App() {
   const [showHome, setShowHome] = useState(
     () => window.location.hash !== "#editor",
   );
+  const [navigationMessage, setNavigationMessage] = useState("");
+  const navigationPending = useRef(false);
+  const navigateWithLoader = async (message: string, action: () => void | Promise<void>) => {
+    if (navigationPending.current) return;
+    navigationPending.current = true;
+    flushSync(() => setNavigationMessage(message));
+    // Paint feedback before expensive project serialization or editor mounting.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+    try {
+      await action();
+    } finally {
+      navigationPending.current = false;
+      setNavigationMessage("");
+    }
+  };
+  const navigationLoader = navigationMessage ? (
+    <div className="navigation-loading" role="status" aria-live="polite" aria-busy="true">
+      <div className="navigation-loading-card">
+        <span className="navigation-loading-spinner" aria-hidden="true" />
+        <span>{navigationMessage.startsWith("Saving") ? "Saving and returning Home…" : "Opening project…"}</span>
+      </div>
+    </div>
+  ) : null;
   const [shortcutOverrides, setShortcutOverrides] = useState<ShortcutOverrides>(
     {},
   );
@@ -1863,7 +1887,7 @@ export function App() {
       if (project) load(project);
     });
   const returnHome = () =>
-    void act(async () => {
+    void act(() => navigateWithLoader("Saving project and loading Home…", async () => {
       if (hasCombinedErrors) throw Error("Fix or discard the combined document errors before saving.");
       useStudio.getState().setPlaying(false);
       await checkpointCurrent("Return to project home");
@@ -1879,7 +1903,7 @@ export function App() {
       setSavedCode({ session: submitted.session, project: submitted.project });
       window.location.hash = "home";
       setShowHome(true);
-    });
+    }));
   const runPreview = () => {
     setRun((value) => value + 1);
     s.setTime(0);
@@ -2175,7 +2199,7 @@ export function App() {
         <>
           <span className="status-environment">LOCAL WEB APP</span>
           <span className="status-environment">UTF-8</span>
-          <span className="status-environment">{p.settings.fps} FPS</span>
+          <span className="status-environment">Target {p.settings.fps} FPS</span>
           <button
             aria-label="Project settings"
             title="Project settings"
@@ -2235,6 +2259,7 @@ export function App() {
   if (showHome)
     return (
       <>
+        {navigationLoader}
         <TabIdentity name={p.name} home />
         <ProjectHome
           onSettings={() => setModal("settings")}
@@ -2244,7 +2269,7 @@ export function App() {
               await bridge.call("autosave", useStudio.getState().project);
           }}
           workspace={p}
-          onContinue={enterEditor}
+          onContinue={() => void navigateWithLoader("Opening project…", enterEditor)}
           onCreate={async (options) => {
             await checkpointCurrent("Before creating project");
             const current = useStudio.getState().project,
@@ -2279,11 +2304,11 @@ export function App() {
             selectLeftView(options.tool);
             enterEditor();
           }}
-          onOpen={async (id) => {
+          onOpen={(id) => navigateWithLoader("Opening project…", async () => {
             await checkpointCurrent("Before opening project");
             load(await bridge.call("openRecent", id));
             enterEditor();
-          }}
+          })}
           onImport={async () => {
             await checkpointCurrent("Before importing project");
             const project = await bridge.call("open");
@@ -2301,6 +2326,7 @@ export function App() {
     );
   return (
     <EditorStatus.Provider value={editorStatus}>
+    {navigationLoader}
     <div
       className={"app " + (light ? "light" : "")}
       data-compact-inspector={compactInspector}
@@ -2564,6 +2590,7 @@ export function App() {
           onClose={() => setPromptsOpen(false)}
         >
           <PromptTemplates
+            key={s.session}
             master={masterMode}
             onReviewGeneratedScene={() => setImportGeneratedScene(true)}
             onOpenCode={(pasteDocument) => {
@@ -2578,7 +2605,7 @@ export function App() {
             onCodeTaskExported={(context, sceneId, session) => {
               generatedContext.current = { session, sceneId, context };
             }}
-            onClose={importGeneratedScene ? undefined : () => setPromptsOpen(false)}
+            onClose={importGeneratedScene || modal ? undefined : () => setPromptsOpen(false)}
           />
         </PromptDrawer>
         {codeExtend?.session === s.session && (

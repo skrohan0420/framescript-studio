@@ -124,6 +124,7 @@ export const audioSchema = z
   });
 export type AudioClip = z.infer<typeof audioSchema>;
 export const projectSchema = z.object({
+  promptDraft: z.record(z.string(), z.unknown()).optional(),
   version: z.literal(1),
   name: z.string().min(1).max(200),
   html: z.string().max(2_000_000),

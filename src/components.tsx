@@ -26,7 +26,10 @@ export function Modal({
         <Dialog.Overlay className="overlay" />
         <Dialog.Content
           className={"modal" + (wide ? " modal-wide" : "")}
-          onEscapeKeyDown={onEscapeKeyDown}
+          onEscapeKeyDown={(event) => {
+            event.stopPropagation();
+            onEscapeKeyDown?.(event);
+          }}
         >
           <div className="modal-head">
             <Dialog.Title>{title}</Dialog.Title>
