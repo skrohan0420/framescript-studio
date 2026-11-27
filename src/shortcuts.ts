@@ -38,7 +38,6 @@ export const shortcuts = {
   importMedia: ["Panels", "Import images", "Mod+Alt+Shift+KeyI"],
   audio: ["Panels", "Open audio panel", "Mod+Alt+KeyA"],
   prompts: ["Panels", "Open prompt builder", "Mod+Alt+KeyP"],
-  typography: ["Panels", "Open typography panel", "Mod+Alt+KeyY"],
   theme: ["Panels", "Toggle light or dark theme", "Mod+Alt+KeyJ"],
   expand: ["Code editor", "Toggle expanded editor", "Mod+Alt+KeyM"],
   all: ["Code editor", "Show combined source", "Alt+Digit1"],

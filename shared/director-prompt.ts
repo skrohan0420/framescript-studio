@@ -1,10 +1,12 @@
 import type { PromptDraft } from "./prompt-templates";
+import { referenceLookFont } from "./reference-config";
 
 export function directorReferenceLook(draft: PromptDraft) {
   const look = draft.referenceStyle?.trim();
   return `REFERENCE LOOK — VISUAL DIRECTION FOR EVERY OPTION
 Selected look and preset description: ${look || "Original / no reference. Develop an original treatment from the brief and supplied visual preferences."}
 Influence: ${draft.referenceInfluence || "Balanced"}.
+Font for permitted text: ${referenceLookFont(draft)} with local sans-serif fallbacks. Keep text absent when disabled.
 ${draft.referenceInfluence === "Subtle"
     ? "Use a few selected visual principles as accents; retain the scene's own established visual identity."
     : draft.referenceInfluence === "Strong"

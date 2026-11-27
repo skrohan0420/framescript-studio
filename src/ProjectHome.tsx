@@ -13,7 +13,6 @@ import {
   Pencil,
   RotateCcw,
   ArrowRight,
-  Type,
   Sparkles,
   HardDrive,
   X,
@@ -150,9 +149,6 @@ export function ProjectHome({
           <button onClick={() => openCreate("code")}>
             <Film size={16} /> Video project
           </button>
-          <button onClick={() => openCreate("typography")}>
-            <Type size={16} /> Typography
-          </button>
           <button onClick={() => openCreate("prompts")}>
             <Sparkles size={16} /> Prompt builder
           </button>
@@ -230,21 +226,6 @@ export function ProjectHome({
                   <strong>Motion, made yours.</strong>
                   <span>
                     Start with a fresh scene <ArrowRight size={14} />
-                  </span>
-                </div>
-              </button>
-              <button
-                className="home-starter type"
-                onClick={() => openCreate("typography")}
-              >
-                <span className="starter-type">
-                  Aa<span>Make it move.</span>
-                </span>
-                <div>
-                  <small>TEXT WITH PERSONALITY</small>
-                  <strong>Typography studio</strong>
-                  <span>
-                    Explore animated text <ArrowRight size={14} />
                   </span>
                 </div>
               </button>

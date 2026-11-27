@@ -159,7 +159,7 @@ export const defaults: Settings = {
   network: false,
   timing: "seek",
 };
-export function newProject(): Project {
+export function newProject(config?: import("./reference-config").ReferenceConfig): Project {
   return {
     version: 1,
     name: "Untitled animation",
@@ -169,6 +169,7 @@ export function newProject(): Project {
     settings: { ...defaults },
     assets: [],
     markers: [],
+    ...(config ? { promptDraft: structuredClone(config) } : {}),
   };
 }
 export function combined(p: Project) {

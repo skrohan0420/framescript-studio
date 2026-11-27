@@ -3,20 +3,22 @@ import {
   Palette,
   Code2,
   Film,
-  Paintbrush,
   HardDrive,
   History,
+  SlidersHorizontal,
 } from "lucide-react";
 import { Modal, Field } from "./components";
 import { AppearanceSettings } from "./AppearanceSettings";
 import type { StudioPalette } from "./studio-palettes";
 import type { Project } from "../shared/project";
+import type { ReferenceConfig } from "../shared/reference-config";
+import { ConfigSettings } from "./ConfigSettings";
 
 const tabs = [
   { id: "appearance", name: "Appearance", icon: Palette },
   { id: "editor", name: "Editor", icon: Code2 },
+  { id: "config", name: "Config", icon: SlidersHorizontal },
   { id: "project", name: "Project", icon: Film, project: true },
-  { id: "brand", name: "Brand kit", icon: Paintbrush, project: true },
   { id: "storage", name: "Storage", icon: HardDrive },
   { id: "recovery", name: "Recovery", icon: History, project: true },
 ] as const;
@@ -25,14 +27,15 @@ type Props = {
   open: boolean;
   home: boolean;
   onClose: () => void;
-  onOpenEditor: () => void;
   palette: StudioPalette;
   light: boolean;
   onPalette: (id: StudioPalette) => void;
   onLight: (value: boolean) => void;
   project: Project;
+  globalConfig: ReferenceConfig;
+  onGlobalConfig: (value: ReferenceConfig) => void;
+  onProjectConfig: (value: ReferenceConfig) => void;
   onProject: (patch: Partial<Project["settings"]>) => void;
-  onBrand: (brand: NonNullable<Project["brand"]>) => void;
   autosave: boolean;
   onAutosave: (value: boolean) => void;
   fontSize: number;
@@ -47,7 +50,6 @@ type Props = {
   onCheckStorage: () => void;
   onClearStorage: () => void;
   services?: ReactNode;
-  brandReview?: ReactNode;
 };
 
 export function StudioSettings(p: Props) {
@@ -56,13 +58,6 @@ export function StudioSettings(p: Props) {
   const enabled = tabs.filter((t) => !p.home || !("project" in t));
   const active = enabled.some((t) => t.id === tab) ? tab : "appearance";
   const title = tabs.find((t) => t.id === active)!.name;
-  const brand = p.project.brand ?? {
-    name: "My brand",
-    font: "Segoe UI",
-    primary: "#67b4ff",
-    secondary: "#edf3fa",
-    background: "#101321",
-  };
   const navigate = (event: KeyboardEvent<HTMLButtonElement>) => {
     const index = enabled.findIndex((t) => t.id === active);
     let next: number;
@@ -131,12 +126,11 @@ export function StudioSettings(p: Props) {
             aria-labelledby={`${id}-${active}`}
             tabIndex={0}
           >
-            {active !== "appearance" && (
+            {active !== "appearance" && active !== "config" && (
               <header className="settings-page-heading">
                 <h3>{title}</h3>
                 <p>
                   {active === "project" ||
-                  active === "brand" ||
                   active === "recovery"
                     ? p.project.name
                     : "Application preferences · saved automatically"}
@@ -184,6 +178,11 @@ export function StudioSettings(p: Props) {
                 </section>
                 {p.services}
               </>
+            )}
+            {active === "config" && (
+              <ConfigSettings project={p.project} home={p.home}
+                globalConfig={p.globalConfig} onGlobalConfig={p.onGlobalConfig}
+                onProjectConfig={p.onProjectConfig} />
             )}
             {active === "project" && (
               <>
@@ -252,37 +251,6 @@ export function StudioSettings(p: Props) {
                 </section>
               </>
             )}
-            {active === "brand" && (
-              <>
-                {p.brandReview}
-                <p className="settings-scope-note">
-                  Saved with this project and included in portable copies.
-                </p>
-                <div className="settings-grid">
-                  {(
-                    [
-                      "name",
-                      "font",
-                      "primary",
-                      "secondary",
-                      "background",
-                    ] as const
-                  ).map((key) => (
-                    <Field key={key} label={`Brand ${key}`}>
-                      <input
-                        type={
-                          key === "name" || key === "font" ? "text" : "color"
-                        }
-                        value={brand[key]}
-                        onChange={(e) =>
-                          p.onBrand({ ...brand, [key]: e.target.value })
-                        }
-                      />
-                    </Field>
-                  ))}
-                </div>
-              </>
-            )}
             {active === "storage" && (
               <section className="settings-action-group">
                 <h4>Rendered files</h4>
@@ -324,17 +292,6 @@ export function StudioSettings(p: Props) {
             )}
           </main>
         </div>
-        <footer className="settings-footer">
-          <span>
-            {p.home
-              ? "Project, brand and recovery controls are available in the editor."
-              : "Changes save automatically."}
-          </span>
-          {p.home && <button onClick={p.onOpenEditor}>Open editor</button>}
-          <button className="primary" onClick={p.onClose}>
-            Done
-          </button>
-        </footer>
       </div>
     </Modal>
   );

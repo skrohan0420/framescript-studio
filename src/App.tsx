@@ -18,7 +18,6 @@ import { CodeContinuationPanel } from "./CodeContinuationPanel";
 import { editCodeContinuation } from "../shared/code-continuation";
 import { readEditorTabs, saveEditorTabs } from "./editor-tabs";
 import { ClipsPanel } from "./ClipsPanel";
-import { TypographyPanel } from "./TypographyPanel";
 import { ProjectHome } from "./ProjectHome";
 import { chooseExportFile, supportsExportPicker } from "./bridge";
 import { ExportSettings } from "./ExportSettings";
@@ -26,6 +25,7 @@ import { ExportDock } from "./ExportDock";
 import { ExportDownloads } from "./ExportDownloads";
 import { CanvasSizeControls } from "./CanvasSizeControls";
 import { StudioSettings } from "./StudioSettings";
+import { readReferenceConfig, type ReferenceConfig } from "../shared/reference-config";
 import { readStudioPalette, studioPaletteFinish, studioPaletteTokens, studioEditorTheme, type StudioPalette } from "./studio-palettes";
 import { ExportProgress, exportProgressText } from "./ExportProgress";
 import { EditorStatus, StatusActivity } from "./editor-status";
@@ -39,7 +39,6 @@ import {
 import {
   FileText,
   Home,
-  CaseSensitive,
   Palette,
   Braces,
   Music,
@@ -52,6 +51,7 @@ import {
   Check,
   ChevronDown,
   Code2,
+  Copy,
   ClipboardPaste,
   Columns2,
   Expand,
@@ -494,6 +494,8 @@ export function App() {
   const exports = useExports();
   const settingsChildReturn = useRef(false);
   const [palette, setPalette] = useState<StudioPalette>("silver");
+  const [globalConfig, setGlobalConfig] = useState<ReferenceConfig>(() => readReferenceConfig({}));
+  const createProject = () => newProject(globalConfig);
   const [downloadAudioStems, setDownloadAudioStems] = useState(() => {
     try { return localStorage.getItem("framescript.download-audio-stems") === "true"; }
     catch { return false; }
@@ -753,6 +755,7 @@ export function App() {
   useEffect(() => {
     void act(async () => {
       const layout = await bridge.call("settingsGet");
+      setGlobalConfig(readReferenceConfig(layout.referenceConfig));
       setShortcutOverrides(readShortcutOverrides(layout.shortcuts));
       const rememberedTabs = readEditorTabs();
       const savedLeftView = rememberedTabs.leftView ?? layout.leftView;
@@ -777,7 +780,6 @@ export function App() {
         [
           "media",
           "clips",
-          "typography",
           "prompts",
           "audio",
           "script",
@@ -789,7 +791,7 @@ export function App() {
           "mascot",
         ].includes(savedLeftView) &&
         (!manualMode ||
-          ["media", "audio", "code", "clips", "typography"].includes(
+          ["media", "audio", "code", "clips"].includes(
             savedLeftView,
           ))
       ) {
@@ -818,6 +820,8 @@ export function App() {
         setNotice("Workspace restored from SQLite");
       }
       const autosaved = workspace ? null : await bridge.call("recover");
+      if (!workspace && !autosaved)
+        useStudio.getState().load(newProject(readReferenceConfig(layout.referenceConfig)));
       if (autosaved) {
         const acknowledged = await recoveryAcknowledged(autosaved);
         if (acknowledged === "restored") useStudio.getState().load(autosaved);
@@ -866,6 +870,7 @@ export function App() {
             shortcuts: shortcutOverrides,
             theme: light ? "light" : "dark",
             palette,
+            referenceConfig: globalConfig,
             provider,
             model,
             timelineHeight,
@@ -890,6 +895,7 @@ export function App() {
     shortcutOverrides,
     light,
     palette,
+    globalConfig,
     provider,
     model,
     timelineHeight,
@@ -1777,7 +1783,7 @@ export function App() {
   };
   const selectedText = useStudio((state) => state.selectedText);
   useEffect(() => {
-    if (selectedText) selectLeftView("typography");
+    if (selectedText) selectLeftView("code");
   }, [selectedText]);
   const openLibraryTool = (view: string) => {
     const current = useStudio.getState().project;
@@ -1975,7 +1981,7 @@ export function App() {
   const actions: Record<ShortcutId, () => void> = {
     save: () => save(),
     saveCopy: () => save(true),
-    newProject: () => requestLoad(newProject()),
+    newProject: () => requestLoad(createProject()),
     openProject,
     home: returnHome,
     export: openExport,
@@ -2011,7 +2017,6 @@ export function App() {
     importMedia: () => fileRef.current?.click(),
     audio: () => selectLeftView("audio"),
     prompts: () => selectLeftView("prompts"),
-    typography: () => selectLeftView("typography"),
     theme: () => setLight((value) => !value),
     expand: toggleEditor,
     all: () => showCodeTab("all"),
@@ -2212,15 +2217,16 @@ export function App() {
     </footer>
   );
   const settingsDialogs = <>
-    <StudioSettings open={modal === "settings"} home={showHome} onClose={() => setModal("")} onOpenEditor={() => { setModal(""); enterEditor(); }}
+    <StudioSettings open={modal === "settings"} home={showHome} onClose={() => setModal("")}
       palette={palette} light={light} onPalette={setPalette} onLight={setLight}
-      project={p} onProject={settings} onBrand={brand => s.change({brand}, "Edit brand kit")}
-      brandReview={!manualMode ? <Field label="Review AI changes before applying"><input type="checkbox" checked={reviewAI} onChange={e => setReviewAI(e.target.checked)} /></Field> : undefined}
+      project={p} onProject={settings}
+      globalConfig={globalConfig} onGlobalConfig={setGlobalConfig}
+      onProjectConfig={config => s.change({ promptDraft: { ...p.promptDraft, ...config } }, "Edit project config")}
       autosave={autosave} onAutosave={setAutosave} fontSize={fontSize} onFontSize={setFontSize}
       onKeyboard={() => { settingsChildReturn.current = true; setModal("keyboard-shortcuts"); }} onRecovery={() => { settingsChildReturn.current = true; setModal("recovery-history"); }} onRecoveryCopy={downloadRecoveryCopy}
       onSaveCopy={() => save(true)}
       onSource={() => void act(async () => { const file = await bridge.call("source", viewProject); if (file) setNotice("Source exported · " + file); })}
-      onTrash={() => void act(async () => { await checkpointCurrent("Before moving project to trash"); if (await bridge.call("deleteProject")) { load(newProject()); setNotice("Project moved to local trash"); } })}
+      onTrash={() => void act(async () => { await checkpointCurrent("Before moving project to trash"); if (await bridge.call("deleteProject")) { load(createProject()); setNotice("Project moved to local trash"); } })}
       storage={exportStorage} onCheckStorage={() => void act(async () => setExportStorage(await bridge.call("exportStorage")))}
       onClearStorage={() => { if (confirm("Clear completed local render copies? Their download links will stop working. Active renders and downloads will be kept.")) void act(async () => { setExportStorage(await bridge.call("clearExportFiles")); for (const job of exports.jobs) if (job.status === "completed") exports.dismiss(job.id); }); }}
       services={!manualMode ? <div className="settings-action-group"><h4>Services</h4><button onClick={() => openServices("settings")}>Manage services</button></div> : undefined}
@@ -2286,7 +2292,7 @@ export function App() {
                 thumbnail: runtime?.thumbnail,
               });
             const project = {
-              ...newProject(),
+              ...createProject(),
               name: options.name,
               html: "",
               css: "",
@@ -2400,7 +2406,7 @@ export function App() {
           <button
             aria-label="New project"
             title={shortcutTitle("newProject")}
-            onClick={() => requestLoad(newProject())}
+            onClick={() => requestLoad(createProject())}
           >
             <FilePlus2 size={17} />
             <span className="action-label">New</span>
@@ -2634,7 +2640,6 @@ export function App() {
               { id: "media", label: "Media", icon: Library },
               { id: "audio", label: "Audio", icon: Music },
               { id: "clips", label: "Clips", icon: Film },
-              { id: "typography", label: "Typography", icon: CaseSensitive },
               { id: "script", label: "Script", icon: FileText },
               { id: "scenes", label: "Scenes", icon: Film },
               { id: "components", label: "Layouts", icon: Layers },
@@ -2649,7 +2654,6 @@ export function App() {
                     "code",
                     "prompts",
                     "clips",
-                    "typography",
                   ].includes(id),
               )
               .map(({ id, label, icon: Icon }) => (
@@ -2670,7 +2674,6 @@ export function App() {
                       "code",
                       "prompts",
                       "clips",
-                      "typography",
                     ].includes(id)
                       ? selectLeftView(id)
                       : openLibraryTool(id)
@@ -2680,7 +2683,6 @@ export function App() {
                 </button>
               ))}
           </nav>
-          {leftView === "typography" && <TypographyPanel master={masterMode} />}
           {leftView === "clips" && (
             <ClipsPanel
               onSelect={() => setMasterMode(false)}
@@ -2825,6 +2827,32 @@ export function App() {
                     </select>
                   )}
                   <div>
+                    <button
+                      title={
+                        tab === "all" || tab === "split"
+                          ? "Copy complete document"
+                          : `Copy ${tab === "js" ? "JavaScript" : tab.toUpperCase()}`
+                      }
+                      aria-label="Copy code"
+                      onClick={async () => {
+                        const text =
+                          tab === "all"
+                            ? combinedDraft
+                            : tab === "split"
+                              ? combined(sourceProject)
+                              : sourceProject[tab];
+                        try {
+                          await navigator.clipboard.writeText(text);
+                          setNotice("Code copied to clipboard.");
+                        } catch {
+                          setNotice(
+                            "Could not copy code. Select the code and press Ctrl+C to copy it.",
+                          );
+                        }
+                      }}
+                    >
+                      <Copy size={16} aria-hidden="true" />
+                    </button>
                     <button
                       className="code-editor-menu-trigger"
                       title="Code editor options"
@@ -4081,7 +4109,7 @@ export function App() {
               );
             setMasterMode(false);
             state.setSelectedText(textId);
-            selectLeftView("typography");
+            selectLeftView("code");
           }}
           selectedAudio={selectedAudio}
           onSelectAudio={(id) => {

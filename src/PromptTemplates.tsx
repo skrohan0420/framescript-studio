@@ -31,7 +31,7 @@ import { parseNarrationInput } from "../shared/narration-input";
 import { PromptTypography } from "./PromptTypography";
 import { PromptMascot } from "./PromptMascot";
 import { PromptTemplateChoice } from "./PromptTemplateChoice";
-import { PromptDirectionStudio } from "./PromptDirectionStudio";
+import { readReferenceConfig } from "../shared/reference-config";
 import {
   buildCodePrompt,
   buildStructuredSceneBrief,
@@ -191,6 +191,7 @@ export function PromptTemplates({
     textPlanning: "AI decides",
     mascotEnabled: false,
     textItems: [],
+    ...readReferenceConfig(project.promptDraft),
   };
   const draft: PromptDraft = (() => {
     try {
@@ -242,7 +243,9 @@ export function PromptTemplates({
   })();
   const setDraft = (value: PromptDraft | ((previous: PromptDraft) => PromptDraft)) => {
     const next = typeof value === "function" ? value(draft) : value;
-    useStudio.getState().change({ promptDraft: { ...next } }, "Prompt builder edit");
+    useStudio.getState().change({
+      promptDraft: { ...next, ...readReferenceConfig(project.promptDraft) },
+    }, "Prompt builder edit");
   };
   const [includeCode, setIncludeCode] = useState(false);
   const [output, setOutput] = useState<GenerateOutput>(() => {
@@ -274,7 +277,6 @@ export function PromptTemplates({
       const saved = localStorage.getItem("framescript.prompt-tab");
       return [
         "brief",
-        "reference",
         "animation",
         "audio",
         "identity",
@@ -539,7 +541,7 @@ export function PromptTemplates({
           <h3 title="Describe your scene, then copy the prompt and download its task ZIP.">
             <Sparkles size={17} /> Prompt builder
           </h3>
-          <p>Brief → style → copy → create.</p>
+          <p>Brief → style → copy → create. Reference look: Settings → Config.</p>
         </div>
         <button
           title="Reset prompt fields"
@@ -570,7 +572,6 @@ export function PromptTemplates({
       >
         {[
           ["brief", "Brief"],
-          ["reference", "Reference look"],
           ["animation", "Animation"],
           ["audio", "Audio"],
           ["identity", "Identity"],
@@ -591,7 +592,6 @@ export function PromptTemplates({
             onKeyDown={(event) => {
               const ids = [
                 "brief",
-                "reference",
                 "animation",
                 "audio",
                 "identity",
@@ -619,8 +619,6 @@ export function PromptTemplates({
           >
             {id === "brief" ? (
               <Clipboard size={17} />
-            ) : id === "reference" ? (
-              <Sparkles size={17} />
             ) : id === "animation" ? (
               <Orbit size={17} />
             ) : id === "audio" ? (
@@ -868,19 +866,6 @@ export function PromptTemplates({
           </div>
         </div>
         <div
-          className="prompt-form-card prompt-tab-panel"
-          role="tabpanel"
-          id="prompt-panel-reference"
-          aria-labelledby="prompt-tab-reference"
-          hidden={activeSection !== "reference"}
-        >
-          <PromptDirectionStudio
-            kind="reference"
-            draft={draft}
-            update={update}
-          />
-        </div>
-        <div
           className="prompt-form-card prompt-design-guide prompt-tab-panel"
           role="tabpanel"
           id="prompt-panel-identity"
@@ -901,7 +886,7 @@ export function PromptTemplates({
             />
             Lock visual identity across shots
           </label>
-          <p className="type-hint">Generate a reusable identity from Reference look and your script, then paste the guide below. The lock preserves its invariants across shots.</p>
+          <p className="type-hint">Generate a reusable identity from your project’s reference look in Settings → Config and your script, then paste the guide below. The lock preserves its invariants across shots.</p>
           <div className="director-export-action">
             <button className="director-export-button" disabled={busy} onClick={() => void run(async () => {
               const text = buildIdentityPrompt(draft, output);

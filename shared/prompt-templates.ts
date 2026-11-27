@@ -1,3 +1,4 @@
+import { referenceLookFont, type ReferenceConfig } from "./reference-config";
 import {
   textLayerPrompt,
   promptTextListSchema,
@@ -416,6 +417,7 @@ export type PromptDraft = AnimationDirection & {
   audio?: AudioDirection;
   style: string;
   referenceStyle?: string;
+  referenceLookSettings?: ReferenceConfig["referenceLookSettings"];
   editingStyle?: string;
   referenceInfluence?: string;
   referenceNotes?: string;
@@ -641,6 +643,7 @@ ${structured ? "Use a visual reference from the ZIP or the conversation to appro
 }
 Style: ${draft.style.trim() || "Clean, cinematic motion graphics with a consistent palette."}
 Reference-inspired direction: ${draft.referenceStyle?.trim() || "Use an original visual treatment suited to the brief."}
+Reference look font: ${referenceLookFont(draft)}. Use this font for permitted text, with local sans-serif fallbacks. This does not enable on-screen text.
 ${draft.referenceStyle?.trim() ? `Reference influence: ${draft.referenceInfluence || "Balanced"}. ${draft.referenceInfluence === "Subtle" ? "Borrow a few broad visual principles while keeping the original scene's own visual identity." : draft.referenceInfluence === "Strong" ? "Emphasize the selected shape, material and composition principles consistently, while creating original artwork." : "Balance the selected visual principles with the user's own art direction."}` : ""}
 ${draft.referenceNotes?.trim() ? `Custom visual direction: ${draft.referenceNotes.trim()}. This specific direction takes precedence over generic reference suggestions; preserve supplied facts, text and mascot identity.` : ""}
 ${draft.referenceStyle?.trim() ? "Translate the selected reference into the visual principles described above using original procedural artwork. Do not add the reference channel's logo, branding, mascots, copied compositions or external footage. The supplied palette, subject identity, exact text and runtime requirements remain authoritative." : ""}
@@ -679,7 +682,7 @@ ${
 TYPOGRAPHY & SUBTITLES
 Quick title / label text: ${aiText ? "AI selects concise, factual wording under AI TEXT DIRECTION; ignore saved manual title and item choices." : draft.screenText.trim() || "No quick title requested; individual text items are specified separately below."}
 Subtitles: ${draft.subtitles && draft.subtitles !== "Off" ? `${draft.subtitles}. This explicitly requests subtitles in addition to any exact labels above. Use only the supplied narration, preserving words and punctuation; never invent caption copy. If no narration is supplied, omit subtitles. Prefer supplied word timestamps; if only untimed narration exists, estimate readable phrase timing without claiming exact speech synchronization.` : "Global captions off. Narration remains context only, except for any explicitly enabled individual caption item below."}
-Font treatment: ${draft.textFont?.trim() || "System sans-serif with a clear readable hierarchy."}
+Font treatment: ${draft.referenceLookSettings === undefined ? draft.textFont?.trim() || referenceLookFont(draft) : referenceLookFont(draft)} with local sans-serif fallbacks and a clear readable hierarchy.
 Type scale: ${draft.textScale?.trim() || "Balanced hierarchy; size text relative to the output frame."}
 Placement: ${draft.textPlacement?.trim() || "Bottom-center subtitles and subject-adjacent labels, within safe margins."}
 Animation: ${draft.textAnimation?.trim() || "Subtle fade with readable holds."}
@@ -718,6 +721,7 @@ ${draft.selectedDirection.trim()}
 VISUAL IDENTITY — ${draft.consistency !== false ? "LOCKED" : "ADVISORY"}
 ${draft.identityGuide?.trim() || "Preserve a coherent identity from Reference look."}
 Reference look: ${draft.referenceStyle?.trim() || "Original"}. Influence: ${draft.referenceInfluence || "Balanced"}.
+Reference look font: ${referenceLookFont(draft)}. Apply to permitted text with local sans-serif fallbacks; keep text absent when disabled.
 Reference notes: ${draft.referenceNotes?.trim() || "None"}.
 ${animationDirection({ renderingMode: draft.renderingMode }, draft.duration, structured)}
 

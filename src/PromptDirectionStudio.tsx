@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { PromptDraft } from "../shared/prompt-templates";
 import { referenceStyles, editingStyles } from "../shared/prompt-templates";
 
@@ -97,10 +97,14 @@ export function PromptDirectionStudio({
   kind,
   draft,
   update,
+  compact = false,
+  renderLookSettings,
 }: {
   kind: "reference" | "pacing";
   draft: PromptDraft;
   update: <K extends keyof PromptDraft>(key: K, value: PromptDraft[K]) => void;
+  compact?: boolean;
+  renderLookSettings?: (style: string, name: string) => ReactNode;
 }) {
   const reference = kind === "reference";
   const title = reference ? "Reference-inspired look" : "Editing & pacing";
@@ -183,39 +187,17 @@ export function PromptDirectionStudio({
   return (
     <section className="direction-studio" aria-label={title}>
       <header>
-        <span className="direction-eyebrow">
+        {!compact && <span className="direction-eyebrow">
           {reference ? "VISUAL LANGUAGE" : "EDITORIAL DIRECTION"}
-        </span>
-        <h3>{title}</h3>
-        <p>
+        </span>}
+        <h3>{compact && reference ? "Reference look" : title}</h3>
+        {!compact && <p>
           {reference
             ? "Choose how the artwork should feel: shapes, materials, palette and composition. This is inspiration for original artwork, not a request to copy a channel’s assets."
             : "Choose how the story unfolds: shot order, holds, cuts and transitions. Supplied narration timestamps always take priority over pacing preferences."}
-        </p>
+        </p>}
       </header>
-      <div className="direction-current" aria-live="polite">
-        <small>Selected direction</small>
-        <strong>
-          {selected?.[0] ?? (draft[key] ? "Custom direction" : defaultName)}
-        </strong>
-        <p>
-          {selected?.[1] ||
-            draft[key] ||
-            (reference
-              ? "Create an original visual treatment guided by your Visuals and Identity settings."
-              : "Let each idea establish, demonstrate and settle at a readable pace.")}
-        </p>
-        {selected && (
-          <>
-            <h4>Example treatment</h4>
-            <p>{examples[selected[0]]}</p>
-          </>
-        )}
-        <small>
-          Examples explain the treatment; they are not added as subjects or
-          narration to your prompt.
-        </small>
-      </div>
+      <div className="direction-browser">
       <label className="field">
         <span>
           {reference ? "Search reference looks" : "Search editing styles"}
@@ -277,6 +259,7 @@ export function PromptDirectionStudio({
           reference ? "Reference look presets" : "Editing style presets"
         }
         onKeyDown={(event) => {
+          if (!(event.target as Element).closest('[role="radio"]')) return;
           if (
             ![
               "ArrowDown",
@@ -310,6 +293,7 @@ export function PromptDirectionStudio({
           buttons[next]?.click();
         }}
       >
+        <div className="direction-option-card">
         <button
           role="radio"
           tabIndex={
@@ -327,9 +311,11 @@ export function PromptDirectionStudio({
               : "Prioritize comprehension and adapt to your narration."}
           </span>
         </button>
+        {renderLookSettings?.("", defaultName)}
+        </div>
         {filtered.map(([name, direction]) => (
+          <div key={name} className="direction-option-card">
           <button
-            key={name}
             role="radio"
             tabIndex={draft[key] === `${name}: ${direction}` ? 0 : -1}
             aria-checked={draft[key] === `${name}: ${direction}`}
@@ -345,6 +331,8 @@ export function PromptDirectionStudio({
             </strong>
             <span className="direction-card-description">{direction}</span>
           </button>
+          {renderLookSettings?.(`${name}: ${direction}`, name)}
+          </div>
         ))}
       </div>
       {!filtered.length && (
@@ -360,6 +348,31 @@ export function PromptDirectionStudio({
           </button>
         </p>
       )}
+      </div>
+      <aside className="direction-details" aria-label="Selected look and controls">
+      <div className="direction-current" aria-live="polite">
+        <small>Selected direction</small>
+        <strong>
+          {selected?.[0] ?? (draft[key] ? "Custom direction" : defaultName)}
+        </strong>
+        <p>
+          {selected?.[1] ||
+            draft[key] ||
+            (reference
+              ? "Create an original visual treatment guided by your Visuals and Identity settings."
+              : "Let each idea establish, demonstrate and settle at a readable pace.")}
+        </p>
+        {selected && (
+          <>
+            <h4>Example treatment</h4>
+            <p>{examples[selected[0]]}</p>
+          </>
+        )}
+        <small>
+          Examples explain the treatment; they are not added as subjects or
+          narration to your prompt.
+        </small>
+      </div>
       <div className="direction-tuning">
         <h4>Fine-tune this direction</h4>
         {reference ? (
@@ -430,33 +443,32 @@ export function PromptDirectionStudio({
             </p>
           </>
         )}
+        {!reference && <>
         <label className="field">
           <span>
-            {reference ? "Custom visual direction" : "Custom editing direction"}
+            Custom editing direction
           </span>
           <textarea
             aria-label={
-              reference ? "Custom visual direction" : "Custom editing direction"
+              "Custom editing direction"
             }
             rows={3}
             maxLength={3000}
             value={draft[notesKey] ?? ""}
             placeholder={
-              reference
-                ? "What should be emphasized or avoided? e.g. Keep geometric shapes but use my muted palette."
-                : "Describe the beat structure or holds you need. e.g. Hold the comparison until the narration explains it."
+              "Describe the beat structure or holds you need. e.g. Hold the comparison until the narration explains it."
             }
             onChange={(event) => update(notesKey, event.target.value)}
           />
         </label>
         <p className="type-control-help">
-          {reference
-            ? "This section changes artwork direction. Editing & pacing controls rhythm separately."
-            : "This section changes timing and structure. Reference look controls artwork separately."}{" "}
+          This section changes timing and structure. Reference look controls artwork separately.{" "}
           These settings guide generated code; they do not change the current
           scene automatically.
         </p>
+        </>}
       </div>
+      </aside>
     </section>
   );
 }
