@@ -125,9 +125,11 @@ export function animationDirection(
   const mode = draft.renderingMode ?? "auto";
   const renderer =
     structured
-      ? `RENDERING PREFERENCE: ${mode === "3d" ? "True 3D" : mode === "auto" ? "Automatic" : mode.toUpperCase()}. Suggest this look using supported native shapes and tracks.`
+      ? mode === "3d" || mode === "2.5d"
+        ? "RENDERING LIMIT: Native structured shapes cannot implement the configured depth renderer. Change to code output; do not substitute a flat approximation."
+        : "RENDERING: Use supported native 2D shapes and tracks."
       : mode === "3d"
-      ? `RENDERING: True 3D using the bundled window.THREE and FrameScript3D helper. No imports or CDN scripts. Use procedural meshes, coherent lighting and perspective or orthographic cameras. FrameScript3D.create({canvas, width, height, background}) returns {scene,camera,renderer,render,dispose}. It uses pixel ratio 1 and preserveDrawingBuffer for export. Call view.render() at the END of every window.renderFrame(t). Do not use setAnimationLoop or requestAnimationFrame. Set every transform from absolute t; never use rotation += or mixer.update(delta). Use AnimationMixer.setTime(t) for any preloaded animation. Core Three.js only: addons, OrbitControls and GLTFLoader are not bundled. No external assets.`
+      ? `RENDERING: True 3D using the bundled window.THREE and FrameScript3D helper. No imports or CDN scripts. Use procedural meshes, coherent lighting and a perspective camera that makes volume readable. FrameScript3D.create({canvas, width, height, background}) returns {scene,camera,renderer,render,dispose}. It uses pixel ratio 1 and preserveDrawingBuffer for export. Call view.render() at the END of every window.renderFrame(t). Do not use setAnimationLoop or requestAnimationFrame. Set every transform from absolute t; never use rotation += or mixer.update(delta). Use AnimationMixer.setTime(t) for any preloaded animation. Core Three.js only: addons, OrbitControls and GLTFLoader are not bundled. No external assets.`
       : mode === "2.5d"
         ? "RENDERING: 2.5D layered HTML/CSS or Canvas with perspective and parallax; no Three.js required."
         : mode === "2d"

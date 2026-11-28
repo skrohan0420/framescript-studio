@@ -10,6 +10,7 @@ test("extends a code visual at its handoff without shifting or replacing narrati
   context,
 }) => {
   const project = newProject();
+  project.promptDraft = { renderingMode: "2d" };
   project.settings = {
     ...project.settings,
     width: 320,
@@ -120,7 +121,9 @@ test("extends a code visual at its handoff without shifting or replacing narrati
   await copy.click();
   const packaged = await response;
   expect(packaged.ok(), await packaged.text()).toBe(true);
-  const bytes = await readFile(await (await zip).path());
+  const downloaded = await zip;
+  expect(downloaded.suggestedFilename()).toMatch(/^02 Scene Code - .* - Continuation 01 - 2D - /);
+  const bytes = await readFile(await downloaded.path());
   for (const name of [
     "TASK.md",
     "source/previous.js",

@@ -1,6 +1,8 @@
 import { z } from "zod";
+import { renderingModeSchema } from "./rendering-direction";
 
 export const referenceConfigSchema = z.object({
+  renderingMode: renderingModeSchema.catch("3d"),
   referenceStyle: z.string().max(30000).catch(""),
   referenceInfluence: z.enum(["Subtle", "Balanced", "Strong"]).catch("Balanced"),
   referenceNotes: z.string().max(30000).catch(""),
@@ -27,6 +29,17 @@ export function readReferenceConfig(value: unknown): ReferenceConfig {
   return referenceConfigSchema.parse(
     value && typeof value === "object" ? value : {},
   );
+}
+
+/** Current explicit look choices override older clip context without erasing story/identity. */
+export function continuationReferenceContext(inherited: unknown, current: unknown) {
+  const previous = inherited && typeof inherited === "object" && !Array.isArray(inherited) ? inherited : {};
+  const saved = current && typeof current === "object" && !Array.isArray(current) ? current : {};
+  const config = readReferenceConfig(saved);
+  return {
+    ...previous,
+    ...Object.fromEntries(Object.entries(config).filter(([key]) => Object.hasOwn(saved, key))),
+  };
 }
 
 export function configuredFontPrompt(config: Parameters<typeof referenceLookFont>[0]) {

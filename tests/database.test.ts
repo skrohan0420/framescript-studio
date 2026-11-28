@@ -118,6 +118,78 @@ it("preserves a corrupt database and restores a validated startup backup", async
   ).toBe(true);
   db.close();
 });
+it("refreshes the recovery copy during a session and recovers it after corruption", async () => {
+  const dir = path.resolve("test-results/db-session-backup-" + randomUUID());
+  const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+  let db = await StudioDatabase.open(dir);
+  try {
+    const p = { ...newProject(), name: "Recent work" };
+    db.saveWorkspace(p);
+    now.mockReturnValue(1_060_001);
+    db.saveWorkspace({ ...p, name: "Latest work" });
+    db.close();
+    fs.writeFileSync(path.join(dir, "studio.db"), "broken save");
+    db = await StudioDatabase.open(dir);
+    expect(db.workspace()).toEqual(p);
+    expect(fs.readdirSync(dir).some((name) => name.startsWith("studio.db.corrupt-"))).toBe(true);
+  } finally {
+    now.mockRestore();
+    db.close();
+  }
+});
+it("falls back to startup recovery when the rolling backup is also damaged", async () => {
+  const dir = path.resolve("test-results/db-double-corruption-" + randomUUID());
+  let db = await StudioDatabase.open(dir);
+  const p = { ...newProject(), name: "Startup recovery" };
+  db.saveWorkspace(p);
+  db.close();
+  db = await StudioDatabase.open(dir);
+  db.close();
+  fs.writeFileSync(path.join(dir, "studio.db"), "damaged");
+  fs.writeFileSync(path.join(dir, "studio.db.save-backup"), "damaged backup");
+  db = await StudioDatabase.open(dir);
+  expect(db.workspace()).toEqual(p);
+  db.close();
+});
+it("rejects damaged media instead of silently loading altered bytes", async () => {
+  const dir = path.resolve("test-results/db-media-integrity-" + randomUUID());
+  const db = await StudioDatabase.open(dir);
+  try {
+    const p = newProject();
+    p.assets = [{ id: "image", name: "image.png", data: "data:image/png;base64,AQID" }];
+    db.saveWorkspace(p);
+    expect(db.workspace()).toEqual(p);
+    const [filename] = fs.readdirSync(path.join(dir, "media"));
+    fs.writeFileSync(path.join(dir, "media", filename), "damaged image");
+    expect(() => db.workspace()).toThrow("integrity check");
+  } finally {
+    db.close();
+  }
+});
+it("keeps independent continuation versions recoverable across edits and restart", async () => {
+  const dir = path.resolve("test-results/db-continuation-history-" + randomUUID());
+  let db = await StudioDatabase.open(dir);
+  const p = newProject();
+  p.workflow = initialWorkflow(p);
+  p.workflow.scenes[0].visualDuration = 2;
+  p.workflow.scenes[0].visualContinuations = [{
+    id: randomUUID(), start: 2, duration: 2,
+    html: "<div>Saved continuation</div>", css: "", js: "",
+  }];
+  const original = structuredClone(p.workflow.scenes[0].visualContinuations[0]);
+  const scope = `continuation/${original.id}`;
+  db.putProject("safe.frame", p);
+  p.workflow.scenes[0].visualContinuations[0].html = "<div>Replacement</div>";
+  db.saveWorkspace(p, undefined, "safe.frame");
+  db.close();
+  db = await StudioDatabase.open(dir);
+  const versions = db.codeHistory("safe.frame", scope);
+  expect(versions).toHaveLength(2);
+  expect(db.codeVersion("safe.frame", scope, versions[1].id).html).toBe(original.html);
+  expect(db.codeVersion("safe.frame", scope, versions[0].id).html).toContain("Replacement");
+  expect(db.codeHistory("safe.frame", "scene-1")).toHaveLength(1);
+  db.close();
+});
 it("persists workspace, independent scenes, media, preferences and history across a database reopen", async () => {
   const dir = path.resolve("test-results/db-" + randomUUID());
   let db = await StudioDatabase.open(dir);

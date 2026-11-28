@@ -82,6 +82,16 @@ export function ConfigSettings({ project, home, globalConfig, onGlobalConfig, on
         <span>Defaults for new projects</span>
       </>}
     </div>
+    <label className="field"><span>Rendering</span>
+      <select aria-label="Rendering mode" value={config.renderingMode}
+        onChange={event => save(readReferenceConfig({ ...config, renderingMode: event.target.value }))}>
+        <option value="3d">Stylized true 3D</option>
+        <option value="2.5d">2.5D depth and parallax</option>
+        <option value="2d">2D illustration</option>
+        <option value="auto">Director decides</option>
+      </select>
+      <small>Applies to new prompts. Reference colors and shapes adapt to this choice; existing scenes stay as saved.</small>
+    </label>
     <PromptDirectionStudio key={active} kind="reference" compact draft={draft}
       renderLookSettings={(style, name) => <LookSettings name={name} style={style} config={config} onChange={save} />}
       update={(key, value) => {

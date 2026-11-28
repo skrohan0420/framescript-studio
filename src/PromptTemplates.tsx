@@ -39,6 +39,7 @@ import {
 } from "../shared/code-generate";
 import { buildDirectorPrompt } from "../shared/director-prompt";
 import { buildIdentityPrompt } from "../shared/identity-prompt";
+import { projectPackageContext } from "../shared/package-naming";
 import { bridge, download } from "./bridge";
 
 const outputKey = "framescript.prompt-output";
@@ -274,6 +275,8 @@ export function PromptTemplates({
         format: output,
         prompt: buildCodePrompt({ ...implementationDraft, format: output }, width, height, source),
         references: [],
+        purpose: "implementation",
+        packageContext: projectPackageContext(project),
       });
       request = { kind: "code", input };
       prompt = buildCodeGeneratePrompt(input);
@@ -300,7 +303,7 @@ export function PromptTemplates({
   const exportDirector = () => run(async () => {
     setUncopiedPrompt("");
     const session = useStudio.getState().session;
-    const input = codeGenerateInputSchema.parse({ format: "document", prompt: directorPrompt, references: [] });
+    const input = codeGenerateInputSchema.parse({ format: "document", prompt: directorPrompt, references: [], purpose: "director", packageContext: projectPackageContext(project) });
     const result = await bridge.call("codeGeneratePackage", input);
     if (useStudio.getState().session !== session) throw Error("The project changed. Export a fresh director prompt.");
     download(result);

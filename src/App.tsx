@@ -2036,7 +2036,6 @@ export function App() {
       toggleDiff();
     },
     history: () => {
-      if (continuation) return;
       selectLeftView("code");
       setModal("code-history");
     },
@@ -2924,7 +2923,6 @@ export function App() {
                       <button
                         title="Code history"
                         aria-label="Code history"
-                        disabled={!!continuation}
                         onClick={() => setModal("code-history")}
                       >
                         <History size={16} />
@@ -4189,18 +4187,18 @@ export function App() {
       )}
       {modal === "code-history" && (
         <CodeHistory
-          scene={p.workflow?.selectedId ?? null}
-          readOnly={sourceReadOnly || !!continuation}
+          scene={continuation ? `continuation/${continuation.id}` : p.workflow?.selectedId ?? null}
+          readOnly={sourceReadOnly}
           onClose={() => setModal("")}
-          onCompare={(code, language) => {
+          onCompare={continuation ? undefined : (code, language) => {
             changeTab(language);
             setChanges({ session: s.session, scene: codeScene, code });
             setModal("");
           }}
           onRestore={(code) => {
             setParseError("");
-            setCombinedDraft(combined({ ...p, ...code }));
-            s.change(code, "Restore code version");
+            setCombinedDraft(combined({ ...sourceProject, ...code }));
+            changeSource(code, "Restore code version");
             setModal("");
           }}
         />

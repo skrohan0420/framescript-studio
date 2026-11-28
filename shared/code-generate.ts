@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { packageContextSchema } from "./package-naming";
 import {
   describeReferences,
   promptReferencesSchema,
@@ -9,6 +10,8 @@ export const codeGenerateInputSchema = z.strictObject({
   format: z.enum(["document", "separate"]),
   prompt: z.string().trim().min(1).max(6_200_000),
   references: promptReferencesSchema.optional(),
+  purpose: z.enum(["director", "implementation"]).optional(),
+  packageContext: packageContextSchema.optional(),
 });
 
 export type CodeGenerateInput = z.infer<typeof codeGenerateInputSchema>;

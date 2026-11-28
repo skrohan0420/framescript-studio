@@ -23,6 +23,7 @@ import {
   writeGeneratePackage,
 } from "./structured-generate-package";
 import { writeCodeContinuationPackage } from "./code-continuation-package";
+import { packageFilename, projectPackageContext, type PackageContext, type PackagePurpose } from "../shared/package-naming";
 import { writeExtendPackage } from "./structured-extend-package";
 import type { ExtendTask } from "../shared/structured-extend";
 import type { GenerateRequest } from "../shared/structured-generate";
@@ -169,6 +170,12 @@ function download(file: string, name: string, owner: string) {
   downloads.set(id, { file, name, owner });
   return { name, url: "/api/download/" + id };
 }
+function taskZipName(purpose: PackagePurpose, context?: PackageContext, sceneId?: string, sceneTitle?: string) {
+  const workspace = context ? null : database.get("workspace");
+  const resolved = context ?? (workspace ? projectPackageContext(workspace, sceneId)
+    : { projectName: "FrameScript", sceneTitle: sceneTitle ?? "New scene", sceneNumber: 1 });
+  return packageFilename({ ...resolved, ...(!context && sceneTitle ? { sceneTitle } : {}) }, purpose);
+}
 async function config(c: AIConfig, client: Client): Promise<AIConfig> {
   if (
     !c ||
@@ -210,7 +217,7 @@ async function invoke(
         prompt,
         ...download(
           destination,
-          "framescript-extend-" + requestId + ".zip",
+          taskZipName("native-extend", undefined, args[0].clipId, args[0].scene.title),
           owner,
         ),
       };
@@ -228,7 +235,7 @@ async function invoke(
       const id = randomUUID();
       const destination = path.join(exportsDir, id + ".zip");
       const prompt = await writeCodeContinuationPackage(args[0], destination);
-      return { prompt, ...download(destination, "framescript-extend-code-" + id + ".zip", owner) };
+      return { prompt, ...download(destination, taskZipName(args[0].purpose === "director" ? "continuation-director" : "continuation-code", args[0].packageContext, undefined, args[0].title), owner) };
     }
     case "codeGeneratePackage": {
       const id = randomUUID();
@@ -236,7 +243,7 @@ async function invoke(
       const prompt = await writeCodeGeneratePackage(args[0], destination);
       return {
         prompt,
-        ...download(destination, "framescript-code-" + id + ".zip", owner),
+        ...download(destination, taskZipName(args[0].purpose === "director" || (!args[0].purpose && args[0].prompt.startsWith("You are the creative director for a FrameScript Studio animation.")) ? "director" : "code", args[0].packageContext), owner),
       };
     }
     case "structuredGeneratePackage": {
@@ -253,7 +260,7 @@ async function invoke(
         prompt,
         ...download(
           destination,
-          "framescript-generate-" + requestId + ".zip",
+          taskZipName("native-scene"),
           owner,
         ),
       };
@@ -287,7 +294,7 @@ async function invoke(
         ...saved,
         ...download(
           destination,
-          "framescript-edit-" + requestId + ".zip",
+          taskZipName("native-edit", undefined, args[2], args[0].title),
           owner,
         ),
       };
@@ -963,7 +970,7 @@ async function start() {
           res.on("close", releaseFile);
           res.writeHead(200, {
             "Content-Type": "application/octet-stream",
-            "Content-Disposition": `attachment; filename="${item.name}"`,
+            "Content-Disposition": `attachment; filename="${item.name.replace(/[^\x20-\x7e]|["\\]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(item.name).replace(/['()*]/g, (character) => "%" + character.charCodeAt(0).toString(16).toUpperCase())}`,
             "Cache-Control": "no-store",
           });
           createReadStream(item.file)

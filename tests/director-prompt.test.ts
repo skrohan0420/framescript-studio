@@ -79,22 +79,51 @@ describe("director prompt", () => {
     expect(buildDirectorPrompt(enabled, 1920, 1080, "structured"))
       .toContain("do not request generated music");
   });
-  it("delegates rendering and ignores legacy rendering and motion controls", () => {
+  it("honors configured rendering while delegating motion controls", () => {
     const prompt = buildDirectorPrompt({ ...draft, renderingMode: "2.5d",
       animationTechniques: [{ id: "spring", amount: "LEGACY_BOUNCE" }],
       animationIntensity: "LEGACY_INTENSITY" }, 1920, 1080, "document");
-    expect(prompt).toContain("You decide the rendering approach");
-    expect(prompt).not.toContain("2.5d");
+    expect(prompt).toContain("CONFIGURED RENDERING — 2.5D REQUIRED");
     expect(prompt).not.toContain("renderingMode");
     expect(prompt).toContain("output capabilities");
     expect(prompt).toContain("Decide their intensity, easing");
     expect(prompt).not.toContain("LEGACY_");
   });
-  it("ignores saved rendering selections in identity and implementation prompts", () => {
-    const legacy = { ...draft, renderingMode: "3d" as const };
-    expect(buildIdentityPrompt(legacy, "document")).toBe(buildIdentityPrompt(draft, "document"));
-    expect(buildCodePrompt(legacy, 1920, 1080)).toBe(buildCodePrompt(draft, 1920, 1080));
-    expect(buildCodePrompt(legacy, 1920, 1080)).toContain("Follow the director's selected creative direction");
+  it("enforces true 3D through identity, direction and both implementation paths despite flat legacy guides", () => {
+    const configured = { ...draft, renderingMode: "3d" as const,
+      referenceStyle: "Kurzgesagt-inspired: Rich flat-vector science illustration", referenceInfluence: "Strong",
+      identityGuide: "Preserve a predominantly illustrated 2D appearance in the final rendered frames.",
+    };
+    for (const prompt of [buildIdentityPrompt(configured, "document"),
+      buildDirectorPrompt(configured, 1920, 1080, "document"),
+      buildCodePrompt(configured, 1920, 1080),
+      buildCodePrompt({ ...configured, selectedDirection: "" }, 1920, 1080),
+      buildCodePrompt({ ...configured, format: "separate" }, 1920, 1080)]) {
+      expect(prompt).toContain("CONFIGURED RENDERING — TRUE 3D REQUIRED");
+      expect(prompt).toContain("takes precedence over conflicting flat/2D appearance");
+      expect(prompt).toContain("perspective camera");
+      expect(prompt).toContain("KURZGESAGT-INSPIRED ART DIRECTION ON TRUE 3D GEOMETRY");
+      expect(prompt).toContain("matte or toon-like materials");
+      expect(prompt).toContain("large, clean color regions");
+      expect(prompt).toContain("3D controls construction; the selected reference controls appearance");
+      expect(prompt).toContain("STYLE ACCEPTANCE");
+      expect(prompt).not.toContain("Saved rendering preferences are not constraints");
+    }
+    const director = buildDirectorPrompt(configured, 1920, 1080, "document");
+    expect(director).toContain("STYLIZED 3D SCIENCE TREATMENT");
+    expect(director).not.toContain("ORIGINAL FLAT-VECTOR SCIENCE TREATMENT");
+    expect(buildCodePrompt(configured, 1920, 1080)).toContain("Call view.render() at the END");
+    expect(buildCodePrompt(configured, 1920, 1080)).toContain("no imports or addons");
+  });
+  it("keeps automatic and 2D choices available and reports native output conflicts", () => {
+    expect(buildDirectorPrompt({ ...draft, renderingMode: "auto" }, 1920, 1080, "document"))
+      .toContain("The director chooses 2D, 2.5D or true 3D");
+    expect(buildIdentityPrompt({ ...draft, renderingMode: "2d" }, "document"))
+      .toContain("CONFIGURED RENDERING — 2D REQUIRED");
+    expect(buildStructuredSceneBrief({ ...draft, renderingMode: "3d" }, 1920, 1080))
+      .toContain("RENDERING CAPABILITY CONFLICT");
+    expect(buildDirectorPrompt({ ...draft, renderingMode: "3d" }, 1920, 1080, "structured"))
+      .not.toContain("CONFIGURED RENDERING — TRUE 3D REQUIRED");
   });
   it("chooses the visual format without inheriting old template presets", () => {
     const baseline = buildDirectorPrompt(draft, 1920, 1080, "document");

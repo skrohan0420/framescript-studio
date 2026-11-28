@@ -31,6 +31,9 @@ test("project config preserves saved looks and stays independent of global defau
   await expect(dialog.locator(".direction-current")).toContainText("Legacy custom look");
   await dialog.getByRole("button", { name: "Copy global config to this project" }).click();
   await expect(dialog.locator(".direction-current")).toContainText("Kurzgesagt-inspired");
+  await expect(dialog.getByLabel("Rendering mode", { exact: true })).toHaveValue("3d");
+  await dialog.getByLabel("Rendering mode", { exact: true }).selectOption("2d");
+  await expect.poll(() => workspace.promptDraft?.renderingMode).toBe("2d");
   await dialog.getByLabel("Reference influence", { exact: true }).selectOption("Subtle");
   await expect.poll(() => workspace.promptDraft?.referenceInfluence).toBe("Subtle");
   expect((preferences.referenceConfig as any).referenceNotes).toBe("Global blue");
@@ -40,6 +43,7 @@ test("project config preserves saved looks and stays independent of global defau
   const prompts = page.locator(".prompt-drawer");
   await expect(prompts.getByRole("tab", { name: "Reference look", exact: true })).toHaveCount(0);
   expect(await prompts.getByLabel("Generated prompt", { exact: true }).inputValue()).toContain("Reference influence: Subtle");
+  expect(await prompts.getByLabel("Generated prompt", { exact: true }).inputValue()).toContain("CONFIGURED RENDERING — 2D REQUIRED");
   await prompts.getByRole("button", { name: "Reset prompt fields", exact: true }).click();
   expect(await prompts.getByLabel("Generated prompt", { exact: true }).inputValue()).toContain("Reference influence: Subtle");
   await expect.poll(() => workspace.promptDraft?.script).toBe("");
@@ -47,6 +51,7 @@ test("project config preserves saved looks and stays independent of global defau
   await open();
   await dialog.getByRole("tab", { name: "Config", exact: true }).click();
   await expect(dialog.getByLabel("Reference influence", { exact: true })).toHaveValue("Subtle");
+  await expect(dialog.getByLabel("Rendering mode", { exact: true })).toHaveValue("2d");
   await expect(dialog.getByLabel("Custom visual direction", { exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 768, height: 900 });
   expect(await dialog.locator(".config-settings").evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);

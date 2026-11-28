@@ -1,5 +1,7 @@
 import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { readReferenceConfig, continuationReferenceContext } from "../shared/reference-config";
+import { projectPackageContext } from "../shared/package-naming";
 import {
   ArrowRightFromLine,
   AudioLines,
@@ -196,7 +198,7 @@ export function CodeContinuationPanel({
         timelineHandoff: source.timelineHandoff,
         lastFrameTime: source.lastFrameTime,
         duration,
-        inheritedContext: inherited ? JSON.stringify(inherited) : source.context,
+        inheritedContext: JSON.stringify(continuationReferenceContext(inherited, project.promptDraft)),
         direction: "",
         pacing: "",
         camera: "",
@@ -205,6 +207,11 @@ export function CodeContinuationPanel({
         fullScript: fullScript ?? savedFullScript,
         selectedDirection,
         purpose,
+        renderingMode: readReferenceConfig(project.promptDraft).renderingMode,
+        packageContext: {
+          ...projectPackageContext(project, sceneId),
+          continuationNumber: (source.scene.visualContinuations?.length ?? 0) + 1,
+        },
       });
   };
   const copyAndDownload = (purpose: "implementation" | "director" = "implementation") =>

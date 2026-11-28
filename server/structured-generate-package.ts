@@ -34,7 +34,8 @@ export async function writeCodeGeneratePackage(
   await archiveGenerateFiles(destination, files, {
     packageType: "framescript-task",
     packageVersion: "1",
-    mode: input.prompt.startsWith("You are the creative director for a FrameScript Studio animation.") ? "creative-direction" : "generate-code",
+    mode: input.purpose === "director" || (!input.purpose && input.prompt.startsWith("You are the creative director for a FrameScript Studio animation.")) ? "creative-direction" : "generate-code",
+    packageContext: input.packageContext,
     format: input.format,
     files: describePackageFiles(files),
   });

@@ -64,6 +64,34 @@ async function replaceCode(page: Page, text: string) {
   await page.keyboard.insertText(text);
 }
 
+test("code history restores only the selected continuation and preserves the opening", async ({ page }) => {
+  const version = crypto.randomUUID();
+  let historyScope: string | null = null;
+  let restoredScope: string | null = null;
+  await page.route("**/api/codeHistory", (route) => {
+    historyScope = route.request().postDataJSON().args[0];
+    return route.fulfill({ json: { result: [{ id: version, created: Date.now(), reason: "Manual save" }] } });
+  });
+  await page.route("**/api/codeVersion", (route) => {
+    restoredScope = route.request().postDataJSON().args[0];
+    return route.fulfill({ json: { result: {
+      html: '<div id="one">Recovered continuation</div>', css: "body{color:gold}", js: "window.renderFrame=()=>{};",
+    } } });
+  });
+  const { project, scene, saves, panel } = await open(page);
+  await panel.getByRole("button", { name: "Code editor options", exact: true }).click();
+  await page.getByRole("button", { name: "Code history", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Code history", exact: true });
+  await dialog.getByRole("button", { name: "Restore code", exact: true }).click();
+  await expect.poll(() => saves.at(-1)?.workflow?.scenes[0].visualContinuations?.[0].html).toContain("Recovered continuation");
+  expect(historyScope).toBe(`continuation/${scene.visualContinuations![0].id}`);
+  expect(restoredScope).toBe(historyScope);
+  expect(saves.at(-1)!.html).toBe(project.html);
+  expect(saves.at(-1)!.workflow!.scenes[0].html).toBe(scene.html);
+  expect(saves.at(-1)!.workflow!.scenes[0].visualContinuations![1]).toEqual(scene.visualContinuations![1]);
+  expect(saves.at(-1)!.audio).toEqual(project.audio!.map((clip) => expect.objectContaining(clip)));
+});
+
 test("continuations edit independently in separate and combined editors with switching, persistence and Undo", async ({
   page,
 }) => {

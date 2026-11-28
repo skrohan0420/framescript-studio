@@ -9,6 +9,7 @@ import type { CodeSnapshot } from "../shared/rpc";
 const require = createRequire(path.resolve("package.json"));
 export class StudioDatabase {
   private mediaCache = new Map<string, { data: string; reference: string }>();
+  private lastBackupAt = 0;
   private constructor(
     private db: Database,
     private directory: string,
@@ -30,11 +31,26 @@ export class StudioDatabase {
         throw Error("Database integrity check failed");
     } catch (error) {
       // Preserve the damaged database and the last known-good startup backup.
-      const backup = file + ".startup-backup";
-      if (!fs.existsSync(backup)) throw error;
-      opened = new SQL.Database(fs.readFileSync(backup));
-      if (opened.exec("PRAGMA quick_check")[0]?.values[0]?.[0] !== "ok")
-        throw error;
+      const backups = [file + ".save-backup", file + ".startup-backup"]
+        .filter((backup) => fs.existsSync(backup))
+        .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+      let restored: Database | undefined;
+      let backup: string | undefined;
+      for (const candidate of backups) {
+        let database: Database | undefined;
+        try {
+          database = new SQL.Database(fs.readFileSync(candidate));
+          if (database.exec("PRAGMA quick_check")[0]?.values[0]?.[0] !== "ok")
+            throw Error("Backup integrity check failed");
+          restored = database;
+          backup = candidate;
+          break;
+        } catch {
+          database?.close();
+        }
+      }
+      if (!restored || !backup) throw error;
+      opened = restored;
       fs.copyFileSync(file, file + ".corrupt-" + Date.now());
       fs.copyFileSync(backup, file);
     }
@@ -145,8 +161,28 @@ export class StudioDatabase {
   private flush() {
     const file = path.join(this.directory, "studio.db"),
       temporary = file + ".tmp";
-    fs.writeFileSync(temporary, this.db.export());
-    fs.renameSync(temporary, file);
+    try {
+      // Flush bytes before publishing the save, including on sudden power loss.
+      fs.writeFileSync(temporary, this.db.export(), { flush: true });
+      // Bound the extra I/O for large databases while keeping an independent
+      // recovery point during long editing sessions.
+      if (fs.existsSync(file) && Date.now() - this.lastBackupAt >= 60_000) {
+        const backup = file + ".save-backup";
+        const pending = backup + ".tmp";
+        try {
+          fs.copyFileSync(file, pending);
+          const descriptor = fs.openSync(pending, "r+");
+          try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
+          fs.renameSync(pending, backup);
+          this.lastBackupAt = Date.now();
+        } finally {
+          fs.rmSync(pending, { force: true });
+        }
+      }
+      fs.renameSync(temporary, file);
+    } finally {
+      fs.rmSync(temporary, { force: true });
+    }
   }
   private pack(project: Project) {
     const copy = projectSchema.parse(project);
@@ -173,7 +209,15 @@ export class StudioDatabase {
         .digest("hex");
       const filename = id + ".bin",
         file = path.join(this.directory, "media", filename);
-      if (!fs.existsSync(file)) fs.writeFileSync(file, bytes);
+      if (!fs.existsSync(file)) {
+        const pending = file + ".tmp";
+        try {
+          fs.writeFileSync(pending, bytes, { flush: true });
+          fs.renameSync(pending, file);
+        } finally {
+          fs.rmSync(pending, { force: true });
+        }
+      }
       this.db.run(
         "INSERT OR IGNORE INTO media(id,header,filename) VALUES(?,?,?)",
         [id, match[1], filename],
@@ -217,6 +261,8 @@ export class StudioDatabase {
         const bytes = fs.readFileSync(
           path.join(this.directory, "media", String(row.filename)),
         );
+        if (createHash("sha256").update(String(row.header)).update(bytes).digest("hex") !== asset.data.slice(8))
+          throw Error("Saved media failed its integrity check. Restore the media from a backup.");
         asset.data =
           "data:" +
           row.header +
@@ -302,26 +348,25 @@ export class StudioDatabase {
     };
   }
   private recordProjectCode(id: string, p: Project, reason: string) {
-    if (
-      !this.row("SELECT 1 FROM code_versions WHERE project=? LIMIT 1", [id])
-    ) {
-      const previous = this.row(
-        "SELECT payload FROM projects WHERE id=? AND deleted=0",
-        [id],
-      );
-      if (previous)
-        this.recordCode(
-          id,
-          JSON.parse(String(previous.payload)),
-          "Previous save",
-        );
-    }
+    // Seed every clip from the persisted project before replacing it, including
+    // continuations created before continuation history was available.
+    const previous = this.row(
+      "SELECT payload FROM projects WHERE id=? AND deleted=0",
+      [id],
+    );
+    if (previous)
+      this.recordCode(id, JSON.parse(String(previous.payload)), "Previous save");
     this.recordCode(id, p, reason);
   }
   private recordCode(id: string, p: Project, reason: string) {
     const scenes = p.workflow?.scenes ?? [p];
-    for (const code of scenes) {
-      const scene = "id" in code ? `scene:${code.id}` : "project";
+    const clips = scenes.flatMap((code) => [
+      { code, scope: "id" in code ? `scene:${code.id}` : "project" },
+      ...("visualContinuations" in code ? code.visualContinuations ?? [] : []).map((segment) => ({
+        code: segment, scope: `scene:continuation/${segment.id}`,
+      })),
+    ]);
+    for (const { code, scope: scene } of clips) {
       const payload = JSON.stringify({
         html: code.html,
         css: code.css,
@@ -392,11 +437,12 @@ export class StudioDatabase {
     );
     if (!row) throw Error("Code version is no longer available.");
     const payload = row.payload;
-    return JSON.parse(
-      payload instanceof Uint8Array
-        ? gunzipSync(payload.subarray(32)).toString("utf8")
-        : String(payload),
-    );
+    const text = payload instanceof Uint8Array
+      ? gunzipSync(payload.subarray(32)).toString("utf8")
+      : String(payload);
+    if (payload instanceof Uint8Array && !createHash("sha256").update(text).digest().equals(payload.subarray(0, 32)))
+      throw Error("Saved code failed its integrity check. Choose another version.");
+    return JSON.parse(text);
   }
   clearDraftCode() {
     this.transaction(() =>

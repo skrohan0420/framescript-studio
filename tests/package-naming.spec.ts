@@ -1,0 +1,32 @@
+import { expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { newProject } from "../shared/project";
+import { initialWorkflow } from "../shared/workflow";
+
+test("director and scene-code ZIP downloads carry the project's Unicode name and correct category", async ({ page, context }) => {
+  const project = newProject();
+  project.name = "Stellar café";
+  project.workflow = initialWorkflow(project);
+  project.workflow.scenes[0].title = "Hydrogen fusion";
+  project.promptDraft = { renderingMode: "3d", script: "Hydrogen fuses inside the star." };
+  await page.route("**/api/workspaceGet", (r) => r.fulfill({ json: { result: project } }));
+  await page.route("**/api/settingsGet", (r) => r.fulfill({ json: { result: {} } }));
+  await page.route("**/api/settingsSet", (r) => r.fulfill({ json: { result: true } }));
+  await page.route("**/api/autosave", (r) => r.fulfill({ json: { result: true } }));
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/#editor");
+  await page.getByRole("button", { name: "Prompts panel", exact: true }).click();
+  await page.getByRole("tab", { name: "Direction", exact: true }).click();
+  const directorDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Copy Director Prompt & Download ZIP", exact: true }).click();
+  const director = await directorDownload;
+  expect(director.suggestedFilename()).toMatch(/^01 Director - Stellar café - Scene 01 Hydrogen fusion - 3D - \d{4}-\d{2}-\d{2}_\d{6}-\d{3}\.zip$/);
+  expect((await readFile((await director.path())!)).subarray(0, 2).toString()).toBe("PK");
+  await page.getByRole("tab", { name: "Output", exact: true }).click();
+  const codeDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Copy and Download", exact: true }).click();
+  const code = await codeDownload;
+  expect(code.suggestedFilename()).toMatch(/^02 Scene Code - Stellar café - Scene 01 Hydrogen fusion - 3D - /);
+  expect(code.suggestedFilename()).not.toBe(director.suggestedFilename());
+  expect((await readFile((await code.path())!)).subarray(0, 2).toString()).toBe("PK");
+});

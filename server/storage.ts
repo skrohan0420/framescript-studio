@@ -5,7 +5,7 @@ export async function atomicWrite(file: string, data: string) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const temp = file + "." + crypto.randomUUID() + ".tmp";
   try {
-    await fs.writeFile(temp, data, "utf8");
+    await fs.writeFile(temp, data, { encoding: "utf8", flush: true });
     await fs.rename(temp, file);
   } finally {
     await fs.rm(temp, { force: true }).catch(() => {});

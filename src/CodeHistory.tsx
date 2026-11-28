@@ -15,7 +15,7 @@ export function CodeHistory({
   readOnly: boolean;
   onClose: () => void;
   onRestore: (code: CodeSnapshot) => void;
-  onCompare: (code: CodeSnapshot, language: keyof CodeSnapshot) => void;
+  onCompare?: (code: CodeSnapshot, language: keyof CodeSnapshot) => void;
 }) {
   const [versions, setVersions] = useState<CodeVersion[] | null>(null);
   const [version, setVersion] = useState("");
@@ -58,7 +58,7 @@ export function CodeHistory({
   return (
     <Modal title="Code history" open onClose={onClose} wide>
       <p>
-        The last 20 saved code versions for this timeline. Restoring a version
+        The last 20 saved code versions for the selected visual clip. Restoring a version
         replaces its HTML, CSS, and JavaScript in the editor.
       </p>
       {error && <p role="alert">{error}</p>}
@@ -104,12 +104,12 @@ export function CodeHistory({
           )}
           <div className="modal-actions">
             <button onClick={onClose}>Close</button>
-            <button
+            {onCompare && <button
               disabled={!snapshot}
               onClick={() => snapshot && onCompare(snapshot, language)}
             >
               Compare with current
-            </button>
+            </button>}
             <button
               className="primary"
               disabled={!snapshot || readOnly}

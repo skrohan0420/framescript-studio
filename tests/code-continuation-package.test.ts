@@ -13,6 +13,53 @@ vi.mock("../server/structured-generate-package", () => ({
 import { renderExport } from "../server/export";
 import { archiveGenerateFiles } from "../server/structured-generate-package";
 import { writeCodeContinuationPackage } from "../server/code-continuation-package";
+import { continuationReferenceContext } from "../shared/reference-config";
+
+it("preserves current Kurzgesagt art direction on 3D continuation geometry without losing inherited story context", () => {
+  const inherited = { renderingMode: "2d", referenceStyle: "Old generic look", fullScript: "The star's life", identityGuide: "Preserve our violet palette and flat color blocking" };
+  const current = { renderingMode: "3d", referenceStyle: "Kurzgesagt-inspired: Rich flat-vector science illustration", referenceInfluence: "Strong" };
+  const merged = continuationReferenceContext(inherited, current);
+  expect(merged).toMatchObject({ ...inherited, ...current });
+  expect(continuationReferenceContext(inherited, {})).toMatchObject(inherited);
+  const p = newProject();
+  const input = codeContinuationInputSchema.parse({
+    source: { html: "<canvas></canvas>", css: "", js: "canvas.getContext('2d');" },
+    title: "Star", settings: p.settings, assets: [], sourceOffset: 0,
+    handoff: 2, timelineHandoff: 2, lastFrameTime: 1.9, duration: 3,
+    direction: "", pacing: "", camera: "", narration: "Continue the star story",
+    renderingMode: "3d", inheritedContext: JSON.stringify(merged),
+  });
+  for (const prompt of [buildContinuationDirectorPrompt(input), buildCodeContinuationPrompt(input)]) {
+    expect(prompt).toContain("KURZGESAGT-INSPIRED ART DIRECTION ON TRUE 3D GEOMETRY");
+    expect(prompt).toContain("matte or toon-like materials");
+    expect(prompt).toContain("STYLE ACCEPTANCE");
+    expect(prompt).toContain(inherited.fullScript);
+    expect(prompt).toContain(inherited.identityGuide);
+  }
+});
+
+it("enforces the current 3D choice over inherited 2D continuity in director and code prompts", () => {
+  const p = newProject();
+  const input = codeContinuationInputSchema.parse({
+    source: { html: "<canvas></canvas>", css: "", js: "canvas.getContext('2d');" },
+    title: "Flat previous scene", settings: p.settings, assets: [],
+    sourceOffset: 0, handoff: 2, timelineHandoff: 2, lastFrameTime: 1.9, duration: 3,
+    direction: "", pacing: "", camera: "", narration: "Continue the star story",
+    renderingMode: "3d",
+    inheritedContext: JSON.stringify({ renderingMode: "2d", identityGuide: "Keep flat fills and limited depth" }),
+  });
+  for (const prompt of [buildContinuationDirectorPrompt(input), buildCodeContinuationPrompt(input)]) {
+    expect(prompt).toContain("CONFIGURED RENDERING — TRUE 3D REQUIRED");
+    expect(prompt).toContain("takes precedence over conflicting flat/2D appearance");
+    expect(prompt).not.toContain("CONFIGURED RENDERING — 2D REQUIRED");
+    expect(prompt).not.toContain("Saved rendering, typography and story-direction controls are obsolete");
+  }
+  expect(buildCodeContinuationPrompt(input)).toContain("rebuild the NEW segment in true 3D");
+  expect(buildCodeContinuationPrompt(input)).toContain("Call view.render() at the END");
+  expect(buildCodeContinuationPrompt({ ...input, renderingMode: undefined,
+    inheritedContext: JSON.stringify({ renderingMode: "3d" }) })).toContain("TRUE 3D REQUIRED");
+  expect(buildCodeContinuationPrompt({ ...input, renderingMode: "auto" })).toContain("Keep the same rendering technology unless");
+});
 
 it.each([
   { duration: 2, fps: 30, sourceOffset: 0.25 },

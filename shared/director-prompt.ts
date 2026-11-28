@@ -1,6 +1,7 @@
 import type { PromptDraft } from "./prompt-templates";
 import { configuredFontPrompt } from "./reference-config";
 import { directorTypography } from "./prompt-text";
+import { renderingRequirement, reference3DArtDirection } from "./rendering-direction";
 
 export function directorReferenceLook(draft: PromptDraft, includeTypography = true) {
   const look = draft.referenceStyle?.trim();
@@ -20,11 +21,11 @@ Translate the selected description into a concrete visual language, rather than 
 1. Shape and construction: silhouettes, proportions, curves versus angular forms, stroke treatment, level of simplification, and how recurring objects retain identity.
 2. Palette roles: background, main subject, supporting elements and emphasis; warm/cool relationships, contrast and color continuity. Preserve supplied brand/identity colors; do not invent an exact reference palette as fact.
 3. Composition and hierarchy: dominant subject, supporting context, negative space, scale relationships, safe margins and how attention shifts at each beat.
-4. Layers and depth: foreground/midground/background, occlusion, parallax and camera framing where appropriate. A flat reference need not become realistic 3D.
+4. Layers and depth: foreground/midground/background, occlusion, parallax and camera framing consistent with the configured rendering choice. For true 3D, translate flat references into volumetric forms rather than retaining a flat final appearance.
 5. Materials, texture and lighting: flat fills versus modeled shading, restrained procedural texture, shadow/highlight treatment and atmospheric effects. Keep effects consistent and achievable in the selected output.
 6. Motion language: entrances, transformations, object interactions, camera rhythm, transitions and readable settles. Explain how movement communicates the narration rather than decorates the frame.
 ${includeTypography ? "7. Text treatment when useful: the director chooses hierarchy, contrast, placement and readable holds without copying a channel's titles or inventing facts.\n8." : "7."} Beat-level application: say how these principles appear in each proposed approach; preserve the shared look while changing the explanatory concept. Expand construction and motion details after selection.
-${look?.startsWith("Kurzgesagt-inspired") ? `
+${draft.renderingMode === "3d" ? reference3DArtDirection(draft) : look?.startsWith("Kurzgesagt-inspired") ? `
 SELECTED PRESET EXPANSION — ORIGINAL FLAT-VECTOR SCIENCE TREATMENT
 Use clear rounded geometric silhouettes assembled from purposeful layered shapes. Separate large readable masses before adding small details; recurring subjects keep stable proportions and distinguishing colors. Favor rich complementary color relationships with a clear background/subject/accent hierarchy, respecting user palette locks. Create depth through overlapping illustrated layers and restrained parallax rather than requiring photorealistic surfaces. Use coherent flat fills and selective simple shading/highlights to describe form; avoid noisy textures or indiscriminate glow. Make scientific relationships legible through staged comparisons, transformations and connected visual metaphors. Maintain anchors as framing widens or objects change scale; label schematic size/distance/speed assumptions in the specification. Use smooth, motivated transitions, anticipation and holds aligned to narration. Cosmic settings, characters, spacecraft and planets are optional subjects only when the scene actually calls for them; do not add them just because the reference supports them.
 ` : ""}
@@ -55,7 +56,7 @@ export function buildDirectorPrompt(
 
 FRAME AND CAPABILITIES
 ${width} × ${height}; ${draft.duration} seconds; output: ${output}.
-You decide the rendering approach: choose 2D, 2.5D or true 3D to serve the story, locked identity and output capabilities. Include the chosen approach and rationale in the final specification. Saved rendering preferences are not constraints.
+${renderingRequirement(draft, output === "structured")}
 ${output === "structured"
     ? "Restricted native renderer: up to 20 circles/rectangles with x, y and opacity tracks (one keyframe per property), an optional built-in star with a glow keyframe, and at most one static label. No custom code, 3D, audio, timed captions or advanced typography. Propose only what this vocabulary can express."
     : "Self-contained procedural HTML/CSS/JavaScript, Canvas, inline SVG, or FrameScript-supplied 3D runtime when appropriate. No downloaded models, textures, fonts, remote dependencies or unavailable assets. Animation must be a deterministic function of absolute scene-local time; no accumulated simulation or independent playback clock. Keep geometry, particles and effects practical for a modest computer."}

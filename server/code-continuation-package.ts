@@ -162,6 +162,7 @@ export async function writeCodeContinuationPackage(
       packageType: "framescript-task",
       packageVersion: "1",
       mode: input.purpose === "director" ? "creative-direction" : "extend-code",
+      packageContext: input.packageContext,
       format: "document",
       handoff: input.handoff,
       timelineHandoff: input.timelineHandoff,

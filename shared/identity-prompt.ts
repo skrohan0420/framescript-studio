@@ -1,11 +1,12 @@
 import type { PromptDraft } from "./prompt-templates";
 import { directorReferenceLook } from "./director-prompt";
+import { renderingRequirement } from "./rendering-direction";
 
 export function buildIdentityPrompt(draft: PromptDraft, output: "document" | "separate" | "structured") {
   return `Help the user choose the WHOLE VIDEO'S THEME AND VISUAL INSTRUCTION GUIDE for a FrameScript animation project. This identity governs all scenes, not just the current scene or a character. Work in TWO stages in this conversation. Do not return animation code or a shot plan.
 
 STAGE 1 — OPTIONS FIRST
-Propose THREE distinct visual identity options, all strongly grounded in the selected Reference look. Differentiate their shape language, palette relationships, atmosphere and treatment of recurring subjects, not just their names. For each give a short name, concise concept, proposed palette roles, subject/environment treatment, motion character, suitability for the full story, and main practical trade-off. These are identity options, not alternative scene plots. Respect output capabilities; leave the rendering approach for the director to decide. Do not expand all options into full guides yet.
+Propose THREE distinct visual identity options, all grounded in the selected Reference look within the configured rendering requirement. Differentiate their shape language, palette relationships, atmosphere and treatment of recurring subjects, not just their names. For each give a short name, concise concept, proposed palette roles, subject/environment treatment, motion character, suitability for the full story, and main practical trade-off. These are identity options, not alternative scene plots. Respect output capabilities and the configured rendering choice. Do not expand all options into full guides yet.
 Ask the user to select an option, combine elements, or request refinements, then STOP and wait for their reply. Do not choose on their behalf or produce the final guide in this first response.
 
 STAGE 2 — EXPAND ONLY AFTER SELECTION
@@ -13,7 +14,7 @@ After the user chooses, reconcile any combined elements into ONE coherent whole-
 
 # VIDEO THEME — [Selected name]
 ## 1. Overall visual direction
-Describe the video's shared look, atmosphere, reference interpretation and how they support its subject. Describe visual construction without locking a rendering engine; the director will decide the rendering approach.
+Describe the video's shared look, atmosphere, reference interpretation and how they support its subject. Preserve the configured rendering choice in the visual construction; only automatic mode leaves the rendering approach for the director to decide.
 ## 2. Color system
 Use bullet points for background, main subjects, supporting elements and accents. For each specify a proposed hex value and concrete usage/contrast rules. Define consistent semantic color roles; do not present invented colors as a creator's official palette.
 ## 3. Subject design
@@ -40,7 +41,8 @@ Full script: ${draft.fullScript?.trim() || "Not supplied."}
 Current scene: ${draft.script.trim() || "Not supplied."}
 Infer an appropriate audience, tone and explanation depth from the full script; do not invent facts about the actual viewers or require an audience/goal field.
 Essential instructions: ${draft.notes?.trim() || "None"}
-Rendering approach: the director decides. Output: ${output}.
+${renderingRequirement(draft, output === "structured")}
+Output: ${output}.
 ${output === "structured" ? "Use only native circles/rectangles with limited position/opacity tracks, optional built-in star and static label. No 3D, custom code, audio or advanced typography." : "Use self-contained procedural Canvas/SVG/HTML or supplied Three.js when the director chooses 3D. No downloaded assets, fonts or unavailable addons. Keep rendering bounded and deterministic."}
 Mascot: ${draft.mascotEnabled ? `Enabled. Preserve supplied identity: ${draft.mascotIdentity || "Use the user's attached mascot reference; do not invent a replacement if missing."}` : "Not enabled; do not introduce a mascot."}
 The configured font family is a user-controlled constant and must be preserved in LOCKED INVARIANTS. The director decides whether text helps and how it is styled within that family. Do not set text permissions or prohibitions, or add other typography rules to the identity guide.
