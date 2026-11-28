@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useStatusActivity, useStatusNotice } from "./editor-status";
 import { useState } from "react";
 import {
@@ -209,7 +210,7 @@ export function StructuredContinuationPanel({
       </p>
       <label className="field">
         Continuation brief
-        <textarea
+        <ExpandableTextarea
           value={brief}
           disabled={busy}
           onChange={(event) => {
@@ -301,7 +302,7 @@ export function StructuredContinuationPanel({
         </button>
       </div>
       {exported?.fingerprint === fingerprint && (
-        <textarea
+        <ExpandableTextarea
           readOnly
           aria-label="Exported Extend prompt"
           value={exported.result.prompt}
@@ -309,7 +310,7 @@ export function StructuredContinuationPanel({
       )}
       <label className="field">
         Paste AI extension
-        <textarea
+        <ExpandableTextarea
           value={text}
           disabled={busy}
           onChange={(event) => setText(event.target.value)}

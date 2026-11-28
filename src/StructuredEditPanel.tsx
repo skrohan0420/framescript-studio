@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useStatusActivity, useStatusNotice } from "./editor-status";
 import { useState } from "react";
 import type { Project } from "../shared/project";
@@ -309,7 +310,7 @@ export function StructuredEditPanel({
         </button>
       </div>
       {canCopy && (
-        <textarea
+        <ExpandableTextarea
           readOnly
           aria-label="Exported prompt"
           value={exported?.result.prompt}

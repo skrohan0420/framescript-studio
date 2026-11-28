@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildDirectorPrompt } from "../shared/director-prompt";
 import type { PromptDraft } from "../shared/prompt-templates";
-import { buildCodePrompt } from "../shared/prompt-templates";
+import { buildCodePrompt, buildStructuredSceneBrief } from "../shared/prompt-templates";
 import { buildIdentityPrompt } from "../shared/identity-prompt";
 import { directionSnapshot } from "../shared/direction-approval";
 
@@ -21,7 +21,7 @@ describe("director prompt", () => {
     expect(prompt).toContain("Hold violet planet until 4s");
     expect(prompt).toContain("Violet subjects");
     expect(prompt).toContain("FRAMESCRIPT REQUIREMENTS — FOLLOW EXACTLY");
-    expect(prompt).toContain("GENERATED SOUNDTRACK CONTRACT");
+    expect(prompt).not.toContain("GENERATED SOUNDTRACK CONTRACT");
     expect(prompt).not.toContain("EXPLICIT TYPE SPECIFICATION");
     expect(prompt).not.toContain("INTERNAL SHOT PLAN — IMPLEMENT");
     expect(prompt).not.toContain("Music timing: Continuous");
@@ -39,12 +39,12 @@ describe("director prompt", () => {
     expect(prompt).toContain("Choose camera framing and additional creative treatment yourself");
     expect(prompt).toContain("Preserve safe margins");
   });
-  it("delegates enabled typography and excludes old text controls", () => {
+  it("delegates typography and excludes old text controls", () => {
     const prompt = buildDirectorPrompt({ ...draft, typographyEnabled: true,
       textPlanning: "LEGACY_MANUAL", textFont: "LEGACY_FONT", subtitles: "LEGACY_SUBTITLES",
       textItems: [], screenText: "LEGACY_COPY" }, 1920, 1080, "document");
-    expect(prompt).toContain("enabled: you choose concise wording");
-    expect(prompt).toContain("unless explicitly requested in essential instructions");
+    expect(prompt).toContain("The director decides whether on-screen text helps");
+    expect(prompt).toContain("Preserve explicit user instructions and required wording");
     expect(prompt).not.toContain("LEGACY_");
   });
   it("grounds identity generation in the reference and carries the locked guide into both stages", () => {
@@ -70,23 +70,54 @@ describe("director prompt", () => {
     expect(buildDirectorPrompt({ ...input, consistency: false }, 1920, 1080, "document"))
       .toContain("ADVISORY: Consider");
   });
-  it("retains audio permissions while delegating treatment and respecting structured limits", () => {
+  it("uses editor audio and ignores saved generation settings", () => {
     const enabled = { ...draft, bgm: true, sfx: false };
     const prompt = buildDirectorPrompt(enabled, 1920, 1080, "document");
-    expect(prompt).toContain("Background music: enabled. Sound effects: disabled.");
-    expect(prompt).toContain("choose style, mood, energy, tempo");
-    expect(prompt).toContain("Disabled categories must remain absent");
+    expect(prompt).toContain("Audio is supplied separately through the editor timeline");
+    expect(prompt).not.toContain("Background music: enabled");
+    expect(prompt).toBe(buildDirectorPrompt(draft, 1920, 1080, "document"));
     expect(buildDirectorPrompt(enabled, 1920, 1080, "structured"))
-      .toContain("regardless of saved toggle values");
+      .toContain("do not request generated music");
   });
-  it("preserves rendering mode while delegating legacy motion controls", () => {
+  it("delegates rendering and ignores legacy rendering and motion controls", () => {
     const prompt = buildDirectorPrompt({ ...draft, renderingMode: "2.5d",
       animationTechniques: [{ id: "spring", amount: "LEGACY_BOUNCE" }],
       animationIntensity: "LEGACY_INTENSITY" }, 1920, 1080, "document");
-    expect(prompt).toContain("Selected rendering mode: 2.5d");
-    expect(prompt).toContain("do not require a real 3D renderer");
+    expect(prompt).toContain("You decide the rendering approach");
+    expect(prompt).not.toContain("2.5d");
+    expect(prompt).not.toContain("renderingMode");
+    expect(prompt).toContain("output capabilities");
     expect(prompt).toContain("Decide their intensity, easing");
     expect(prompt).not.toContain("LEGACY_");
+  });
+  it("ignores saved rendering selections in identity and implementation prompts", () => {
+    const legacy = { ...draft, renderingMode: "3d" as const };
+    expect(buildIdentityPrompt(legacy, "document")).toBe(buildIdentityPrompt(draft, "document"));
+    expect(buildCodePrompt(legacy, 1920, 1080)).toBe(buildCodePrompt(draft, 1920, 1080));
+    expect(buildCodePrompt(legacy, 1920, 1080)).toContain("Follow the director's selected creative direction");
+  });
+  it("chooses the visual format without inheriting old template presets", () => {
+    const baseline = buildDirectorPrompt(draft, 1920, 1080, "document");
+    expect(baseline).toContain("You decide the scene format and visual approach");
+    expect(baseline).toContain("Explain the choice in each proposed concept");
+    expect(baseline).not.toContain('"template"');
+    for (const template of ["canvas", "loop", "repair", "data"]) {
+      expect(buildDirectorPrompt({ ...draft, template }, 1920, 1080, "document")).toBe(baseline);
+    }
+  });
+  it("delegates narrative structure and ignores saved story-direction presets", () => {
+    for (const output of ["document", "separate", "structured"] as const) {
+      const legacy = { ...draft, storyStructure: "LEGACY_STORY_DIRECTION" };
+      const director = buildDirectorPrompt(legacy, 1920, 1080, output);
+      expect(director).toBe(buildDirectorPrompt(draft, 1920, 1080, output));
+      expect(director).toContain("You decide the narrative structure");
+      expect(director).toContain("Preserve the complete narration, its order");
+      expect(director).not.toContain("storyStructure");
+      const build = output === "structured" ? buildStructuredSceneBrief : buildCodePrompt;
+      const base = { ...draft, format: output === "separate" ? "separate" as const : "document" as const };
+      expect(build({ ...base, storyStructure: legacy.storyStructure }, 1920, 1080)).toBe(build(base, 1920, 1080));
+      expect(build({ ...base, selectedDirection: "Use three explanatory beats.", storyStructure: legacy.storyStructure }, 1920, 1080)).toBe(build({ ...base, selectedDirection: "Use three explanatory beats." }, 1920, 1080));
+    }
   });
   it("delegates pacing without exporting legacy pacing selections", () => {
     const prompt = buildDirectorPrompt({ ...draft, editingStyle: "LEGACY_EDIT",
@@ -122,9 +153,25 @@ describe("director prompt", () => {
     expect(prompt).toContain(draft.timedNarration);
     expect(prompt).toContain("Space documentary");
     expect(prompt).toContain("THREE meaningfully distinct");
-    expect(prompt).toContain("disabled: do not propose on-screen text");
+    expect(prompt).toContain("including choosing no text");
     expect(prompt).toContain("not animation code");
     expect(prompt).not.toContain("OLD UNAPPROVED IDEA");
+  });
+  it("makes proposals comparable and recommends without bypassing selection", () => {
+    for (const output of ["document", "separate", "structured"] as const) {
+      const prompt = buildDirectorPrompt(draft, 1920, 1080, output);
+      for (const field of ["Viewer takeaway:", "What you will see:", "Narration anchors:", "Visual treatment:", "Strength and trade-off:", "Feasibility:"]) {
+        expect(prompt).toContain(field);
+      }
+      expect(prompt).toContain("each must be a viable way");
+      expect(prompt).toContain("Do not force different renderers or styles");
+      expect(prompt).toContain("without inventing exact timestamps");
+      expect(prompt).toContain("Omit audio-generation suggestions");
+      expect(prompt).toContain("My recommendation: [A/B/C");
+      expect(prompt).toContain("A recommendation is advice, not approval");
+      expect(prompt).toContain("Then STOP and wait for their reply");
+      expect(prompt).toContain("After the user selects or combines ideas");
+    }
   });
   it("constrains structured concepts and includes active code only when supplied", () => {
     const prompt = buildDirectorPrompt(draft, 1080, 1920, "structured");

@@ -3,6 +3,9 @@ import { typographyRuntime } from "./typography-runtime";
 import { threeSource } from "./three-source.generated";
 import { threeRuntime } from "./three-runtime";
 import { directCanvas } from "./direct-canvas";
+import { outfitFontSource, outfitFontLicense } from "./font-source.generated";
+import { fontRuntime } from "./font-runtime";
+import { referenceLookFont } from "./reference-config";
 // This function is serialized verbatim into the unprivileged document.
 function runtime(
   replay = false,
@@ -14,6 +17,7 @@ function runtime(
 ) {
   const w = window as any;
   let current = 0;
+  let pendingTime = 0;
   let selection = false;
   let selected: HTMLElement | null = null;
   let failed = false;
@@ -67,6 +71,9 @@ function runtime(
     return gap;
   };
   w.__fsSeek = (time: number) => {
+    pendingTime = time;
+    if (w.__fsFontError) throw Error(w.__fsFontError);
+    if (!w.__fsFontsLoaded) return;
     const gap = w.__fsVisualGap(time);
     time += sourceOffset;
     current = time;
@@ -177,8 +184,14 @@ function runtime(
     },
     true,
   );
-  window.addEventListener("load", () => {
-    if (!replay) w.__fsSeek(0);
+  window.addEventListener("load", async () => {
+    const fontError = await w.__fsFontsReady;
+    if (fontError) {
+      failed = true;
+      send("error", { message: fontError });
+      return;
+    }
+    if (!replay) w.__fsSeek(pendingTime);
     if (!failed)
       send("ready", {
         thumbnail: (() => {
@@ -290,7 +303,11 @@ frames.forEach(frame=>frame.addEventListener('load',()=>window.renderFrame(curre
   const visualDuration = visualEnd !== undefined && visualEnd < p.settings.duration ? visualEnd : null;
   const background = options?.transparent ? "transparent" : p.settings.background;
   const gapStyle = visualDuration === null ? "" : `html[data-fs-visual-gap]{background:${options?.transparentVisualGap ? "transparent" : background}!important}html[data-fs-visual-gap] body,html[data-fs-visual-gap] body *:not([data-fs-text], [data-fs-text] *){visibility:hidden!important}html[data-fs-visual-gap] [data-fs-text]{visibility:visible}${options?.transparentVisualGap ? "html[data-fs-visual-gap] body{background:transparent!important}" : ""}`;
-  const prefix = `<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:${background}}${safe(css, "style")}${gapStyle}</style><script>(()=>{const __name=(fn)=>fn;(${typographyRuntime.toString()})(${options?.textEditing !== false && !options?.export && !options?.standalone && !scene?.locked});(${runtime.toString()})(${!!options?.export && p.settings.timing === "replay"},${!!options?.standalone},${p.settings.duration},${p.settings.speed},${sourceOffset},${visualDuration})})()</script></head><body>${html}`;
+  const fontFamily = referenceLookFont(p.promptDraft ?? {});
+  const fontStyles = 'html[data-fs-font-pending] body,html[data-fs-font-error] body{visibility:hidden}' +
+    'html[data-fs-font-error] [data-fs-font-alert]{visibility:visible;position:fixed;inset:0;display:grid;place-content:center;padding:32px;background:#17191d;color:#fff;font:18px/1.6 system-ui;z-index:2147483647}';
+  const fontScript = safe(JSON.stringify(fontFamily), "script") + ',' + safe(JSON.stringify(outfitFontSource), "script");
+  const prefix = `<!doctype html><html><head><meta charset="UTF-8"><script type="text/plain" id="framescript-font-license">${safe(outfitFontLicense, "script")}</script><meta http-equiv="Content-Security-Policy" content="${csp}"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:${background}}${safe(css, "style")}${gapStyle}${fontStyles}</style><script>(()=>{const __name=(fn)=>fn;(${fontRuntime.toString()})(${fontScript});(${typographyRuntime.toString()})(${options?.textEditing !== false && !options?.export && !options?.standalone && !scene?.locked});(${runtime.toString()})(${!!options?.export && p.settings.timing === "replay"},${!!options?.standalone},${p.settings.duration},${p.settings.speed},${sourceOffset},${visualDuration})})()</script></head><body>${html}`;
   const three = /\b(?:THREE|FrameScript3D)\b/.test(js)
     ? `<script>${safe(threeSource, "script")}</script><script>(()=>{const __name=(fn)=>fn;(${threeRuntime.toString()})()})()</script>`
     : "";

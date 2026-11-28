@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import {
   useEffect,
   useImperativeHandle,
@@ -545,7 +546,7 @@ export function Preview({
               width: `${editingLayer.width}%`,
             }}
           >
-            <textarea
+            <ExpandableTextarea
               autoFocus
               aria-label="Edit text on canvas"
               rows={Math.max(2, editingLayer.text.split("\n").length)}

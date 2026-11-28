@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import { useContext, type ReactNode } from "react";
+import { useContext, type ReactNode, type KeyboardEventHandler } from "react";
 import { EditorStatus } from "./editor-status";
 export function Modal({
   title,
@@ -10,6 +10,8 @@ export function Modal({
   headerAction,
   onEscapeKeyDown,
   wide = false,
+  className = "",
+  onKeyDownCapture,
 }: {
   title: string;
   open: boolean;
@@ -18,6 +20,8 @@ export function Modal({
   headerAction?: ReactNode;
   onEscapeKeyDown?: (event: KeyboardEvent) => void;
   wide?: boolean;
+  className?: string;
+  onKeyDownCapture?: KeyboardEventHandler<HTMLDivElement>;
 }) {
   const { announcement } = useContext(EditorStatus);
   return (
@@ -25,7 +29,12 @@ export function Modal({
       <Dialog.Portal>
         <Dialog.Overlay className="overlay" />
         <Dialog.Content
-          className={"modal" + (wide ? " modal-wide" : "")}
+          onKeyDownCapture={onKeyDownCapture}
+          className={
+            "modal" +
+            (wide ? " modal-wide" : "") +
+            (className ? " " + className : "")
+          }
           onEscapeKeyDown={(event) => {
             event.stopPropagation();
             onEscapeKeyDown?.(event);
@@ -43,7 +52,9 @@ export function Modal({
           <Dialog.Description className="sr-only">
             {title} controls
           </Dialog.Description>
-          <span className="sr-only" aria-live="polite">{announcement}</span>
+          <span className="sr-only" aria-live="polite">
+            {announcement}
+          </span>
           {children}
         </Dialog.Content>
       </Dialog.Portal>

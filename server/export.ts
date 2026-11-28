@@ -1,3 +1,4 @@
+import { waitForSceneFonts } from "./render-fonts";
 import { chromium, type Browser } from "playwright";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -354,7 +355,9 @@ async function renderExportAttempt(
       throw error;
     }
     const context = await browser.newContext({
-      viewport: { width: o.width, height: o.height },
+      // Scene code may fit itself using innerWidth/innerHeight. Lay it out at
+      // its authored size, then apply the export transform exactly once.
+      viewport: { width: p.settings.width, height: p.settings.height },
       deviceScaleFactor: 1,
       acceptDownloads: false,
       serviceWorkers: "block",
@@ -469,8 +472,8 @@ async function renderExportAttempt(
         }),
         { waitUntil: "load" },
       );
+      await waitForSceneFonts(page);
       await page.evaluate(async () => {
-        await document.fonts.ready;
         await Promise.all(
           Array.from(document.images).map((i) => i.decode().catch(() => {})),
         );
@@ -663,7 +666,11 @@ async function renderExportAttempt(
           }
         }
       }
-      if (tuning.capture === "standard") {
+      if (
+        tuning.capture === "standard" &&
+        o.width === p.settings.width &&
+        o.height === p.settings.height
+      ) {
         const buffer = await page.screenshot({
           type: "png",
           omitBackground: o.transparent,
@@ -680,7 +687,10 @@ async function renderExportAttempt(
             format: jpeg ? "jpeg" : "png",
             ...(jpeg ? { quality: 100 } : {}),
             fromSurface: true,
-            captureBeyondViewport: false,
+            // Explicit bounds also support exports larger than the layout
+            // viewport without resizing it and triggering scene resize logic.
+            captureBeyondViewport: true,
+            clip: { x: 0, y: 0, width: o.width, height: o.height, scale: 1 },
             optimizeForSpeed: true,
           }),
           new Promise<never>((_, reject) => {

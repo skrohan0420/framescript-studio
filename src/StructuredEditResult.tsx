@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useStatusNotice } from "./editor-status";
 import { useMemo, useState } from "react";
 import { newProject, type Project, type Scene } from "../shared/project";
@@ -422,7 +423,7 @@ export function StructuredEditResult({
       </p>
       <label className="field">
         <span>Paste AI result</span>
-        <textarea
+        <ExpandableTextarea
           value={text}
           disabled={busy}
           onChange={(event) => {
@@ -445,7 +446,7 @@ export function StructuredEditResult({
       </label>
       {error && <p role="alert">{error}</p>}
       {repair && (
-        <textarea readOnly aria-label="Repair prompt" value={repair} />
+        <ExpandableTextarea readOnly aria-label="Repair prompt" value={repair} />
       )}
       <div className="modal-actions">
         <button onClick={onBack}>Back to Edit / Update</button>

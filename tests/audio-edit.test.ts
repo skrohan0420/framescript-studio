@@ -4,6 +4,7 @@ import {
   editAudioClip,
   snapAudioEdit,
   updateAudioClip,
+  addTimelineAudio,
 } from "../shared/audio-edit";
 import { newProject, projectSchema, type AudioClip } from "../shared/project";
 import { initialWorkflow, totalDuration } from "../shared/workflow";
@@ -23,6 +24,50 @@ const clip: AudioClip = {
   muted: false,
   license: "Test",
 };
+
+it("adds full audio at and beyond the timeline end while preserving the visual end", () => {
+  const project = newProject();
+  project.settings.duration = 6;
+  project.workflow = initialWorkflow(project);
+  const scene = project.workflow.scenes[0];
+  const added = { ...clip, sceneId: scene.id, start: 6, length: 4 };
+  const next = projectSchema.parse({
+    ...project,
+    ...addTimelineAudio(project, added),
+  });
+  expect(next.settings.duration).toBe(10);
+  expect(next.workflow!.scenes[0]).toMatchObject({
+    duration: 10,
+    visualDuration: 6,
+  });
+  expect(next.audio![0]).toMatchObject({ start: 6, length: 4 });
+  const tail = {
+    ...clip,
+    id: "later",
+    sceneId: scene.id,
+    start: 12,
+    length: 4,
+  };
+  const later = projectSchema.parse({
+    ...next,
+    ...addTimelineAudio(next, tail),
+  });
+  expect(later.settings.duration).toBe(16);
+  expect(later.workflow!.scenes[0].visualDuration).toBe(6);
+  expect(later.audio![0]).toEqual(next.audio![0]);
+});
+
+it("rejects audio insertion into locked timelines and past the composition limit", () => {
+  const project = newProject();
+  project.workflow = initialWorkflow(project);
+  const scene = project.workflow.scenes[0];
+  const added = { ...clip, sceneId: scene.id, start: 599, length: 4 };
+  expect(() => addTimelineAudio(project, added)).toThrow("ten-minute");
+  scene.locked = true;
+  expect(() => addTimelineAudio(project, { ...added, start: 0 })).toThrow(
+    "Unlock",
+  );
+});
 it("shares rows for adjacent clips while keeping overlaps and audio types separate", () => {
   const first = { ...clip, id: "first", start: 0, length: 2 };
   const second = { ...clip, id: "second", start: 2, length: 3 };

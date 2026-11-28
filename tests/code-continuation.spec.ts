@@ -90,21 +90,13 @@ test("extends a code visual at its handoff without shifting or replacing narrati
     /00:00:00,250 --> 00:00:00,600/,
   );
   await builder.getByRole("tab", { name: "Direction" }).click();
-  const direction = builder.getByLabel("What happens next", { exact: true });
+  const direction = builder.getByLabel("Selected creative direction", { exact: true });
   await direction.fill("Show the next example.");
-  const reveal = builder.getByRole("button", { name: "Reveal a detail" });
-  await reveal.click();
-  await reveal.click();
-  await expect(direction).toHaveValue(
-    "Show the next example.\nReveal the next important detail while keeping the existing subject in view.",
-  );
-  const hold = builder.getByRole("button", { name: "Hold, then reveal" });
-  await hold.click();
-  await expect(hold).toHaveAttribute("aria-pressed", "true");
-  await builder.getByRole("button", { name: "Slow push-in" }).click();
-  await expect(
-    builder.getByLabel("Camera direction", { exact: true }),
-  ).toHaveValue("Ease in from the handoff framing toward the main detail.");
+  await direction.locator("..").getByRole("button", { name: "Expand text field", exact: true }).click();
+  const expanded = page.getByRole("dialog", { name: "Selected creative direction", exact: true });
+  await expanded.getByRole("textbox").fill("Show the next example while preserving the handoff composition.");
+  await expanded.getByRole("textbox").press("Escape");
+  await expect(direction).toHaveValue("Show the next example while preserving the handoff composition.");
   const copy = builder.getByRole("button", { name: "Copy and Download" });
   const directionTab = builder.getByRole("tab", { name: "Direction" });
   const navigations: string[] = [];
@@ -154,10 +146,10 @@ test("extends a code visual at its handoff without shifting or replacing narrati
   expect(prompt).toContain("window.THREE and window.FrameScript3D");
   expect(prompt).toContain(await direction.inputValue());
   expect(prompt).toContain(
-    "Pacing: Hold briefly on the handoff composition, then reveal the next beat.",
+    "Pacing: Follow the narration cues and existing pace.",
   );
   expect(prompt).toContain(
-    "Camera: Ease in from the handoff framing toward the main detail.",
+    "Camera: Continue from the existing framing.",
   );
   expect(navigations).toEqual([]);
   await expect(directionTab).toHaveAttribute("aria-selected", "true");
@@ -170,12 +162,76 @@ test("extends a code visual at its handoff without shifting or replacing narrati
       `<!doctype html><html><head><style>#continued { color: cyan; }</style></head><body><div id="continued"></div><script type="application/json" id="framescript-audio">{"tracks":[{"id":"extension-hit","name":"Extension hit","lane":"sfx","start":0.5,"length":0.3,"preset":"Gentle pulse"}]}</script><script>window.renderFrame = t => { document.querySelector('#continued').textContent = t.toFixed(2); };</script></body></html>`,
     );
   await builder.getByRole("button", { name: "Review extension" }).click();
-  const review = page.getByRole("dialog", { name: "Review AI changes" });
+  const review = page.getByRole("dialog", { name: "Review visual extension" });
   const continued = review
     .frameLocator('iframe[title="Proposed scene"]')
     .frameLocator('iframe[title="Visual continuation"]')
     .locator("#continued");
   await expect(continued).toHaveText("0.00");
+  const comparisonTime = review.getByRole("slider", { name: "Comparison time" });
+  await review.getByRole("group", { name: "Proposed scene preview", exact: true }).click();
+  await page.keyboard.press("ArrowRight");
+  expect(Number(await comparisonTime.inputValue())).toBeCloseTo(2 + 1 / 30, 3);
+  await page.keyboard.press("Shift+ArrowRight");
+  expect(Number(await comparisonTime.inputValue())).toBeCloseTo(2 + 11 / 30, 3);
+  await page.keyboard.press("ArrowLeft");
+  expect(Number(await comparisonTime.inputValue())).toBeCloseTo(2 + 10 / 30, 3);
+  await page.keyboard.press("Home");
+  await expect(comparisonTime).toHaveValue("0");
+  await page.keyboard.press("ArrowLeft");
+  await expect(comparisonTime).toHaveValue("0");
+  await page.keyboard.press("End");
+  await expect(comparisonTime).toHaveValue("5");
+  await page.keyboard.press("j");
+  await expect(comparisonTime).toHaveValue("2");
+  await comparisonTime.focus();
+  await page.keyboard.press("ArrowRight");
+  expect(Number(await comparisonTime.inputValue())).toBeCloseTo(2 + 1 / 30, 3);
+  await page.keyboard.press("j");
+  await review.getByRole("button", { name: "Apply changes", exact: true }).focus();
+  await page.keyboard.down("Space");
+  await page.keyboard.down("Space");
+  await page.keyboard.up("Space");
+  await expect(review.getByRole("button", { name: "Pause preview", exact: true })).toBeVisible();
+  await expect.poll(async () => Number(await comparisonTime.inputValue())).toBeGreaterThan(2);
+  await page.keyboard.press("Space");
+  await expect(review.getByRole("button", { name: "Play preview", exact: true })).toBeVisible();
+  await page.keyboard.press("j");
+  await expect(comparisonTime).toHaveValue("2");
+  await review.evaluate(el => {
+    const input = document.createElement("input");
+    input.setAttribute("aria-label", "Editable shortcut check");
+    el.querySelector(".scene-review-description")!.append(input);
+  });
+  const editable = review.getByRole("textbox", { name: "Editable shortcut check" });
+  await editable.fill("j");
+  await editable.press("End");
+  await editable.press("Space");
+  await expect(comparisonTime).toHaveValue("2");
+  await expect(editable).toHaveValue("j ");
+  await editable.evaluate(el => el.remove());
+  await expect(review.getByText("Original handoff", { exact: true })).toBeVisible();
+  await expect(review.getByText("Held at 1.967s", { exact: true })).toBeVisible();
+  await review.getByRole("button", { name: "Next frame", exact: true }).click();
+  await expect.poll(async () => Number(await review.getByRole("slider", { name: "Comparison time" }).inputValue())).toBeGreaterThan(2);
+  await review.getByRole("button", { name: "Jump to join" }).click();
+  await expect(continued).toHaveText("0.00");
+  await review.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(review.getByText("Original handoff", { exact: true })).toBeHidden();
+  await review.getByRole("button", { name: "Compare", exact: true }).click();
+  await expect(review.getByText("Original handoff", { exact: true })).toBeVisible();
+  await review.screenshot({ path: "test-results/visual-extension-review-desktop.png" });
+  await page.setViewportSize({ width: 600, height: 800 });
+  await expect(review.getByRole("button", { name: "Apply changes" })).toBeVisible();
+  expect(await review.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await review.screenshot({ path: "test-results/visual-extension-review-mobile.png" });
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await review.getByRole("button", { name: "Play across join", exact: true }).click();
+  await expect.poll(async () => Number(await review.getByRole("slider", { name: "Comparison time" }).inputValue())).toBeGreaterThan(2);
+  await review.getByRole("button", { name: "Pause preview", exact: true }).click();
+  const pausedTime = await review.getByRole("slider", { name: "Comparison time" }).inputValue();
+  await page.waitForTimeout(150);
+  await expect(review.getByRole("slider", { name: "Comparison time" })).toHaveValue(pausedTime);
   await review.getByRole("button", { name: "Apply changes" }).click();
   await expect(
     page.getByRole("button", { name: "Continuation 1" }),
@@ -226,8 +282,9 @@ test("extends a code visual at its handoff without shifting or replacing narrati
       length,
     })),
   );
-  expect(saved?.audio?.find(clip => clip.name === "Extension hit")).toMatchObject({ start: 2.5, length: 0.3 });
-  expect(saved?.audio?.find(clip => clip.generatedSource?.includes(":carry:"))).toMatchObject({ start: 2, length: 3, loop: true, fadeIn: 0 });
+  expect(saved?.audio?.find(clip => clip.name === "Extension hit")).toBeUndefined();
+  expect(saved?.audio?.find(clip => clip.generatedSource?.includes(":carry:"))).toBeUndefined();
+  expect(saved?.audio).toHaveLength(project.audio.length);
   await mkdir("test-results/continuation-audio", { recursive: true });
   await writeFile("test-results/continuation-audio/project.json", JSON.stringify(saved));
   await page

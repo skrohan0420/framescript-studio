@@ -24,96 +24,29 @@ function fixture() {
   return project;
 }
 
-test("animation controls persist, show delayed examples and generate compatible 3D instructions", async ({
-  page,
-}) => {
-  await page.route("**/api/workspaceGet", (r) =>
-    r.fulfill({ json: { result: newProject() } }),
-  );
-  await page.route("**/api/settingsGet", (r) =>
-    r.fulfill({ json: { result: {} } }),
-  );
-  await page.route("**/api/settingsSet", (r) =>
-    r.fulfill({ json: { result: true } }),
-  );
-  await page.route("**/api/autosave", (r) =>
-    r.fulfill({ json: { result: true } }),
-  );
-  await page.goto("/#editor");
-  await page
-    .getByRole("button", { name: "Prompts panel", exact: true })
-    .click();
-  await page.getByRole("tab", { name: "Animation", exact: true }).click();
-  await page.getByLabel("Rendering mode", { exact: true }).selectOption("3d");
-  const camera = page.getByRole("button", {
-    name: "Camera movement",
-    exact: true,
+for (const savedTab of ["animation", "typography"]) {
+  test("removed " + savedTab + " section restores to Brief and delegates text", async ({ page }) => {
+    const project = newProject();
+    project.promptDraft = { renderingMode: "3d", typographyEnabled: false };
+    await page.route("**/api/workspaceGet", (r) => r.fulfill({ json: { result: project } }));
+    await page.route("**/api/settingsGet", (r) => r.fulfill({ json: { result: {} } }));
+    await page.route("**/api/settingsSet", (r) => r.fulfill({ json: { result: true } }));
+    await page.route("**/api/autosave", (r) => r.fulfill({ json: { result: true } }));
+    await page.addInitScript((tab) => localStorage.setItem("framescript.prompt-tab", tab), savedTab);
+    await page.goto("/#editor");
+    await page.getByRole("button", { name: "Prompts panel", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "Brief", exact: true })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "Animation", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Typography", exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("Rendering mode", { exact: true })).toHaveCount(0);
+    await page.getByRole("tab", { name: "Identity", exact: true }).click();
+    await page.getByText("Preview identity prompt", { exact: true }).click();
+    const preview = page.getByLabel("Identity prompt", { exact: true });
+    await expect(preview).toHaveValue(/do not include a typography section/);
+    await expect(preview).not.toHaveValue(/Text permission:/);
+    await expect(preview).toHaveValue(/Reference look font: Outfit/);
   });
-  await camera.hover();
-  await expect(page.getByRole("tooltip")).toHaveCount(0);
-  await expect(page.getByRole("tooltip")).toContainText("Orbit a molecule");
-  await camera.click();
-  await page
-    .getByLabel("Camera movement variation", { exact: true })
-    .selectOption("Orbit");
-  await page
-    .getByLabel("Framing / travel", { exact: true })
-    .fill("45 degrees clockwise");
-  await page
-    .getByRole("button", { name: "Assembly & disassembly", exact: true })
-    .click();
-  await page
-    .getByLabel("Motion intensity", { exact: true })
-    .selectOption("Subtle");
-  await page.reload();
-  await page
-    .getByRole("button", { name: "Prompts panel", exact: true })
-    .click();
-  await expect(
-    page.getByRole("tab", { name: "Animation", exact: true }),
-  ).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByLabel("Rendering mode", { exact: true })).toHaveValue(
-    "3d",
-  );
-  await expect(
-    page.getByLabel("Framing / travel", { exact: true }),
-  ).toHaveValue("45 degrees clockwise");
-  await expect
-    .poll(() =>
-      page
-        .locator(".prompt-drawer")
-        .evaluate((el) =>
-          el.getAnimations().every((a) => a.playState === "finished"),
-        ),
-    )
-    .toBe(true);
-  await page.screenshot({ path: "test-results/animation-controls.png" });
-  await page.setViewportSize({ width: 390, height: 850 });
-  await expect.poll(() => page.locator(".prompt-drawer").evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
-  await page.setViewportSize({ width: 1600, height: 1000 });
-  await page.getByRole("tab", { name: "Output", exact: true }).click();
-  const prompt = await page.getByLabel("Generated prompt").inputValue();
-  expect(prompt).toContain("True 3D");
-  expect(prompt).toContain("45 degrees clockwise");
-  expect(prompt).toContain("Shared intensity: Subtle");
-  await page
-    .getByRole("tabpanel", { name: "Output", exact: true })
-    .getByRole("button", { name: "Paste full HTML document", exact: true })
-    .click();
-  const dialog = page.getByRole("dialog", {
-    name: "Paste full HTML document",
-    exact: true,
-  });
-  await dialog.locator("textarea").fill(threeStarter);
-  await dialog
-    .getByRole("button", { name: "Apply pasted document", exact: true })
-    .click();
-  await expect(
-    page.frameLocator('iframe[title="Animation preview"]').locator("#scene"),
-  ).toHaveCount(1);
-  await expect.poll(() => page.locator(".prompt-drawer").count()).toBe(0);
-  await page.screenshot({ path: "test-results/three-editor.png" });
-});
+}
 
 test("offline Three.js renders visible repeatable frames in a sandbox and standalone document", async ({
   page,

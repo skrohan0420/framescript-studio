@@ -151,7 +151,7 @@ ${selections
     return `- ${technique.name}: ${technique.detail} Variation: ${item.variant || technique.variants[0]}. ${technique.control}: ${item.amount?.trim() || "Adapt to subject and framing"}. Timing window: ${start}–${start + length}s. Individual settings override shared defaults.`;
   })
   .join("\n")}
-${structured ? "Translate compatible effects into supported tracks and preserve the supplied narration cues where possible." : "Combine compatible techniques on separate transform groups. Preserve supplied narration timestamps; place accents within each requested window. Use readable holds. Adapt camera and path techniques to the selected rendering mode (2D pan/zoom versus 3D dolly/orbit). Evaluate motion analytically from t, including springs and stagger; no accumulated simulation state. Do not add unselected effects or any text unless Typography explicitly permits it."}`
+${structured ? "Translate compatible effects into supported tracks and preserve the supplied narration cues where possible." : "Combine compatible techniques on separate transform groups. Preserve supplied narration timestamps; place accents within each requested window. Use readable holds. Adapt camera and path techniques to the selected rendering mode (2D pan/zoom versus 3D dolly/orbit). Evaluate motion analytically from t, including springs and stagger; no accumulated simulation state. Do not add unselected effects. Follow the director's on-screen text decisions."}`
     : ""
 }`;
 }

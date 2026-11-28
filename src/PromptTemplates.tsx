@@ -1,6 +1,5 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useStatusActivity, useStatusNotice } from "./editor-status";
-import { PromptAnimation } from "./PromptAnimation";
-import { PromptAudio } from "./PromptAudio";
 import { useEffect, useRef, useState } from "react";
 import {
   Clipboard,
@@ -11,16 +10,9 @@ import {
   Sparkles,
   Code2,
   Layers,
-  Type,
-  Orbit,
-  Wrench,
-  Check,
   X,
   Fingerprint,
   Cat,
-  SlidersHorizontal,
-  Zap,
-  BookOpen,
   Clapperboard,
   Package,
 } from "lucide-react";
@@ -28,14 +20,11 @@ import { useProjectState, useStudio } from "./store";
 import { sceneOffset } from "../shared/workflow";
 import { transcriptSrt, voiceoverWordsForScene } from "../shared/transcript";
 import { parseNarrationInput } from "../shared/narration-input";
-import { PromptTypography } from "./PromptTypography";
 import { PromptMascot } from "./PromptMascot";
-import { PromptTemplateChoice } from "./PromptTemplateChoice";
 import { readReferenceConfig } from "../shared/reference-config";
 import {
   buildCodePrompt,
   buildStructuredSceneBrief,
-  promptTemplates,
   type PromptDraft,
 } from "../shared/prompt-templates";
 import {
@@ -48,8 +37,6 @@ import {
   codeGenerateInputSchema,
   type CodeGenerateInput,
 } from "../shared/code-generate";
-import type { PromptReferences as References } from "../shared/prompt-references";
-import { PromptReferences } from "./PromptReferences";
 import { buildDirectorPrompt } from "../shared/director-prompt";
 import { buildIdentityPrompt } from "../shared/identity-prompt";
 import { bridge, download } from "./bridge";
@@ -64,101 +51,6 @@ const outputLabels: Record<GenerateOutput, string> = {
   separate: "Separate HTML, CSS, and JavaScript",
   structured: "Editable structured scene",
 };
-const fieldSuggestions = {
-  script: [
-    [
-      "Hook & reveal",
-      "Start with a surprising question, reveal the answer, then finish with a clear takeaway.",
-    ],
-    [
-      "Explainer",
-      "Introduce the subject, explain how it works step by step, and summarize the main idea.",
-    ],
-    [
-      "Short story",
-      "Introduce a character and a problem, show the turning point, then reveal the outcome.",
-    ],
-    [
-      "Product demo",
-      "Show the problem, demonstrate the product in use, and highlight the benefit.",
-    ],
-  ],
-  visuals: [
-    [
-      "Smooth transitions",
-      "Connect visual beats with smooth, motivated transitions.",
-    ],
-    [
-      "Particles",
-      "Use purposeful particles to show energy, movement, or scale.",
-    ],
-    [
-      "Diagram",
-      "Build a clear diagram step by step to support the explanation.",
-    ],
-    [
-      "Before / after",
-      "Show a visually consistent before-and-after transformation.",
-    ],
-    [
-      "Layers & depth",
-      "Create foreground, subject and background layers with subtle depth.",
-    ],
-    [
-      "Match narration",
-      "Reveal each subject or action exactly when the narration introduces it.",
-    ],
-  ],
-  camera: [
-    ["Slow push-in", "Use a slow, smooth push-in toward the main subject."],
-    [
-      "Wide shot",
-      "Use a wide establishing shot with clear subject separation.",
-    ],
-    ["Close-up", "Use a close-up to emphasize the important detail."],
-    [
-      "Follow subject",
-      "Track the main subject smoothly while keeping it clearly framed.",
-    ],
-    [
-      "Parallax",
-      "Use subtle parallax between foreground and background layers.",
-    ],
-    [
-      "Static",
-      "Keep the camera fixed and let the subject animation carry the scene.",
-    ],
-  ],
-  screenText: [
-    ["No text", ""],
-    ["Headline", "YOUR HEADLINE"],
-    ["Key number", "42%"],
-    ["Call to action", "Learn more"],
-  ],
-  notes: [
-    [
-      "Consistent design",
-      "Keep character design, palette, lighting and visual style consistent throughout.",
-    ],
-    [
-      "Safe margins",
-      "Keep important subjects and text inside a 10% safe margin.",
-    ],
-    [
-      "No flashing",
-      "Avoid flashing lights, rapid strobing and excessive camera shake.",
-    ],
-    ["Seamless loop", "Make the ending connect smoothly to the opening frame."],
-    [
-      "Narration sync",
-      "Align visual emphasis and transitions to the supplied narration timestamps.",
-    ],
-    [
-      "Smooth motion",
-      "Use deliberate easing and clear anticipation; avoid abrupt or distracting motion.",
-    ],
-  ],
-} as const;
 export function PromptTemplates({
   master = false,
   onClose,
@@ -187,10 +79,7 @@ export function PromptTemplates({
     notes: "",
     format: "document",
     consistency: true,
-    typographyEnabled: false,
-    textPlanning: "AI decides",
     mascotEnabled: false,
-    textItems: [],
     ...readReferenceConfig(project.promptDraft),
   };
   const draft: PromptDraft = (() => {
@@ -198,13 +87,10 @@ export function PromptTemplates({
       const saved = project.promptDraft;
       if (!saved || typeof saved !== "object") return defaults;
       const restored = { ...defaults };
-      if (saved.renderingMode === "auto" || saved.renderingMode === "2d" || saved.renderingMode === "2.5d" || saved.renderingMode === "3d")
-        restored.renderingMode = saved.renderingMode;
       for (const key of [
         "bgm",
         "sfx",
         "consistency",
-        "typographyEnabled",
         "mascotEnabled",
       ] as const)
         if (typeof saved[key] === "boolean") restored[key] = saved[key];
@@ -217,7 +103,6 @@ export function PromptTemplates({
         "referenceStyle",
         "referenceInfluence",
         "referenceNotes",
-        "storyStructure",
         "mascotName",
         "mascotIdentity",
         "mascotRole",
@@ -228,8 +113,6 @@ export function PromptTemplates({
         "mascotNotes",
       ] as const)
         if (typeof saved[key] === "string") restored[key] = saved[key];
-      if (typeof saved.template === "string" && promptTemplates.some((item) => item.id === saved.template))
-        restored.template = saved.template;
       if (
         typeof saved.duration === "number" &&
         saved.duration >= 0.1 &&
@@ -260,7 +143,6 @@ export function PromptTemplates({
       localStorage.setItem(outputKey, output);
     } catch {}
   }, [output]);
-  const [references, setReferences] = useState<References>([]);
   const [busy, setBusy] = useState(false);
   const [durationInput, setDurationInput] = useState<string | null>(null);
   const notify = useStatusNotice();
@@ -277,11 +159,9 @@ export function PromptTemplates({
       const saved = localStorage.getItem("framescript.prompt-tab");
       return [
         "brief",
-        "animation",
-        "audio",
         "identity",
         "mascot",
-        "typography",
+        "direction",
         "output",
       ].includes(saved ?? "")
         ? saved!
@@ -317,49 +197,6 @@ export function PromptTemplates({
     }));
 
   };
-  const suggestions = (key: keyof typeof fieldSuggestions) => (
-    <div
-      className="prompt-field-suggestions"
-      role="group"
-      aria-label={`${key} suggestions`}
-    >
-      {fieldSuggestions[key].map(([label, value]) => (
-        <button
-          key={label}
-          type="button"
-          aria-pressed={
-            key === "script" ? draft.storyStructure === value : undefined
-          }
-          title={value || "Keep the animation free of on-screen text"}
-          onClick={() => {
-            if (key === "script") {
-              update(
-                "storyStructure",
-                draft.storyStructure === value ? "" : value,
-              );
-              return;
-            }
-            const current = draft[key];
-            update(
-              key,
-              key === "screenText"
-                ? value
-                : current.includes(value)
-                  ? current
-                  : [current.trim(), value].filter(Boolean).join("\n"),
-            );
-          }}
-        >
-          {key === "script" && (() => {
-            const Icon = label === "Hook & reveal" ? Zap : label === "Explainer" ? BookOpen : label === "Short story" ? Clapperboard : Package;
-            return <Icon size={14} aria-hidden="true" />;
-          })()}
-          {label}
-          {key === "script" && draft.storyStructure === value && <Check size={13} aria-hidden="true" />}
-        </button>
-      ))}
-    </div>
-  );
   const voice = project.audio
     ?.filter(
       (clip) =>
@@ -416,8 +253,6 @@ export function PromptTemplates({
   let prompt = "",
     promptError = "";
   try {
-    if (output === "structured" && ["3d", "2.5d"].includes(draft.renderingMode ?? ""))
-      throw Error("Structured output supports native 2D shapes. Choose 2D/automatic rendering or a code output.");
     const { width, height, fps } = project.settings;
     const source = includeCode ? project : undefined;
     if (output === "structured") {
@@ -430,7 +265,7 @@ export function PromptTemplates({
           Math.ceil(fps / 10),
           Math.round(draft.duration * fps),
         ),
-        references,
+        references: [],
       });
       request = { kind: "structured", input };
       prompt = buildGeneratePrompt(input);
@@ -438,7 +273,7 @@ export function PromptTemplates({
       const input = codeGenerateInputSchema.parse({
         format: output,
         prompt: buildCodePrompt({ ...implementationDraft, format: output }, width, height, source),
-        references,
+        references: [],
       });
       request = { kind: "code", input };
       prompt = buildCodeGeneratePrompt(input);
@@ -465,7 +300,7 @@ export function PromptTemplates({
   const exportDirector = () => run(async () => {
     setUncopiedPrompt("");
     const session = useStudio.getState().session;
-    const input = codeGenerateInputSchema.parse({ format: "document", prompt: directorPrompt, references });
+    const input = codeGenerateInputSchema.parse({ format: "document", prompt: directorPrompt, references: [] });
     const result = await bridge.call("codeGeneratePackage", input);
     if (useStudio.getState().session !== session) throw Error("The project changed. Export a fresh director prompt.");
     download(result);
@@ -502,38 +337,6 @@ export function PromptTemplates({
         notify("ZIP download started. Clipboard access was unavailable. Copy the exported prompt in Output.");
       }
     });
-  const icons = {
-    canvas: Orbit,
-    motion: Layers,
-    explain: Sparkles,
-    type: Type,
-    depth: Orbit,
-    repair: Wrench,
-    data: SlidersHorizontal,
-    process: Layers,
-    product: Sparkles,
-    isometric: Layers,
-    particles: Sparkles,
-    map: Orbit,
-    comparison: Layers,
-    loop: RotateCcw,
-  };
-  const descriptions = {
-    canvas: "Procedural visuals",
-    motion: "Shapes & transitions",
-    explain: "Diagrams & concepts",
-    type: "Animated text",
-    depth: "Depth & camera moves",
-    repair: "Fix pasted code",
-    data: "Charts & values",
-    process: "Stages & connections",
-    product: "Features & close-ups",
-    isometric: "Angled illustrations",
-    particles: "Forces & movement",
-    map: "Locations & journeys",
-    comparison: "Side-by-side stories",
-    loop: "Continuous cycles",
-  };
   return (
     <section className="prompt-templates" aria-label="Prompt templates">
       <div className="prompt-heading">
@@ -572,11 +375,9 @@ export function PromptTemplates({
       >
         {[
           ["brief", "Brief"],
-          ["animation", "Animation"],
-          ["audio", "Audio"],
           ["identity", "Identity"],
           ["mascot", "Mascot"],
-          ["typography", "Typography"],
+          ["direction", "Direction"],
           ["output", "Output"],
         ].map(([id, label]) => (
           <button
@@ -592,11 +393,9 @@ export function PromptTemplates({
             onKeyDown={(event) => {
               const ids = [
                 "brief",
-                "animation",
-                "audio",
                 "identity",
                 "mascot",
-                "typography",
+                "direction",
                 "output",
               ];
               const index = ids.indexOf(id);
@@ -619,16 +418,13 @@ export function PromptTemplates({
           >
             {id === "brief" ? (
               <Clipboard size={17} />
-            ) : id === "animation" ? (
-              <Orbit size={17} />
-            ) : id === "audio" ? (
-              <Music size={17} />
+            
             ) : id === "identity" ? (
               <Fingerprint size={17} />
             ) : id === "mascot" ? (
               <Cat size={17} />
-            ) : id === "typography" ? (
-              <Type size={17} />
+            ) : id === "direction" ? (
+              <Clapperboard size={17} />
             ) : (
               <Code2 size={17} />
             )}
@@ -640,57 +436,10 @@ export function PromptTemplates({
         <div
           className="prompt-tab-panel"
           role="tabpanel"
-          id="prompt-panel-animation"
-          aria-labelledby="prompt-tab-animation"
-          hidden={activeSection !== "animation"}
-        >
-          <PromptAnimation draft={draft} update={update} />
-        </div>
-        <div
-          className="prompt-tab-panel"
-          role="tabpanel"
           id="prompt-panel-brief"
           aria-labelledby="prompt-tab-brief"
           hidden={activeSection !== "brief"}
         >
-          <div
-            className="prompt-section-caption"
-            data-prompt-section="brief"
-            tabIndex={-1}
-          >
-            <strong>What are you making?</strong>
-            <span>Choose a format, then add your story.</span>
-          </div>
-          <div
-            className="prompt-template-grid"
-            role="group"
-            aria-label="Animation templates"
-          >
-            {promptTemplates.map((item) => {
-              const Icon = icons[item.id];
-              return (
-                <PromptTemplateChoice
-                  key={item.id}
-                  id={item.id}
-                  name={item.name}
-                  selected={draft.template === item.id}
-                  onSelect={() => {
-                    update("template", item.id);
-                    if (item.id === "repair") setIncludeCode(true);
-                  }}
-                >
-                  <Icon size={17} />
-                  <span>
-                    <strong>{item.name}</strong>
-                    <small>{descriptions[item.id]}</small>
-                  </span>
-                  {draft.template === item.id && (
-                    <Check size={13} className="template-selected-check" />
-                  )}
-                </PromptTemplateChoice>
-              );
-            })}
-          </div>
           <div className="prompt-form-card">
             <div className="prompt-card-heading">
               <strong>The brief</strong>
@@ -703,7 +452,7 @@ export function PromptTemplates({
               <div className="prompt-options-content">
               <label className="field" htmlFor="prompt-full-script">
                 <span>Full video script</span>
-                <textarea id="prompt-full-script" rows={8} maxLength={100000}
+                <ExpandableTextarea id="prompt-full-script" rows={8} maxLength={100000}
                   aria-describedby="prompt-full-script-help"
                   value={draft.fullScript ?? ""}
                   onChange={(event) => update("fullScript", event.target.value)}
@@ -823,7 +572,7 @@ export function PromptTemplates({
             </div>
             <div className="field">
 
-              <textarea
+              <ExpandableTextarea
                 id="prompt-script-input"
                 aria-label="Scene narration / timestamps"
                 aria-describedby="prompt-scene-script-help"
@@ -856,10 +605,6 @@ export function PromptTemplates({
                   ? `Text from audio: ${narrationSource.names}`
                   : "Pasted or edited text · audio source unverified"}
               </small>
-            </div>
-            <div className="prompt-story-direction">
-              <small>Story direction <span>Optional · choose one</span></small>
-              {suggestions("script")}
             </div>
 
 
@@ -905,12 +650,12 @@ export function PromptTemplates({
           </div>
           <label className="field">
             Video theme &amp; visual identity guide
-            <textarea rows={12} maxLength={30000} value={draft.identityGuide ?? ""}
+            <ExpandableTextarea rows={12} maxLength={30000} value={draft.identityGuide ?? ""}
               onChange={(event) => update("identityGuide", event.target.value)}
               placeholder="Paste the selected whole-video theme and its detailed visual instructions…" />
           </label>
           <details><summary>Preview identity prompt</summary>
-            <textarea aria-label="Identity prompt" rows={10} value={buildIdentityPrompt(draft, output)} readOnly />
+            <ExpandableTextarea aria-label="Identity prompt" rows={10} value={buildIdentityPrompt(draft, output)} readOnly />
           </details>
         </div>
         <div
@@ -923,44 +668,16 @@ export function PromptTemplates({
           <PromptMascot draft={draft} update={update} />
         </div>
         <div
-          className="prompt-form-card prompt-tab-panel"
-          role="tabpanel"
-          id="prompt-panel-typography"
-          aria-labelledby="prompt-tab-typography"
-          hidden={activeSection !== "typography"}
-        >
-          <PromptTypography
-            draft={draft}
-            update={update}
-          />
-        </div>
-        <div
           className="prompt-tab-panel"
           role="tabpanel"
-          id="prompt-panel-audio"
-          aria-labelledby="prompt-tab-audio"
-          hidden={activeSection !== "audio"}
-          data-prompt-section="audio"
-          tabIndex={-1}
+          id="prompt-panel-direction"
+          aria-labelledby="prompt-tab-direction"
+          hidden={activeSection !== "direction"}
         >
-          <PromptAudio draft={draft} structured={output === "structured"}
-            onChange={(patch) => setDraft((previous) => ({ ...previous, ...patch }))} />
-        </div>
-        <div
-          className="prompt-tab-panel"
-          role="tabpanel"
-          id="prompt-panel-output"
-          aria-labelledby="prompt-tab-output"
-          hidden={activeSection !== "output"}
-        >
-          <details className="prompt-options" open>
-            <summary><span className="output-section-title"><Clapperboard size={18} aria-hidden="true" /> Explore a direction</span><small>Optional · external AI</small></summary>
+          <section className="prompt-form-card" aria-labelledby="prompt-direction-heading">
+            <div className="prompt-card-heading"><strong id="prompt-direction-heading" className="output-section-title"><Clapperboard size={18} aria-hidden="true" /> Explore a direction</strong><span>Optional · external AI</span></div>
             <div className="prompt-options-content">
-              <ol className="director-workflow" aria-label="Creative direction workflow">
-                <li><strong>Copy &amp; attach</strong><span>Send the director prompt and context ZIP to your AI.</span></li>
-                <li><strong>Choose &amp; refine</strong><span>Review three approaches and develop your preferred option.</span></li>
-                <li><strong>Bring it back</strong><span>Paste only the final direction below.</span></li>
-              </ol>
+
               <p className="type-hint">Scene narration, timestamps and optional full-script context are included from Brief.</p>
               <div className="director-export-action director-transfer">
                 <div className="director-transfer-buttons">
@@ -974,7 +691,7 @@ export function PromptTemplates({
               </div>
               <label className="field">
                 <span>Selected creative direction <small>{hasDirection ? "In use" : "Optional"}</small></span>
-                <textarea id="selected-creative-direction" aria-describedby="direction-draft-help" rows={10} maxLength={30000}
+                <ExpandableTextarea id="selected-creative-direction" aria-describedby="direction-draft-help" rows={10} maxLength={30000}
                   value={draft.selectedDirection ?? ""}
                   onChange={(event) => update("selectedDirection", event.target.value)}
                   placeholder="Paste the final refined direction here, rather than all the alternatives." />
@@ -984,19 +701,17 @@ export function PromptTemplates({
                   : "Paste your selected direction to use it automatically, or leave this empty to generate directly."}
               </p>
               <details><summary>Preview director prompt</summary>
-                <textarea aria-label="Director prompt" rows={12} value={directorPrompt} readOnly />
+                <ExpandableTextarea aria-label="Director prompt" rows={12} value={directorPrompt} readOnly />
               </details>
             </div>
-          </details>
-          <details
-            className="prompt-options"
-            data-prompt-section="output"
-            tabIndex={-1}
-            open
-          >
-            <summary>
-              <span className="output-section-title"><Package size={18} aria-hidden="true" /> Prepare your package</span><small>{outputLabels[output]}</small>
-            </summary>
+          </section>
+        </div>
+        <div className="prompt-tab-panel" role="tabpanel" id="prompt-panel-output"
+          aria-labelledby="prompt-tab-output" hidden={activeSection !== "output"}>
+          <section className="prompt-form-card" aria-labelledby="prompt-package-heading">
+            <div className="prompt-card-heading">
+              <strong id="prompt-package-heading" className="output-section-title"><Package size={18} aria-hidden="true" /> Prepare your package</strong><span>{outputLabels[output]}</span>
+            </div>
             <div className="prompt-options-content">
               <label className="field">
                 Output format
@@ -1027,15 +742,9 @@ export function PromptTemplates({
                 />{" "}
                 Include active timeline code as a reference
               </label>
-              <PromptReferences
-                references={references}
-                busy={busy}
-                run={run}
-                onChange={setReferences}
-              />
 
             </div>
-          </details>
+          </section>
           <section className="output-import-section" aria-labelledby="output-import-heading">
             <div><h3 id="output-import-heading">Import your generated result</h3><p>After your AI returns animation code, bring it into the editor for preview.</p></div>
               <button
@@ -1056,18 +765,17 @@ export function PromptTemplates({
               </button>
           </section>
           <p className="muted">
-            Draft saved on this device. No AI connection required. Text stays
-            off-screen unless you specify it.
+            Draft saved on this device. No AI connection required. The director decides when on-screen text helps.
           </p>
           {uncopiedPrompt && (
             <label className="field">
               Exported prompt
-              <textarea rows={6} value={uncopiedPrompt} readOnly />
+              <ExpandableTextarea rows={6} value={uncopiedPrompt} readOnly />
             </label>
           )}
           <details>
             <summary>Preview generated prompt</summary>
-            <textarea
+            <ExpandableTextarea
               aria-label="Generated prompt"
               rows={14}
               value={prompt}

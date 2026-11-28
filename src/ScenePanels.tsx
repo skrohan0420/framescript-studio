@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useStudio, useProjectState } from "./store";
 import { useState } from "react";
 import { Field } from "./components";
@@ -357,7 +358,7 @@ export function SceneInspector({
       </div>
       <div className="inline-scene-fields">
         <Field label="Selected scene narration">
-          <textarea
+          <ExpandableTextarea
             rows={2}
             disabled={scene.locked || busy}
             value={scene.narration}
@@ -365,7 +366,7 @@ export function SceneInspector({
           />
         </Field>
         <Field label="Selected scene visual direction">
-          <textarea
+          <ExpandableTextarea
             rows={2}
             disabled={scene.locked || busy}
             value={scene.visual}

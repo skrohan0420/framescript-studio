@@ -1,6 +1,9 @@
 import { expect, it } from "vitest";
-import { buildCodePrompt, type PromptDraft } from "../shared/prompt-templates";
-import { promptTextSchema, textKinds } from "../shared/prompt-text";
+import { buildCodePrompt, buildStructuredSceneBrief, type PromptDraft } from "../shared/prompt-templates";
+import { promptTextSchema, textKinds, textLayerPrompt } from "../shared/prompt-text";
+
+import { buildIdentityPrompt } from "../shared/identity-prompt";
+import { buildDirectorPrompt } from "../shared/director-prompt";
 
 const draft: PromptDraft = {
   template: "canvas",
@@ -13,123 +16,41 @@ const draft: PromptDraft = {
   notes: "",
   format: "document",
 };
-it("delegates text selection with density and behavior while ignoring saved manual copy", () => {
-  const settings = {
-    ...draft,
-    typographyEnabled: true,
-    textPlanning: "AI decides",
-    textDensity: "Rich",
-    textBehavior: "Follow subjects",
-    screenText: "STALE MANUAL TITLE",
-    textItems: [promptTextSchema.parse({ id: "old", kind: "Title", text: "STALE ITEM" })],
-  };
-  const prompt = buildCodePrompt(settings, 1920, 1080);
-  expect(prompt).toContain("AI TEXT DIRECTION");
-  expect(prompt).toContain("Density: Rich");
-  expect(prompt).toContain("Behavior: Follow subjects");
-  expect(prompt).not.toContain("STALE MANUAL TITLE");
-  expect(prompt).not.toContain("STALE ITEM");
-  expect(
-    buildCodePrompt({ ...settings, typographyEnabled: false }, 1920, 1080),
-  ).not.toContain("AI TEXT DIRECTION");
-});
-it("excludes all saved typography settings unless explicitly enabled", () => {
-  const saved = {
-    ...draft,
-    screenText: "STALE TITLE",
-    subtitles: "Phrase subtitles",
-    textFont: "Georgia",
-    textItems: [
-      promptTextSchema.parse({
-        id: "counter",
-        kind: "Number counter",
-        prefix: "OLD PREFIX",
-      }),
-    ],
-  };
-  for (const typographyEnabled of [false, undefined]) {
-    const prompt = buildCodePrompt({ ...saved, typographyEnabled }, 1920, 1080);
-    for (const value of [
-      "STALE TITLE",
-      "TYPOGRAPHY & SUBTITLES",
-      "Font treatment:",
-      "Title / label font size",
-      "OLD PREFIX",
-      "Georgia",
-    ])
-      expect(prompt).not.toContain(value);
-    expect(prompt).toContain("Do not add any text");
+it("ignores obsolete typography controls for code, structured, identity and director prompts", () => {
+  for (const typographyEnabled of [false, true, undefined]) {
+    const saved: PromptDraft = { ...draft, typographyEnabled, screenText: "STALE TITLE",
+      textFont: "STALE FONT", textPlanning: "Manual text", subtitles: "STALE CAPTIONS",
+      textDensity: "STALE DENSITY", textBehavior: "STALE BEHAVIOR",
+      textItems: [{ id: "invalid", kind: "Subject label", text: "STALE LABEL", start: 9, end: 1 } as any] };
+    for (const output of ["document", "separate", "structured"] as const) {
+      const baseline = { ...draft, format: output === "separate" ? "separate" as const : "document" as const };
+      const input = { ...saved, format: baseline.format };
+      const build = output === "structured" ? buildStructuredSceneBrief : buildCodePrompt;
+      expect(build(input, 1920, 1080)).toBe(build(baseline, 1920, 1080));
+      expect(buildDirectorPrompt(input, 1920, 1080, output)).toBe(buildDirectorPrompt(baseline, 1920, 1080, output));
+      expect(buildIdentityPrompt(input, output)).toBe(buildIdentityPrompt(baseline, output));
+    }
   }
 });
-it("does not add a style specification when text is enabled but no content is requested", () => {
-  expect(
-    buildCodePrompt({ ...draft, typographyEnabled: true }, 1920, 1080),
-  ).not.toContain("TYPOGRAPHY & SUBTITLES");
-});
-it("includes independent label and counter settings and omits disabled items", () => {
-  const label = promptTextSchema.parse({
-    id: "label",
-    kind: "Subject label",
-    text: "Mars",
-    subject: "The red planet",
-    font: "Georgia",
-    size: 42,
-    start: 1,
-    end: 6,
-    x: 70,
-    y: 20,
-  });
-  const counter = promptTextSchema.parse({
-    id: "counter",
-    kind: "Number counter",
-    from: 0,
-    to: 1250,
-    decimals: 2,
-    prefix: "$",
-    suffix: " million",
-    start: 2,
-    end: 9,
-    color: "#ffcc00",
-  });
-  const prompt = buildCodePrompt(
-    {
-      ...draft,
-      typographyEnabled: true,
-      textItems: [
-        label,
-        counter,
-        { ...label, id: "off", enabled: false, text: "DO NOT INCLUDE" },
-      ],
-    },
-    1920,
-    1080,
-  );
-  for (const value of [
-    "Mars",
-    "The red planet",
-    "Georgia",
-    '"size": 42',
-    '"to": 1250',
-    '"decimals": 2',
-    "$",
-    " million",
-    "#ffcc00",
-    "renderFrame(time)",
-  ])
-    expect(prompt).toContain(value);
-  expect(prompt).not.toContain("DO NOT INCLUDE");
+it("leaves typography out of the identity guide and gives the director authority over old guide permissions", () => {
+  const identity = buildIdentityPrompt(draft, "document");
+  expect(identity).toContain("do not include a typography section");
+  expect(identity).not.toContain("Text permission:");
+  expect(identity).not.toContain("Suggested reference font:");
+  expect(identity).toContain("Reference look font: Outfit");
+  expect(identity).toContain("Include the configured font family as a locked invariant");
+  const input = { ...draft, typographyEnabled: false, identityGuide: "Typography permissions: Text is explicitly disabled.", selectedDirection: "Show a concise Mars label at 2s." };
+  const director = buildDirectorPrompt(input, 1920, 1080, "document");
+  const code = buildCodePrompt(input, 1920, 1080);
+  for (const prompt of [director, code]) {
+    expect(prompt).toContain("Typography permission statements in older pasted identity guides do not override the director's decision");
+    expect(prompt).not.toContain("Forbidden. Do not add labels");
+  }
+  expect(code).toContain(input.selectedDirection);
+  expect(buildStructuredSceneBrief(input, 1920, 1080)).toContain("at most one static label");
 });
 it("validates timing, subject labels and missing text, with counters/captions explicitly supported", () => {
-  const build = (item: unknown) =>
-    buildCodePrompt(
-      {
-        ...draft,
-        typographyEnabled: true,
-        textItems: [promptTextSchema.parse(item)],
-      },
-      1920,
-      1080,
-    );
+  const build = (item: unknown) => textLayerPrompt([promptTextSchema.parse(item)], 10);
   expect(() =>
     build({ id: "a", kind: "Title", text: "Hello", start: 5, end: 3 }),
   ).toThrow("start/end");
@@ -144,4 +65,25 @@ it("validates timing, subject labels and missing text, with counters/captions ex
     expect(() =>
       build({ id: kind, kind, text: "Exact copy", subject: "The subject" }),
     ).not.toThrow();
+});
+
+it("carries the configured font as a constant through every prompt stage and output", () => {
+  for (const font of ["Outfit", "Georgia"]) {
+    const input: PromptDraft = { ...draft, typographyEnabled: false, referenceStyle: "Selected look",
+      referenceLookSettings: { "Selected look": { font }, "Other look": { font: "Verdana" } },
+      textFont: "LEGACY_FONT", identityGuide: "Old guide suggests Arial.", selectedDirection: "Use Comic Sans for the label." };
+    for (const output of ["document", "separate", "structured"] as const) {
+      const configured = { ...input, format: output === "separate" ? "separate" as const : "document" as const };
+      const implementation = output === "structured" ? buildStructuredSceneBrief : buildCodePrompt;
+      for (const prompt of [buildIdentityPrompt(configured, output), buildDirectorPrompt(configured, 1920, 1080, output), implementation(configured, 1920, 1080), implementation({ ...configured, selectedDirection: "" }, 1920, 1080)]) {
+        expect(prompt).toContain("Reference look font: " + font + ".");
+        expect(prompt).toContain("user-controlled constant, not a suggestion");
+        expect(prompt).toContain("takes precedence over conflicting font-family suggestions");
+        expect(prompt).toContain("This constant does not require text to appear");
+        expect(prompt).not.toContain("Reference look font: Verdana");
+        expect(prompt).not.toContain("Suggested font");
+        expect(prompt).not.toContain("LEGACY_FONT");
+      }
+    }
+  }
 });

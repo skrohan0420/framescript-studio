@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import { flushSync } from "react-dom";
 import {
   useCallback,
@@ -3924,7 +3925,7 @@ export function App() {
                 {attached.length > 0 && (
                   <small>{attached.length} reference image(s) attached</small>
                 )}
-                <textarea
+                <ExpandableTextarea
                   aria-label="Animation prompt"
                   placeholder="Describe your animation…"
                   value={prompt}
@@ -4283,7 +4284,7 @@ export function App() {
           CSS and JavaScript tabs. This replaces the active timeline's code;
           Undo restores it.
         </p>
-        <textarea
+        <ExpandableTextarea
           className="paste-document"
           aria-label="HTML document to import"
           value={pasteDocument}

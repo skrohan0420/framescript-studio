@@ -39,6 +39,7 @@ import { TimelineRulerMarks } from "./TimelineRulerMarks";
 import { startTimelineDrag } from "./timeline-drag";
 import { TextTimeline } from "./TextTimeline";
 import { audioDragType } from "../shared/audio-library";
+import { addTimelineAudio } from "../shared/audio-edit";
 import { clipFromAudio } from "./audio";
 import {
   readTextLayers,
@@ -762,15 +763,15 @@ export const Timeline = memo(function Timeline({
             let time = Math.max(
               0,
               Math.min(
-                playbackDuration - 0.01,
+                playbackDuration,
                 ((event.clientX - bounds.left) / bounds.width) *
                   playbackDuration,
               ),
             );
             if (snapping && !event.altKey)
-              for (const point of [0, state.time, ...project.markers])
+              for (const point of [0, state.time, playbackDuration, ...project.markers])
                 if (
-                  point < playbackDuration &&
+                  point <= playbackDuration &&
                   Math.abs(time - point) < (playbackDuration * 8) / bounds.width
                 )
                   time = point;
@@ -782,7 +783,7 @@ export const Timeline = memo(function Timeline({
                     time <
                       sceneOffset({ ...project, workflow }, item.id) +
                         item.duration,
-                )
+                ) ?? (time >= totalDuration({ ...project, workflow }) ? workflow.scenes.at(-1) : undefined)
               : workflow.scenes.find((item) => item.id === workflow.selectedId);
             if (!scene || scene.locked)
               throw Error("Select an unlocked timeline to add audio.");
@@ -806,13 +807,12 @@ export const Timeline = memo(function Timeline({
               generatedSource: undefined,
               license: source.license,
               start,
-              length: Math.min(
-                scene.duration - start,
-                lane === "music" ? scene.duration : source.duration,
-              ),
+              length: lane === "music"
+                ? (start < scene.duration ? scene.duration - start : Math.min(600, source.duration))
+                : Math.min(600, source.duration),
             };
             state.change(
-              { workflow, audio: [...(project.audio ?? []), clip] },
+              addTimelineAudio({ ...project, workflow }, clip),
               "Drop library audio onto timeline",
             );
             state.setPlaying(false);

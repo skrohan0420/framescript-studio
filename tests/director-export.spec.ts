@@ -21,11 +21,16 @@ function readZipText(zip: Buffer, path: string) {
 
 test("director context and pasted direction reach downloaded ZIPs", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.route("**/api/workspaceGet", route => route.fulfill({ json: { result: newProject() } }));
+  const project = newProject();
+  project.promptDraft = { template: "repair", storyStructure: "LEGACY_STORY_DIRECTION" };
+  await page.route("**/api/workspaceGet", route => route.fulfill({ json: { result: project } }));
   await page.route("**/api/settingsGet", route => route.fulfill({ json: { result: {} } }));
   await page.route("**/api/autosave", route => route.fulfill({ json: { result: true } }));
   await page.goto("/#editor");
   await page.getByRole("button", { name: "Prompts panel", exact: true }).click();
+  await expect(page.getByRole("group", { name: "Animation templates", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "script suggestions", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Hook & reveal", exact: true })).toHaveCount(0);
   await page.locator(".brief-script-context > summary").click();
   await page.getByRole("textbox", { name: "Full video script", exact: true }).fill("A full story about planets and stars.");
   await page.getByLabel("Scene narration / timestamps", { exact: true }).fill("00:00:01.000 --> 00:00:03.000\nA violet planet appears.");
@@ -35,20 +40,31 @@ test("director context and pasted direction reach downloaded ZIPs", async ({ pag
   await page.locator('#prompt-panel-output input[type="file"]').setInputFiles({
     name: "style.txt", mimeType: "text/plain", buffer: Buffer.from("Use navy and violet reference geometry"),
   });
-  await page.getByRole("button", { name: "Copy Director Prompt", exact: true }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("A full story about planets and stars.");
+  await page.getByRole("tab", { name: "Direction", exact: true }).click();
+  await expect(page.getByLabel("Selected creative direction", { exact: false })).toBeVisible();
+  await expect(page.getByLabel("Output format", { exact: true })).not.toBeVisible();
   const exportDirector = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Download context ZIP (optional)", exact: true }).click();
+  await page.getByRole("button", { name: "Copy Director Prompt & Download ZIP", exact: true }).click();
   const directorZip = await readFile((await (await exportDirector).path())!);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("A full story about planets and stars.");
   expect(readZipText(directorZip, "TASK.md")).toContain("A full story about planets and stars.");
   expect(readZipText(directorZip, "TASK.md")).toContain("LOCK: Violet subjects on navy.");
+  expect(readZipText(directorZip, "TASK.md")).toContain("You decide the scene format and visual approach");
+  expect(readZipText(directorZip, "TASK.md")).not.toContain('"template"');
+  expect(readZipText(directorZip, "TASK.md")).not.toContain("LEGACY_STORY_DIRECTION");
+  expect(readZipText(directorZip, "TASK.md")).toContain("You decide the narrative structure");
   expect(JSON.parse(readZipText(directorZip, "manifest.json")).mode).toBe("creative-direction");
   expect(readZipText(directorZip, "references/example-code/1.txt")).toBe("Use navy and violet reference geometry");
   const field=page.getByLabel("Selected creative direction", { exact: false });
   await field.fill("Reveal the violet planet at 1s, hold until 3s.");
+  await page.screenshot({ path: "test-results/prompt-direction-section.png" });
   const finalButton=page.getByRole("button", { name: "Copy and Download", exact: true });
   await expect(finalButton).toBeEnabled();
   await expect(finalButton).toBeEnabled();
+  await page.getByRole("tab", { name: "Direction", exact: true }).press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Output", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel("Selected creative direction", { exact: false })).not.toBeVisible();
+  await page.screenshot({ path: "test-results/prompt-output-section.png" });
   const preview=await page.getByLabel("Generated prompt", { exact: true }).inputValue();
   const download=page.waitForEvent("download");
   await finalButton.click();
@@ -59,7 +75,9 @@ test("director context and pasted direction reach downloaded ZIPs", async ({ pag
   expect(task).toContain("FRAMESCRIPT REQUIREMENTS");
   expect(task).toContain("LOCK: Violet subjects on navy.");
   expect(readZipText(zip, "references/example-code/1.txt")).toContain("navy and violet");
+  await page.getByRole("tab", { name: "Direction", exact: true }).click();
   await field.fill("Changed direction");
+  await page.getByRole("tab", { name: "Output", exact: true }).click();
   await expect(finalButton).toBeEnabled();
   await page.getByLabel("Output format", { exact: true }).selectOption("structured");
   const structuredDownload=page.waitForEvent("download");
@@ -73,6 +91,7 @@ test("director context and pasted direction reach downloaded ZIPs", async ({ pag
   await page.getByRole("textbox", { name: "Full video script", exact: true }).fill("Revised whole-story context");
   await page.getByRole("tab", { name: "Output", exact: true }).click();
   await expect(finalButton).toBeEnabled();
+  await page.getByRole("tab", { name: "Direction", exact: true }).click();
   await field.fill("");
   await expect(finalButton).toBeEnabled();
 });

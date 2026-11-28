@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useStatusActivity, useStatusNotice } from "./editor-status";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -34,6 +35,7 @@ import { DimensionsControl } from "./DimensionsControl";
 import { bridge } from "./bridge";
 import { transcriptSrt } from "../shared/transcript";
 import { audioDragType } from "../shared/audio-library";
+import { addTimelineAudio } from "../shared/audio-edit";
 import type { ImagePlacement, MediaSize } from "../shared/media-layout";
 
 export function MediaLibrary({
@@ -190,8 +192,6 @@ export function MediaLibrary({
         ? totalDuration({ ...p, workflow })
         : p.settings.duration;
       const start = source.lane === "music" ? 0 : Math.max(0, state.time);
-      if (start >= limit)
-        throw Error("Place the playhead inside the timeline to add audio.");
       const clip = {
         ...clipFromAudio(
           source,
@@ -205,11 +205,11 @@ export function MediaLibrary({
         length:
           source.lane === "music"
             ? limit
-            : Math.min(source.duration, limit - start),
+            : Math.min(600, source.duration),
         license: source.license,
       };
       state.change(
-        { workflow, audio: [...(p.audio ?? []), clip] },
+        addTimelineAudio({ ...p, workflow }, clip),
         "Add library audio to timeline",
       );
       onSelectAudio(clip.id);
@@ -855,7 +855,7 @@ export function MediaLibrary({
                               recording.
                             </p>
                           )}
-                        <textarea
+                        <ExpandableTextarea
                           aria-label={`Transcript of ${clip.name}`}
                           readOnly
                           value={transcriptValue(clip)}

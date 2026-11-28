@@ -38,7 +38,7 @@ it.each([
     });
     const directorInput = {
       ...input,
-      inheritedContext: JSON.stringify({ fullScript: "The complete star story", identityGuide: "Keep violet subjects" }),
+      inheritedContext: JSON.stringify({ fullScript: "The complete star story", identityGuide: "Keep violet subjects", referenceStyle: "Selected look", referenceLookSettings: { "Selected look": { font: "Georgia" } } }),
       narration: "00:00:01.000 --> 00:00:02.000\nReveal the core",
       selectedDirection: "Hold the violet core, then reveal its layers",
     };
@@ -50,6 +50,10 @@ it.each([
     expect(director).toContain(`exact source boundary: ${sourceOffset + duration}s`);
     expect(director).toContain("references/handoff.png");
     expect(director).toContain("First propose THREE");
+    expect(director).toContain("What you will see:");
+    expect(director).toContain("My recommendation: [A/B/C");
+    expect(director).toContain("Reference look font: Georgia.");
+    expect(buildCodeContinuationPrompt(directorInput)).toContain("Reference look font: Georgia.");
     expect(buildCodeContinuationPrompt(directorInput)).toContain(directorInput.selectedDirection);
     expect(buildCodeContinuationPrompt(directorInput)).toContain("Keep violet subjects");
     expect(buildCodeContinuationPrompt(directorInput)).toContain("INHERITED SETTINGS");

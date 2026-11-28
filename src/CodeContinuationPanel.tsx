@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRightFromLine,
@@ -25,12 +26,10 @@ import {
   type Project,
 } from "../shared/project";
 import { initialWorkflow } from "../shared/workflow";
-import type { PromptReferences as References } from "../shared/prompt-references";
 import type { PromptDraft } from "../shared/prompt-templates";
 import { bridge, download } from "./bridge";
 import { useStatusActivity, useStatusNotice } from "./editor-status";
 import { PromptDrawer } from "./PromptDrawer";
-import { PromptReferences } from "./PromptReferences";
 import { ReviewFrame, SceneReview } from "./SceneReview";
 import { useStudio } from "./store";
 
@@ -124,7 +123,6 @@ export function CodeContinuationPanel({
   const [narration, setNarration] = useState<string>();
   const [fullScript, setFullScript] = useState<string>();
   const [selectedDirection, setSelectedDirection] = useState("");
-  const [references, setReferences] = useState<References>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [uncopiedPrompt, setUncopiedPrompt] = useState("");
@@ -203,7 +201,7 @@ export function CodeContinuationPanel({
         pacing: "",
         camera: "",
         narration: script,
-        references,
+        references: [],
         fullScript: fullScript ?? savedFullScript,
         selectedDirection,
         purpose,
@@ -338,6 +336,8 @@ export function CodeContinuationPanel({
     };
     return (
       <SceneReview
+        title="Review visual extension"
+        joinTime={source.handoff}
         before={before}
         after={sceneProject(after)}
         beforeTime={source.handoff - source.duration + source.lastFrameTime}
@@ -347,8 +347,7 @@ export function CodeContinuationPanel({
         explanation={
           <>
             <p>
-              Compare the original handoff with the continuation. Drag the
-              slider across the join at {source.timelineHandoff.toFixed(3)}s.
+              Compare the original final frame with your continuation, then play across the join.
             </p>
             {error && <p role="alert">{error}</p>}
           </>
@@ -501,7 +500,7 @@ export function CodeContinuationPanel({
                   {savedContext ? (
                     <details>
                       <summary>Saved prompt selections</summary>
-                      <textarea
+                      <ExpandableTextarea
                         aria-label="Inherited prompt selections"
                         readOnly
                         rows={7}
@@ -568,14 +567,14 @@ export function CodeContinuationPanel({
                   </div>
                   <label className="field">
                     <span>Full script · broader story context</span>
-                    <textarea rows={5} maxLength={100000} value={fullScript ?? savedFullScript}
+                    <ExpandableTextarea rows={5} maxLength={100000} value={fullScript ?? savedFullScript}
                       placeholder="Full video script for story context"
                       onChange={(event) => { setFullScript(event.target.value); invalidate(); }} />
                     <small>Automatically uses the previous scene’s full script or your saved Prompt Builder script. Edit only if needed.</small>
                   </label>
                   <label className="field">
                     <span>Timed narration</span>
-                    <textarea
+                    <ExpandableTextarea
                       className="extend-script"
                       rows={8}
                       value={script}
@@ -600,11 +599,7 @@ export function CodeContinuationPanel({
                     <h4>Explore a direction</h4>
                     <span className="extend-tag">Optional</span>
                   </div>
-                  <ol className="director-workflow" aria-label="Creative direction workflow">
-                    <li><strong>Copy &amp; attach</strong><span>Send the director prompt and context ZIP to your AI.</span></li>
-                    <li><strong>Choose &amp; refine</strong><span>Review three approaches and develop your preferred option.</span></li>
-                    <li><strong>Bring it back</strong><span>Paste only the final direction below.</span></li>
-                  </ol>
+
                   <p className="type-hint">Previous settings, identity, full script and scene code continue automatically. The context ZIP adds handoff and motion images.</p>
                   <div className="director-export-action director-transfer">
                     <div className="director-transfer-buttons">
@@ -613,7 +608,7 @@ export function CodeContinuationPanel({
                   </div>
                   <label className="field">
                     <span>Selected creative direction</span>
-                    <textarea rows={10} maxLength={30000} value={selectedDirection}
+                    <ExpandableTextarea rows={10} maxLength={30000} value={selectedDirection}
                       placeholder="Paste the director's SELECTED CREATIVE DIRECTION"
                       onChange={(event) => { setSelectedDirection(event.target.value); invalidate(); }} />
                     <small>Included automatically in the extension prompt and ZIP.</small>
@@ -639,19 +634,10 @@ export function CodeContinuationPanel({
                     Paste the returned HTML with its CSS and JavaScript
                     embedded.
                   </p>
-                  <PromptReferences
-                    references={references}
-                    busy={busy}
-                    run={run}
-                    onChange={(files) => {
-                      setReferences(files);
-                      invalidate();
-                    }}
-                  />
                   {uncopiedPrompt && (
                     <label className="field">
                       <span>Exported extension prompt</span>
-                      <textarea
+                      <ExpandableTextarea
                         className="extend-script"
                         rows={6}
                         readOnly
@@ -660,7 +646,6 @@ export function CodeContinuationPanel({
                     </label>
                   )}
                 </div>
-              </div>
                 <div className="prompt-form-card">
                   <div className="extend-card-heading">
                     <h4>Import continuation</h4>
@@ -668,7 +653,7 @@ export function CodeContinuationPanel({
                   <>
                       <label className="field">
                         <span>Paste continuation HTML</span>
-                        <textarea
+                        <ExpandableTextarea
                           className="extend-script"
                           rows={6}
                           value={result}
@@ -687,6 +672,7 @@ export function CodeContinuationPanel({
                   </>
                   <p>Paste the complete continuation HTML to review it with the current extension settings.</p>
                 </div>
+              </div>
             </>
           ) : (
             <p className="prompt-form-card">

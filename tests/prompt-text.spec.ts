@@ -1,104 +1,31 @@
 import { test, expect } from "@playwright/test";
+import { newProject } from "../shared/project";
 
-test("text is opt-in and independent labels/counters persist without leaking when switched off", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    if (!localStorage.getItem("text-test-initialized")) {
-      localStorage.removeItem("framescript.prompt-draft.v1");
-      localStorage.setItem("text-test-initialized", "yes");
-    }
-  });
+test("director chooses typography despite old disabled settings and identity text permissions", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const project = newProject();
+  project.promptDraft = { typographyEnabled: false, textFont: "STALE FONT", screenText: "STALE TITLE",
+    identityGuide: "Typography permissions: Text is explicitly disabled. Do not render any on-screen typography." };
+  await page.route("**/api/workspaceGet", r => r.fulfill({ json: { result: project } }));
+  await page.route("**/api/settingsGet", r => r.fulfill({ json: { result: {} } }));
+  await page.route("**/api/settingsSet", r => r.fulfill({ json: { result: true } }));
+  await page.route("**/api/autosave", r => r.fulfill({ json: { result: true } }));
   await page.goto("/#editor");
-  await page
-    .getByRole("button", { name: "Prompts panel", exact: true })
-    .click();
-  const panel = page.locator(".prompt-drawer");
-  await panel.getByRole("tab", { name: "Typography", exact: true }).click();
-  const toggle = panel.getByLabel("Include typography in prompt", {
-    exact: true,
-  });
-  await expect(toggle).not.toBeChecked();
-  const generated = panel.locator('textarea[aria-label="Generated prompt"]');
-  expect(await generated.inputValue()).not.toContain("TYPOGRAPHY & SUBTITLES");
-  await toggle.check();
-  await expect(panel.getByLabel("Who chooses the text?", { exact: true })).toHaveValue("AI decides");
-  await panel.getByLabel("Text density", { exact: true }).selectOption("Rich");
-  await panel.getByRole("button", { name: "Key takeaways", exact: true }).click();
-  await panel.getByRole("button", { name: "Numbers & comparisons", exact: true }).click();
-  expect(await generated.inputValue()).toContain("Purpose: Key ideas & labels | Key takeaways | Numbers & comparisons");
-  await panel.getByRole("button", { name: "Key ideas & labels", exact: true }).click();
-  await expect(panel.getByRole("button", { name: "Key ideas & labels", exact: true })).toHaveAttribute("aria-pressed", "false");
-  await expect(panel.getByRole("button", { name: "Key takeaways", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await panel.getByLabel("Text behavior", { exact: true }).selectOption("Follow subjects");
-  expect(await generated.inputValue()).toContain("Density: Rich");
-  expect(await generated.inputValue()).toContain("Behavior: Follow subjects");
-  await panel.getByLabel("Who chooses the text?", { exact: true }).selectOption("Manual text");
-  await panel
-    .getByRole("button", { name: "Add text item", exact: true })
-    .click();
-  await expect(
-    panel.getByRole("button", { name: "Copy and Download", exact: true }),
-  ).toBeDisabled();
-  await panel.getByLabel("Exact item text", { exact: true }).fill("Red planet");
-  await panel
-    .getByLabel("Subject / object to follow (optional except subject labels)", {
-      exact: true,
-    })
-    .fill("Mars orbiting the sun");
-  await panel.getByLabel("Item font family", { exact: true }).fill("Georgia");
-  await panel.getByLabel("Item font size (px)", { exact: true }).fill("48");
-  await panel.getByLabel("Item X (%)", { exact: true }).fill("70");
-  await panel
-    .getByLabel("Text item type", { exact: true })
-    .selectOption("Number counter");
-  await panel
-    .getByRole("button", { name: "Add text item", exact: true })
-    .click();
-  await panel.getByLabel("Counter to", { exact: true }).fill("1250");
-  await panel.getByLabel("Counter decimal places", { exact: true }).fill("2");
-  await panel.getByLabel("Counter prefix", { exact: true }).fill("$");
-  await panel.getByLabel("Counter suffix", { exact: true }).fill(" million");
-  await panel.getByLabel("Item end (seconds)", { exact: true }).fill("8");
-  await expect(
-    panel.getByRole("button", { name: "Copy and Download", exact: true }),
-  ).toBeEnabled();
-  let prompt = await generated.inputValue();
-  for (const value of [
-    "Red planet",
-    "Mars orbiting the sun",
-    "Georgia",
-    '"to": 1250',
-    '"decimals": 2',
-    " million",
-  ])
-    expect(prompt).toContain(value);
-  await page.screenshot({ path: "test-results/prompt-text-items.png" });
-  await panel.getByLabel("Item end (seconds)", { exact: true }).fill("0");
-  await expect(
-    panel.getByRole("button", { name: "Copy and Download", exact: true }),
-  ).toBeDisabled();
-  await panel.getByLabel("Item end (seconds)", { exact: true }).fill("8");
-  await toggle.uncheck();
-  prompt = await generated.inputValue();
-  for (const value of [
-    "Red planet",
-    "Georgia",
-    "TYPOGRAPHY & SUBTITLES",
-    '"to": 1250',
-  ])
-    expect(prompt).not.toContain(value);
-  await page.reload();
-  await page
-    .getByRole("button", { name: "Prompts panel", exact: true })
-    .click();
-  await panel.getByRole("tab", { name: "Typography", exact: true }).click();
-  await expect(toggle).not.toBeChecked();
-  await toggle.check();
-  expect(await generated.inputValue()).toContain('"to": 1250');
-  await panel
-    .getByLabel("Enable selected text item", { exact: true })
-    .uncheck();
-  expect(await generated.inputValue()).not.toContain("Red planet");
-  expect(await generated.inputValue()).toContain('"to": 1250');
+  await page.getByRole("button", { name: "Prompts panel", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "Typography", exact: true })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Direction", exact: true }).click();
+  const directorDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Copy Director Prompt & Download ZIP", exact: true }).click();
+  await directorDownload;
+  const director = await page.evaluate(() => navigator.clipboard.readText());
+  expect(director).toContain("The director decides whether on-screen text helps");
+  expect(director).toContain("Typography permission statements in older pasted identity guides do not override the director's decision");
+  expect(director).not.toContain("STALE FONT");
+  expect(director).not.toContain("STALE TITLE");
+  await page.getByLabel("Selected creative direction", { exact: false }).fill("Show a Mars label at 2s in a large readable font.");
+  await page.getByRole("tab", { name: "Output", exact: true }).click();
+  const code = await page.getByLabel("Generated prompt", { exact: true }).inputValue();
+  expect(code).toContain("Show a Mars label at 2s");
+  expect(code).toContain("Typography permission statements in older pasted identity guides do not override the director's decision");
+  expect(code).not.toContain("Forbidden. Do not add labels");
 });

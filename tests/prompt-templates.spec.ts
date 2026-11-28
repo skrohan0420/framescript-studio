@@ -21,7 +21,7 @@ function readZipText(zip: Buffer, path: string) {
   }
   throw Error(`${path} is missing from the generated ZIP.`);
 }
-test("generated scene code creates real BGM and SFX audio tracks with undo", async ({
+test("scene code imports visuals without generating music or effects", async ({
   page,
 }) => {
   let saved: any;
@@ -42,9 +42,7 @@ test("generated scene code creates real BGM and SFX audio tracks with undo", asy
   await page
     .getByRole("button", { name: "Prompts panel", exact: true })
     .click();
-  await page.getByRole("tab", { name: "Audio", exact: true }).click();
-  await page.getByRole("checkbox", { name: "BGM", exact: true }).check();
-  await page.getByRole("checkbox", { name: "SFX", exact: true }).check();
+  await expect(page.getByRole("tab", { name: "Audio", exact: true })).toHaveCount(0);
   const tracks = [
     {
       id: "bed",
@@ -86,52 +84,13 @@ test("generated scene code creates real BGM and SFX audio tracks with undo", asy
       `<html><body><div>Scene</div><script type="application/json" id="framescript-audio">${JSON.stringify({ tracks })}</script><script>window.renderFrame=()=>{};</script></body></html>`,
     );
   await dialog.getByRole("button", { name: "Apply pasted document" }).click();
-  await expect(page.locator(".audio-edit-clip")).toHaveCount(2);
-  await expect.poll(() => saved?.audio?.length).toBe(2);
-  expect(saved.audio[0]).toMatchObject({
-    lane: "music",
-    name: "Generated bed",
-    start: 0,
-    length: 10,
-    loop: true,
-    sceneId: saved.workflow.selectedId,
-  });
-  expect(saved.audio[1]).toMatchObject({
-    lane: "sfx",
-    name: "Generated accent",
-    start: 2,
-    loop: false,
-    sceneId: saved.workflow.selectedId,
-  });
-  const audible = await page.evaluate(
-    async (data: string[]) => {
-      const context = new AudioContext();
-      try {
-        return await Promise.all(
-          data.map(async (value) => {
-            const bytes = Uint8Array.from(
-              atob(value.split(",")[1]),
-              (character) => character.charCodeAt(0),
-            );
-            const decoded = await context.decodeAudioData(bytes.buffer);
-            return (
-              decoded.duration > 0 &&
-              decoded
-                .getChannelData(0)
-                .some((sample) => Math.abs(sample) > 0.001)
-            );
-          }),
-        );
-      } finally {
-        await context.close();
-      }
-    },
-    saved.audio.map((clip: any) => clip.data),
-  );
-  expect(audible).toEqual([true, true]);
-  await page.getByRole("button", { name: /^Undo/ }).first().click();
   await expect(page.locator(".audio-edit-clip")).toHaveCount(0);
+  await expect.poll(() => saved?.html?.includes("<div>Scene</div>")).toBe(true);
+  expect(saved.audio ?? []).toHaveLength(0);
+  await page.getByRole("button", { name: /^Undo/ }).first().click();
+  await expect.poll(() => saved?.html?.includes("<div>Scene</div>") ?? false).toBe(false);
 });
+
 test("timed voiceover fills the prompt with scene-aligned cues", async ({
   page,
   context,
@@ -217,13 +176,10 @@ test("timed voiceover fills the prompt with scene-aligned cues", async ({
     "00:01.000 --> 00:03.000",
   );
   await input.fill("A replacement plain script.");
-  await page
-    .getByRole("button", { name: "Hook & reveal", exact: true })
-    .click();
   await expect(input).toHaveValue("A replacement plain script.");
   await expect(
     page.getByRole("button", { name: "Hook & reveal", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  ).toHaveCount(0);
   await expect(page.locator(".prompt-input-format")).toContainText(
     "Plain text",
   );
@@ -234,7 +190,6 @@ test("timed voiceover fills the prompt with scene-aligned cues", async ({
   const timedInput =
     "1\n00:00:01,000 --> 00:00:02,000\nKeep these exact words.";
   await input.fill(timedInput);
-  await page.getByRole("button", { name: "Product demo", exact: true }).click();
   await expect(input).toHaveValue(timedInput);
 });
 
@@ -304,60 +259,13 @@ test("prompt templates build, copy and preserve a brief without an AI connection
   await panel
     .getByLabel("Character / subject identity", { exact: true })
     .fill("A small robot with one blue eye");
-  await select("Animation");
-  await panel.getByLabel("Rendering mode", { exact: true }).selectOption("2.5d");
   await panel.getByRole("button", { name: "Camera movement", exact: true }).click();
   await select("Mascot");
   await panel.getByLabel("Include mascot in prompt", { exact: true }).check();
   await panel.getByLabel("Mascot name (optional)", { exact: true }).fill("Orbit the guide");
   await select("Details");
   await panel.getByLabel("Additional requirements", { exact: true }).fill("Hold the final pose.");
-  await select("Typography");
-  await panel
-    .getByLabel("Include typography in prompt", { exact: true })
-    .check();
-  await panel
-    .getByLabel("Who chooses the text?", { exact: true })
-    .selectOption("Manual text");
-  await panel
-    .getByLabel("Exact on-screen text (optional)", { exact: true })
-    .fill("THE MILKY WAY");
-  await panel
-    .getByLabel("Subtitles", { exact: true })
-    .selectOption("Phrase subtitles");
-  await panel
-    .getByLabel("Text animation", { exact: true })
-    .selectOption("Word reveal");
-  await panel.getByLabel("Title size (px)", { exact: true }).fill("");
-  await panel
-    .getByLabel("Title size (px)", { exact: true })
-    .pressSequentially("96");
-  await panel.getByLabel("Subtitle size (px)", { exact: true }).fill("44");
-  await panel
-    .getByLabel("Title placement", { exact: true })
-    .selectOption("Top left");
-  await expect(panel.getByLabel("Text color", { exact: true })).toHaveCount(0);
-  await expect(panel.getByLabel("Font weight", { exact: true })).toHaveCount(0);
-  await panel.getByLabel("Font treatment", { exact: true }).selectOption("Editorial serif");
-  await panel
-    .getByLabel("Entrance time (seconds)", { exact: true })
-    .fill("0.6");
-  await expect(panel.getByTestId("typography-title-preview")).toHaveCSS(
-    "font-size",
-    "96px",
-  );
-  await expect(panel.getByTestId("typography-title-preview")).toHaveCSS(
-    "font-family",
-    'Georgia, "Times New Roman", serif',
-  );
-  await panel
-    .getByRole("button", { name: "Replay typography preview", exact: true })
-    .click();
-  await expect(panel.locator(".type-preview-word").last()).toHaveCSS(
-    "opacity",
-    "1",
-  );
-  await page.screenshot({ path: "test-results/typography-studio.png" });
+  await expect(panel.getByRole("tab", { name: "Typography", exact: true })).toHaveCount(0);
   await select("Brief");
   const duration = panel.getByLabel("Prompt duration (seconds)");
   await duration.fill("");
@@ -441,12 +349,6 @@ test("prompt templates build, copy and preserve a brief without an AI connection
     "CONTINUITY LOCK",
     "Kurzgesagt-inspired",
     "Match-cut montage",
-    "THE MILKY WAY",
-    "Phrase subtitles",
-    "Word reveal",
-    "Title / label font size: 96px; subtitle font size: 44px",
-    "Title placement: Top left",
-    "Text entrance duration: 0.6 seconds",
   ])
     expect(copied).toContain(value);
   await select("Output");
@@ -465,20 +367,6 @@ test("prompt templates build, copy and preserve a brief without an AI connection
     tabs.getByRole("tab", { name: "Output", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   await expect(panel.getByLabel("Output format")).toHaveValue("document");
-  await select("Typography");
-  await expect(panel.getByLabel("Subtitles", { exact: true })).toHaveValue(
-    "Phrase subtitles",
-  );
-  await expect(
-    panel.getByLabel("Title size (px)", { exact: true }),
-  ).toHaveValue("96");
-  await select("Brief");
-  await panel
-    .getByRole("button", {
-      name: "Use Repair existing code template",
-      exact: true,
-    })
-    .click();
   await select("Output");
   await expect(
     panel.getByRole("checkbox", {

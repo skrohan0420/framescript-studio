@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useState } from "react";
 import type { PromptDraft } from "../shared/prompt-templates";
 import {
@@ -265,7 +266,7 @@ export function PromptTextItems({ draft, update, width, height }: Props) {
           {select(active, "kind", "Selected text type", textKinds)}
           <label className="field">
             <span>Exact item text</span>
-            <textarea
+            <ExpandableTextarea
               aria-label="Exact item text"
               rows={3}
               maxLength={10000}

@@ -9,7 +9,7 @@ const compress = promisify(gzip),
   decompress = promisify(gunzip);
 const digest = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
-export const frameCacheVersion = "lossless-frames-v2";
+export const frameCacheVersion = "lossless-frames-v3-native-viewport";
 
 // Only the exact built-in hard-cut composition can be keyed independently by
 // scene. Arbitrary HTML/JS retains a whole-document dependency key.

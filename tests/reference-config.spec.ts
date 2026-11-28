@@ -125,5 +125,12 @@ test("each card opens its own font settings without selecting the look", async (
   await popover.getByRole("button", { name: "Close look settings" }).click();
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("button", { name: "Prompts panel", exact: true }).click();
-  expect(await page.locator(".prompt-drawer").getByLabel("Generated prompt", { exact: true }).inputValue()).toContain("Reference look font: Georgia");
+  const prompts = page.locator(".prompt-drawer");
+  expect(await prompts.getByLabel("Generated prompt", { exact: true }).inputValue()).toContain("Reference look font: Georgia");
+  await prompts.getByRole("tab", { name: "Identity", exact: true }).click();
+  const identity = await prompts.getByLabel("Identity prompt", { exact: true }).inputValue();
+  expect(identity).toContain("Reference look font: Georgia.");
+  expect(identity).toContain("Include the configured font family as a locked invariant");
+  await prompts.getByRole("tab", { name: "Direction", exact: true }).click();
+  expect(await prompts.getByLabel("Director prompt", { exact: true }).inputValue()).toContain("Reference look font: Georgia.");
 });

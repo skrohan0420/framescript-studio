@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useState } from "react";
 import { useStatusActivity } from "./editor-status";
 import { sceneEditTargets } from "../shared/structured-edit";
@@ -148,7 +149,7 @@ export function StructuredGeneratePanel({
     <Modal title="Import generated scene" open onClose={onClose}>
       <label className="field">
         Paste generated scene code
-        <textarea
+        <ExpandableTextarea
           value={text}
           disabled={busy}
           onChange={(event) => setText(event.target.value)}

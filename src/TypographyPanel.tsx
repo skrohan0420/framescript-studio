@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useStatusNotice } from "./editor-status";
 import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2, Type } from "lucide-react";
@@ -303,7 +304,7 @@ export function TypographyPanel({ master }: { master: boolean }) {
           )}
           <label className="field">
             <span>Text · {draft.template.name}</span>
-            <textarea
+            <ExpandableTextarea
               aria-label="Typography text"
               rows={3}
               maxLength={5000}

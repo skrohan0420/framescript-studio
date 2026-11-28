@@ -24,7 +24,7 @@ it("leaves existing prompts unchanged until animation choices are made", () => {
     "SELECTED ANIMATION TECHNIQUES",
   );
 });
-it("composes 3D direction with selected techniques, bounds timings and preserves text opt-in", () => {
+it("composes 3D direction with selected techniques, bounds timings and delegates text", () => {
   const prompt = buildCodePrompt(
     {
       ...draft,
@@ -48,9 +48,9 @@ it("composes 3D direction with selected techniques, bounds timings and preserves
   expect(prompt).toContain("Timing window: 8–10s");
   expect(prompt).toContain("shell last");
   expect(prompt).toContain("Shared intensity: Subtle");
-  expect(prompt).toContain("Core Three.js only");
-  expect(prompt).toContain("overrides any template suggestion");
-  expect(prompt).toContain("Do not add any text");
+  expect(prompt).toContain("when the director chooses true 3D");
+  expect(prompt).toContain("overrides generic template suggestions");
+  expect(prompt).toContain("The director decides whether on-screen text helps");
 });
 it("filters corrupt saved selections and duplicates", () => {
   expect(

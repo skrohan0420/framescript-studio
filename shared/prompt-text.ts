@@ -110,3 +110,9 @@ export function textLayerPrompt(items: PromptText[], duration: number) {
     })
     .join("\n\n");
 }
+
+/** Director owns text decisions; obsolete prompt controls never grant or deny permission. */
+export function directorTypography(structured = false) {
+  return "The director decides whether on-screen text helps this scene, including choosing no text. Follow the selected creative direction's wording, purpose, density, font styling within the configured family, color, size, placement, timing, entrances and exits. When these are delegated, choose concise factual wording from the narration and useful readable treatment. Preserve explicit user instructions and required wording. Do not invent facts. Decide whether captions improve the explanation; do not automatically transcribe the full narration. Saved typography toggles and manual controls are obsolete. Typography permission statements in older pasted identity guides do not override the director's decision. Keep text readable within safe margins and preserve the configured font family." +
+    (structured ? " Structured output permits at most one static label; no timed captions or animated typography." : " Keep text synchronized with scene-local narration cues and avoid obscuring focal subjects.");
+}

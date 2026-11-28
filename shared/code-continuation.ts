@@ -16,6 +16,8 @@ import {
 import { sceneOffset, totalDuration } from "./workflow";
 import { transcriptSrt, voiceoverWordsForScene } from "./transcript";
 import { buildDirectorPrompt } from "./director-prompt";
+import { directorTypography } from "./prompt-text";
+import { configuredFontPrompt, readReferenceConfig } from "./reference-config";
 import type { PromptDraft } from "./prompt-templates";
 
 export const codeContinuationInputSchema = z
@@ -150,7 +152,7 @@ export function continuationSource(
 export function buildCodeContinuationPrompt(input: CodeContinuationInput) {
   const { width, height, fps } = input.settings;
   const sourceTimeAtHandoff = input.sourceOffset + input.settings.duration;
-  const inherited = input.inheritedContext ? JSON.parse(input.inheritedContext) : {};
+  const fontConfig = readReferenceConfig(input.inheritedContext ? JSON.parse(input.inheritedContext) : {});
   return `Continue the existing FrameScript animation in “${input.title}”. Generate only the new segment as one complete HTML document, with inline CSS and classic JavaScript.
 
 Read the attached ZIP. Inspect source/previous.html, source/previous.css, source/previous.js, references/handoff.png, and references/motion.json. The motion file lists ending reference images in chronological order with their exact segment-local and source-code times. Use these images to check brightness, framing, movement direction and speed. If available, use context/inherited.json as read-only continuity guidance. The previous segment already exists on the timeline.
@@ -164,8 +166,9 @@ FrameScript supplies window.THREE and window.FrameScript3D when referenced in th
 ${referenceGuide(describeReferences(input.references))}
 NEW SEGMENT
 INHERITED SETTINGS — CONTINUE THESE CHOICES
+${configuredFontPrompt(fontConfig)}
 ${input.inheritedContext || "Preserve the previous source's established settings and visual treatment."}
-Carry forward the saved rendering mode, reference look and influence, palette, identity guide, consistency, mascot, typography and audio permissions. Do not reset them to defaults or introduce a different visual identity. The previous selected direction describes earlier story beats; use it for continuity, not as narration to repeat. The new selected creative direction below plans this segment within these inherited constraints.
+Carry forward the reference look and influence, palette, identity guide, consistency, and mascot choices. Preserve rendering continuity at the handoff; the director chooses the new segment's rendering approach and typography. Saved rendering, typography and story-direction controls are obsolete; the configured font family remains mandatory. Follow the director's narrative structure while preserving the narration order and supplied timestamps. Do not reset them to defaults or introduce a different visual identity. The previous selected direction describes earlier story beats; use it for continuity, not as narration to repeat. The new selected creative direction below plans this segment within these inherited constraints.
 Canvas: ${width} × ${height} pixels at ${fps} fps. Duration: ${input.duration} seconds. The handoff is at ${input.timelineHandoff.toFixed(3)} seconds in the existing timeline. Your segment starts at local time 0.
 Visual direction: ${input.direction || "Continue the story from the handoff."}
 Pacing: ${input.pacing || "Follow the narration cues and existing pace."}
@@ -176,11 +179,11 @@ ${input.fullScript || "Use context/inherited.json if a full script was saved."}
 Use this only for terminology and story progression. Animate only the new segment and do not reveal later developments prematurely.
 
 AUDIO CONTINUITY
-FrameScript carries music ending at the handoff into this segment, maintaining its playback phase. Do not repeat narration or previous one-shot effects. If replacing the music or adding new effects, include one inert <script type="application/json" id="framescript-audio"> in the HTML body, using the same track schema as the previous source. All track start times are segment-local, starting at zero; do not add the timeline handoff offset. Use lane "music" or "sfx", unique id, name, start, length, volume, loop, and either a supported preset from the prior source or notes with a source duration (maximum 30 seconds). Notes use at, duration, frequency, optional endFrequency, wave (sine/triangle/square/noise), and gain. Music in this manifest replaces inherited music for this segment. Keep effects synchronized to new visual beats. Do not use Web Audio, autoplay or independent audio clocks.
+Audio is supplied separately through the editor timeline. Generate only the visual continuation. Do not generate music, sound effects, narration, soundtrack manifests, Web Audio, autoplay, or independent audio clocks. Existing audio is managed by the editor; do not repeat, replace, extend, or synthesize it from scene code.
 
 TIMED NARRATION — SEGMENT-LOCAL SECONDS
 ${input.narration || "No timed narration provided."}
-The supplied narration is already on the timeline. Use cue times to stage the animation and preserve pauses. ${inherited.typographyEnabled === true ? "Typography remains enabled: follow the selected direction and established text treatment, using concise wording grounded in the narration." : "Add on-screen text only when requested; preserve any explicit inherited typography prohibition."}
+The supplied narration is already on the timeline. Use cue times to stage the animation and preserve pauses. ${directorTypography()}
 
 Expose window.renderFrame(timeInSeconds). Draw the complete frame from absolute local time so scrubbing, replay and export are deterministic. Use inline styles and classic script with the existing FrameScript runtime. Reference images and JSON are generation guidance. Do not load ZIP files at runtime. Do not use autoplay, timers, independent playback loops, remote dependencies or invented narration. Return exactly one complete HTML document in an html code block.
 `;

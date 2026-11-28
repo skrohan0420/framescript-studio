@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useState, type ReactNode } from "react";
 import type { PromptDraft } from "../shared/prompt-templates";
 import { referenceStyles, editingStyles } from "../shared/prompt-templates";
@@ -448,7 +449,7 @@ export function PromptDirectionStudio({
           <span>
             Custom editing direction
           </span>
-          <textarea
+          <ExpandableTextarea
             aria-label={
               "Custom editing direction"
             }

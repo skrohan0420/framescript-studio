@@ -62,7 +62,7 @@ export const AudioTimeline = memo(function AudioTimeline({
   const rows = audioTimelineRows(shown, startOf);
   const scope = (clip: AudioClip, mode: AudioEdit) => {
     const scene = p.workflow?.scenes.find((scene) => scene.id === clip.sceneId);
-    if (mode === "move") {
+    if (mode === "move" || mode === "trim-end") {
       if (clip.sceneId && scene) return 600 - totalDuration(p) + scene.duration;
       return p.workflow?.scenes.at(-1)?.locked ? totalDuration(p) : 600;
     }
@@ -125,7 +125,7 @@ export const AudioTimeline = memo(function AudioTimeline({
       null;
     cleanup.current = startTimelineDrag(event, {
       extraScroll:
-        mode === "move"
+        mode === "move" || mode === "trim-end"
           ? (Math.max(0, scope(clip, mode) - duration) * width) / duration
           : 0,
       onMove: (movement) => {

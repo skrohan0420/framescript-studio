@@ -52,7 +52,7 @@ export const generatedAudioSchema = z
             "Notes must fit the source duration",
           ),
       )
-      .max(8),
+      .max(60, "Use at most 60 generated audio tracks; combine related effects into one note score."),
   })
   .refine(
     (value) =>
@@ -62,9 +62,21 @@ export const generatedAudioSchema = z
   )
   .refine(
     (value) =>
-      value.tracks.reduce((sum, track) => sum + (track.duration ?? 8), 0) <= 60,
+      value.tracks.reduce((sum, track) => sum + (track.preset
+        ? (builtinSounds.find(sound => sound.name === track.preset)?.duration ?? 8)
+        : track.duration!), 0) <= 60,
     "Use at most 60 seconds of source audio per manifest; loop music for longer scenes",
   );
+export function generatedAudioError(error: unknown) {
+  if (error instanceof z.ZodError)
+    return error.issues.map(issue => {
+      const location = issue.path.map(part => typeof part === "number" ? part + 1 : part).join(" · ");
+      return location ? `${location}: ${issue.message}` : issue.message;
+    }).join("; ");
+  return error instanceof SyntaxError
+    ? "The framescript-audio manifest contains invalid JSON. Correct it and review the HTML again."
+    : error instanceof Error ? error.message : String(error);
+}
 export function audioManifestSource(html: string) {
   if (!html.includes("framescript-audio")) return "";
   const doc = new DOMParser().parseFromString(html, "text/html");

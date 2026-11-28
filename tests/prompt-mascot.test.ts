@@ -57,7 +57,7 @@ it("uses separately attached LLM references without requiring a builder image or
     "attach the mascot reference image(s) directly to this LLM conversation",
     "If no mascot reference is available",
     "self-contained procedural Canvas",
-    "Do not add any text",
+    "The director decides whether on-screen text helps",
   ])
     expect(prompt).toContain(value);
   expect(prompt).not.toContain("TYPOGRAPHY & SUBTITLES");

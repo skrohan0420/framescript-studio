@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useStatusActivity } from "./editor-status";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -424,7 +425,7 @@ export function Workflow({
                 Paste the script. Review the scene plan before generating custom
                 animations. Local splitting is available without AI.
               </p>
-              <textarea
+              <ExpandableTextarea
                 aria-label="Video script"
                 className="script-input"
                 value={script}
@@ -497,7 +498,7 @@ export function Workflow({
             <div>
               <h3>2. Shared creative direction</h3>
               <Field label="Visual style across every scene">
-                <textarea
+                <ExpandableTextarea
                   rows={7}
                   value={w.style}
                   onChange={(e) => changeWorkflow({ style: e.target.value })}
@@ -574,7 +575,7 @@ export function Workflow({
                 </div>
                 <div className="storyboard-card-grid">
                   <Field label="Narration">
-                    <textarea
+                    <ExpandableTextarea
                       disabled={item.locked}
                       rows={3}
                       value={item.narration}
@@ -584,7 +585,7 @@ export function Workflow({
                     />
                   </Field>
                   <Field label="Visual direction">
-                    <textarea
+                    <ExpandableTextarea
                       disabled={item.locked}
                       rows={3}
                       value={item.visual}
@@ -798,7 +799,7 @@ export function Workflow({
             </div>
             <div>
               <Field label="Component text">
-                <textarea
+                <ExpandableTextarea
                   rows={5}
                   value={text}
                   onChange={(e) => setText(e.target.value)}
@@ -879,7 +880,7 @@ export function Workflow({
                 />
               </Field>
               <Field label="Identity and consistency rules">
-                <textarea
+                <ExpandableTextarea
                   rows={5}
                   value={w.mascot.rules}
                   onChange={(e) =>
@@ -962,7 +963,7 @@ export function Workflow({
             <div>
               <h3>Generate a pose or expression</h3>
               <Field label="Variant direction">
-                <textarea
+                <ExpandableTextarea
                   rows={3}
                   value={variation}
                   onChange={(e) => setVariation(e.target.value)}
@@ -1378,7 +1379,7 @@ export function Workflow({
                     Manage sound connection in Services
                   </button>{" "}
                   <Field label="Custom sound effect">
-                    <textarea
+                    <ExpandableTextarea
                       value={sfxPrompt}
                       onChange={(e) => setSFXPrompt(e.target.value)}
                     />

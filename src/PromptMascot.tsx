@@ -1,3 +1,4 @@
+import { ExpandableTextarea } from "./ExpandableTextarea";
 import type { PromptDraft } from "../shared/prompt-templates";
 
 export function PromptMascot({
@@ -75,7 +76,7 @@ export function PromptMascot({
           ).map(([key, label, placeholder]) => (
             <label className="field" key={key}>
               <span>{label}</span>
-              <textarea
+              <ExpandableTextarea
                 rows={key === "mascotName" ? 1 : 2}
                 aria-label={label}
                 maxLength={key === "mascotName" ? 200 : 3000}

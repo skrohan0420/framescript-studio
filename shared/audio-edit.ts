@@ -2,6 +2,23 @@ import type { AudioClip, Project } from "./project";
 import { initialWorkflow, totalDuration } from "./workflow";
 export type AudioEdit = "move" | "trim-start" | "trim-end";
 
+/** Insert the full recording, growing timeline duration without stretching visuals. */
+export function addTimelineAudio(
+  project: Project,
+  clip: AudioClip,
+): Partial<Project> {
+  if ((project.audio?.length ?? 0) >= 60)
+    throw Error("The timeline supports at most 60 audio clips.");
+  if (project.audio?.some((item) => item.id === clip.id))
+    throw Error("This audio clip is already on the timeline.");
+  const workflow = project.workflow ?? initialWorkflow(project);
+  const audio = [...(project.audio ?? []), clip];
+  return {
+    workflow,
+    ...updateAudioClip({ ...project, workflow, audio }, clip),
+  };
+}
+
 export function updateAudioClip(
   project: Project,
   clip: AudioClip,

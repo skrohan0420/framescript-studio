@@ -2,11 +2,6 @@ import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { newProject, projectSchema, type Project } from "../shared/project";
 import { selectedScene, synchronizeScene } from "../shared/workflow";
-import {
-  applyGeneratedAudio,
-  applyContinuationAudio,
-  audioManifestSource,
-} from "../shared/generated-audio";
 import { retainAudioSources } from "../shared/audio-library";
 import {
   assertProjectSize,
@@ -117,33 +112,6 @@ export const useStudio = create<State>((set, get) => ({
       changes.map((key) => [key, candidate.data[key as keyof Project]]),
     );
     let project = synchronizeScene({ ...s.project, ...changed });
-    if (
-      patch.html !== undefined &&
-      (!patch.workflow ||
-        !s.project.workflow ||
-        patch.workflow.selectedId === s.project.workflow?.selectedId)
-    ) {
-      try {
-        if (
-          audioManifestSource(project.html) !==
-          audioManifestSource(s.project.html)
-        )
-          project = applyGeneratedAudio(project);
-      } catch (error) {
-        set({
-          error: "Generated audio: " + (error as Error).message,
-          errorLocation: undefined,
-          errorCode: undefined,
-        });
-        return;
-      }
-    }
-    try {
-      project = applyContinuationAudio(project, s.project);
-    } catch (error) {
-      set({ error: "Generated audio: " + (error as Error).message, errorLocation: undefined, errorCode: undefined });
-      return;
-    }
     if (
       project.workflow &&
       project.workflow.scenes.reduce((sum, scene) => sum + scene.duration, 0) >

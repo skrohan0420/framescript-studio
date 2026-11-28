@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import {
   buildCodePrompt,
+  buildStructuredSceneBrief,
   promptTemplates,
   referenceStyles,
   editingStyles,
@@ -18,7 +19,7 @@ const draft: PromptDraft = {
   notes: "Keep objects consistent",
   format: "document",
 };
-it("gives every template a description, example and implemented craft direction", () => {
+it("keeps legacy preset metadata readable without letting presets constrain implementation", () => {
   expect(promptTemplates).toHaveLength(14);
   for (const template of promptTemplates) {
     expect(templateDetails[template.id].detail.length).toBeGreaterThan(20);
@@ -28,7 +29,7 @@ it("gives every template a description, example and implemented craft direction"
       1920,
       1080,
     );
-    expect(prompt).toContain(template.brief);
+    expect(prompt).toBe(buildCodePrompt(draft, 1920, 1080));
     expect(prompt).not.toContain("undefined");
   }
 });
@@ -59,51 +60,13 @@ it("keeps reference strength and editorial fine tuning explicit and preserves na
   ])
     expect(prompt).toContain(value);
 });
-it("keeps subtitles opt-in and includes typography direction when requested", () => {
-  expect(buildCodePrompt(draft, 1920, 1080)).toContain(
-    "None. Do not add any text",
-  );
-  const prompt = buildCodePrompt(
-    {
-      ...draft,
-      typographyEnabled: true,
-      subtitles: "Word-by-word highlight",
-      textFont: "Editorial serif",
-      textAnimation: "Mask reveal",
-      screenText: "EXACT LABEL",
-    },
-    1920,
-    1080,
-  );
-  for (const value of [
-    "Word-by-word highlight",
-    "Editorial serif",
-    "Mask reveal",
-    "EXACT LABEL",
-    "Word highlighting requires actual word timestamps",
-  ])
-    expect(prompt).toContain(value);
-  const custom = buildCodePrompt(
-    {
-      ...draft,
-      typographyEnabled: true,
-      screenText: "Custom title",
-      titleSize: 120,
-      captionSize: 48,
-      textFill: "#ffcc00",
-      titlePlacement: "Top left",
-      textAnimationDuration: 0.7,
-      captionLines: 3,
-    },
-    1920,
-    1080,
-  );
-  expect(custom).toContain(
-    "Title / label font size: 120px; subtitle font size: 48px",
-  );
-  expect(custom).toContain("AI chooses font weight, alignment, line height and letter spacing");
-  expect(custom).not.toContain("#ffcc00");
-  expect(custom).toContain("maximum subtitle lines: 3");
+it("delegates typography instead of exporting saved text controls", () => {
+  const prompt = buildCodePrompt(draft, 1920, 1080);
+  expect(prompt).toContain("The director decides whether on-screen text helps");
+  expect(prompt).toContain("including choosing no text");
+  expect(buildCodePrompt({ ...draft, typographyEnabled: true, subtitles: "Word-by-word highlight",
+    textFont: "Editorial serif", textAnimation: "Mask reveal", screenText: "STALE LABEL",
+    titleSize: 120, captionSize: 48, textFill: "#ffcc00" }, 1920, 1080)).toBe(prompt);
 });
 it("includes every reference and editing preset as actionable direction", () => {
   for (const [name, direction] of referenceStyles) {
@@ -161,9 +124,9 @@ it("includes the actual brief and editor playback/output contract", () => {
   expect(prompt).toContain("window.renderFrame = function(timeInSeconds)");
   expect(prompt).toContain("Do not start requestAnimationFrame");
   expect(prompt).toContain("ONE complete HTML document");
-  expect(prompt).toContain("None. Do not add any text");
+  expect(prompt).toContain("The director decides whether on-screen text helps");
 });
-it("adapts directing guidance to the template, frame and available timing", () => {
+it("adapts directing guidance to the frame and available timing", () => {
   const portrait = buildCodePrompt(
     { ...draft, template: "explain" },
     1080,
@@ -182,20 +145,19 @@ it("adapts directing guidance to the template, frame and available timing", () =
     1920,
     1080,
   );
-  expect(timed).toContain("Make the smallest coherent repairs");
+  expect(timed).toContain("code repair only when explicitly requested");
   expect(timed).toContain("Anchor beat boundaries");
   expect(timed).not.toContain("No timing authority was supplied");
 });
-it("requests real code-defined music and effects rather than an audio plan", () => {
+it("ignores saved music and effects flags and requests visuals only", () => {
   const prompt = buildCodePrompt(
     { ...draft, bgm: true, sfx: true },
     1920,
     1080,
   );
-  expect(prompt).toContain('id="framescript-audio"');
-  expect(prompt).toContain('"lane":"music"');
-  expect(prompt).toContain('"lane":"sfx"');
-  expect(prompt).toContain("creates editable music/SFX timeline tracks");
+  expect(prompt).not.toContain('id="framescript-audio"');
+  expect(prompt).toContain("Generate visuals only");
+  expect(prompt).toBe(buildCodePrompt(draft, 1920, 1080));
   expect(prompt).not.toContain("audio plan after the code");
 });
 it("uses timed narration as the visual synchronization authority without requesting captions", () => {
@@ -203,13 +165,18 @@ it("uses timed narration as the visual synchronization authority without request
   const prompt = buildCodePrompt({ ...draft, timedNarration }, 1920, 1080);
   expect(prompt).toContain(timedNarration.trim());
   expect(prompt).toContain("do not distribute the narration evenly");
-  expect(prompt).toContain("not permission to add on-screen text");
+  expect(prompt).toContain("not a requirement to display captions; the director decides whether text helps");
 });
-it("supports each template and attaches code only when supplied", () => {
+it("ignores saved presets in structured and directed prompts and attaches code only when supplied", () => {
   for (const template of promptTemplates)
     expect(
       buildCodePrompt({ ...draft, template: template.id }, 1080, 1920),
-    ).toContain(template.brief);
+    ).toBe(buildCodePrompt(draft, 1080, 1920));
+  for (const template of promptTemplates) {
+    const directed = { ...draft, selectedDirection: "Show particles forming a galaxy, then hold the final pose." };
+    expect(buildCodePrompt({ ...directed, template: template.id }, 1920, 1080)).toBe(buildCodePrompt(directed, 1920, 1080));
+    expect(buildStructuredSceneBrief({ ...directed, template: template.id }, 1920, 1080)).toBe(buildStructuredSceneBrief(directed, 1920, 1080));
+  }
   expect(
     buildCodePrompt({ ...draft, format: "separate" }, 1080, 1920),
   ).toContain("THREE clearly labeled code blocks");

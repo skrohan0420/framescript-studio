@@ -1,3 +1,4 @@
+import { waitForSceneFonts } from "./render-fonts";
 import { createServer } from "node:http";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -151,7 +152,7 @@ export async function webCodecsExport(
       sceneError = e.message;
     });
     await page.goto(origin + token + "scene", { waitUntil: "load" });
-    await page.evaluate(() => document.fonts.ready);
+    await waitForSceneFonts(page);
     await page.addScriptTag({ content: webCodecsSource });
     metrics.startupMs = performance.now() - started;
     const pipeline = performance.now();

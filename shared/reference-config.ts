@@ -28,3 +28,10 @@ export function readReferenceConfig(value: unknown): ReferenceConfig {
     value && typeof value === "object" ? value : {},
   );
 }
+
+export function configuredFontPrompt(config: Parameters<typeof referenceLookFont>[0]) {
+  const font = referenceLookFont(config);
+  return `CONFIGURED CONSTANT — FONT FAMILY
+Reference look font: ${font}.
+Use this configured font family for all on-screen text whenever text is chosen. It is a user-controlled constant, not a suggestion. Preserve it across every identity option, director proposal, final specification and implementation. This configuration takes precedence over conflicting font-family suggestions in reference styles, pasted identity guides or selected directions. The director may choose whether to use text and its wording, size, weight, color, placement and animation, but must not choose a different font family. This constant does not require text to appear. If the font resource is unavailable, identify the missing dependency instead of silently substituting another family; do not download external fonts.${font.toLowerCase() === "outfit" ? " FrameScript supplies Outfit locally for preview, export and standalone HTML, with variable weights 100–900. Use font-family: Outfit; no font import or network download is needed." : ""}`;
+}
